@@ -1,4 +1,6 @@
 /// <reference lib="webworker" />
+import { waitForSubmission } from '../stdin-channel';
+import { StdinStream, type StdinMode } from '../stdin-stream';
 import type { FromWorker, ToWorker } from '../protocol';
 
 /**
@@ -14,7 +16,7 @@ interface PyodideAPI {
   runPython(code: string): unknown;
   setStdout(options: StreamOptions): void;
   setStderr(options: StreamOptions): void;
-  globals: { get(name: string): unknown };
+  globals: { get(name: string): unknown; set(name: string, value: unknown): void };
 }
 
 interface StreamOptions {
@@ -36,6 +38,13 @@ const PYODIDE_BASE = new URL('/pyodide/', self.location.href).href;
  * of an uncaught exception, or the empty string on normal termination.
  * The runner's own frame is stripped so the traceback shows only the
  * visitor's source lines (FR-021).
+ *
+ * It also installs the stdin shim: `sys.stdin` and `builtins.input` delegate
+ * to the JS stream, whose blocking behaviour and return values match CPython
+ * on an interactive terminal (*stdin channel*, FR-029 – FR-034, FR-060 –
+ * FR-062). The prompt of `input(prompt)` is handed to the stream — and so to
+ * `stdinRequest` — instead of being written to stdout, so the main thread can
+ * render it exactly once (FR-030).
  */
 const RUNNER_SOURCE = `
 import builtins as _pyplay_builtins
@@ -44,12 +53,111 @@ import traceback as _pyplay_traceback
 import types as _pyplay_types
 
 
+class _PyplayStdin:
+    """sys.stdin backed by the SharedArrayBuffer channel."""
+
+    encoding = "utf-8"
+    errors = "strict"
+    name = "<stdin>"
+    mode = "r"
+    newlines = None
+    closed = False
+
+    def _flush_output(self):
+        # Whatever the program printed must be on screen before it suspends,
+        # so the console order matches a terminal's (FR-057).
+        for stream in (_pyplay_sys.stdout, _pyplay_sys.stderr):
+            try:
+                stream.flush()
+            except Exception:
+                pass
+
+    def _pyplay_input_line(self, prompt):
+        self._flush_output()
+        return _pyplay_js_readline(prompt, -1)
+
+    def readline(self, size=-1):
+        self._flush_output()
+        if size is None:
+            size = -1
+        return _pyplay_js_readline("", size)
+
+    def read(self, size=-1):
+        self._flush_output()
+        if size is None:
+            size = -1
+        return _pyplay_js_read(size)
+
+    def readlines(self, hint=-1):
+        lines = []
+        while True:
+            line = self.readline()
+            if line == "":
+                return lines
+            lines.append(line)
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        line = self.readline()
+        if line == "":
+            raise StopIteration
+        return line
+
+    def isatty(self):
+        return True
+
+    def readable(self):
+        return True
+
+    def writable(self):
+        return False
+
+    def seekable(self):
+        return False
+
+    def fileno(self):
+        return 0
+
+    def flush(self):
+        pass
+
+    def close(self):
+        pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+
+def _pyplay_input(prompt=""):
+    text = "" if prompt is None else str(prompt)
+    stream = _pyplay_sys.stdin
+    reader = getattr(stream, "_pyplay_input_line", None)
+    if reader is None:
+        # The program replaced sys.stdin: behave like plain CPython does.
+        if text:
+            _pyplay_sys.stdout.write(text)
+            _pyplay_sys.stdout.flush()
+        line = stream.readline()
+    else:
+        line = reader(text)
+    if line == "":
+        raise EOFError("EOF when reading a line")
+    return line[:-1] if line.endswith("\\n") else line
+
+
 def _pyplay_run(code):
     module = _pyplay_types.ModuleType("__main__")
     module.__dict__["__builtins__"] = _pyplay_builtins
     module.__dict__["__name__"] = "__main__"
     module.__dict__["__doc__"] = None
     _pyplay_sys.modules["__main__"] = module
+    _pyplay_sys.stdin = _PyplayStdin()
+    _pyplay_builtins.input = _pyplay_input
     try:
         exec(compile(code, "<program>", "exec"), module.__dict__)
     except SystemExit as exc:
@@ -76,9 +184,24 @@ let runner: ((code: string) => string) | null = null;
 let currentRunId: number | null = null;
 let booted = false;
 
+/** The stdin channel adopted at `init` (*Data & Interfaces*). */
+let stdinBuffer: SharedArrayBuffer | null = null;
+
 const post = (message: FromWorker): void => {
   (self as unknown as DedicatedWorkerGlobalScope).postMessage(message);
 };
+
+/**
+ * One blocking read: announce the suspension, then park on the channel until
+ * the main thread submits a line or EOF (FR-029, BR-002). The interpreter
+ * stops here — it resumes at exactly this point, however deep in the program
+ * the read was (FR-057).
+ */
+const stdin = new StdinStream((mode: StdinMode, prompt: string) => {
+  if (stdinBuffer === null || currentRunId === null) return null;
+  post({ type: 'stdinRequest', runId: currentRunId, prompt, mode });
+  return waitForSubmission(stdinBuffer);
+});
 
 /**
  * Turns raw stream bytes into `stdout` / `stderr` messages, preserving the
@@ -104,6 +227,11 @@ async function boot(): Promise<void> {
     const pyodide = await loadPyodide({ indexURL: PYODIDE_BASE });
     pyodide.setStdout(streamOptions('stdout'));
     pyodide.setStderr(streamOptions('stderr'));
+    // The Python shim reaches the stream through these two entry points.
+    pyodide.globals.set('_pyplay_js_readline', (prompt: string, limit: number) =>
+      stdin.readline(prompt, limit),
+    );
+    pyodide.globals.set('_pyplay_js_read', (size: number) => stdin.read(size));
     pyodide.runPython(RUNNER_SOURCE);
     runner = pyodide.globals.get('_pyplay_run') as (code: string) => string;
     const pythonVersion = String(pyodide.globals.get('_pyplay_python_version'));
@@ -125,6 +253,8 @@ function run(code: string, runId: number): void {
     return;
   }
   currentRunId = runId;
+  // BR-004: neither buffered characters nor a latched EOF survive a run.
+  stdin.reset();
   const startedAt = performance.now();
   let traceback: string;
   try {
@@ -146,7 +276,7 @@ self.addEventListener('message', (event: MessageEvent<ToWorker>) => {
   if (message.type === 'init') {
     if (booted) return;
     booted = true;
-    // `message.stdinBuffer` is adopted as the stdin channel in Iteration 4.
+    stdinBuffer = message.stdinBuffer;
     void boot();
     return;
   }

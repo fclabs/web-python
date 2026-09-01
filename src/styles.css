@@ -225,6 +225,7 @@ body {
 .console-meta { color: var(--console-meta); }
 .console-error { color: var(--console-stderr); }
 .console-input { color: var(--console-input); }
+.console-prompt { color: var(--console-fg); }
 
 .editor {
   flex: 1;

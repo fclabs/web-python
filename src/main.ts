@@ -17,13 +17,17 @@ import {
   formatRunSeparator,
 } from './format';
 import { Notices } from './notices';
+import { STDIN_MAX_LINE } from './protocol';
 import { PyodideRuntime } from './runtime';
+import type { StdinMode } from './stdin-stream';
 import { STARTER_PROGRAM } from './starter';
 import { getLocalStorage, loadProgram, saveProgram } from './storage';
 
 const AUTOSAVE_UNAVAILABLE = 'Autosave unavailable — your code will not survive a reload';
 const COPY_FAILED = "Couldn't copy — select the code and press Ctrl/Cmd+C";
 const RESET_CONFIRM = 'Discard your code?';
+/** FR-066 */
+const STDIN_TOO_LONG = `Input line too long (max ${STDIN_MAX_LINE} characters)`;
 const COPIED_MS = 2000;
 
 function need<T extends HTMLElement>(id: string): T {
@@ -117,10 +121,77 @@ function boot(): void {
     stopBtn.disabled = !running;
   }
 
+  // --- stdin field (FR-029 – FR-034, FR-060 – FR-062, FR-066) -------------
+  const stdinInput = need<HTMLInputElement>('stdin-input');
+  const eofBtn = need<HTMLButtonElement>('btn-eof');
+
+  /** The kind of read the visitor is answering, or null when none is pending. */
+  let stdinMode: StdinMode | null = null;
+
+  /** FR-029: enabled and focused only while a read is actually pending. */
+  function stdinPending(mode: StdinMode): void {
+    stdinMode = mode;
+    if (stdinInput.disabled) stdinInput.disabled = false;
+    if (eofBtn.disabled) eofBtn.disabled = false;
+    stdinInput.focus();
+  }
+
+  /** FR-032 / FR-033: no read pending — the field takes no text at all. */
+  function stdinIdle(): void {
+    stdinMode = null;
+    stdinInput.value = '';
+    if (!stdinInput.disabled) stdinInput.disabled = true;
+    if (!eofBtn.disabled) eofBtn.disabled = true;
+  }
+
+  function submitStdin(): void {
+    if (stdinInput.disabled || stdinMode === null) return;
+    const text = stdinInput.value;
+    // FR-066: measured in Unicode code points, as the spec states.
+    if (Array.from(text).length > STDIN_MAX_LINE) {
+      notices.show(STDIN_TOO_LONG);
+      // The read stays blocked and the field stays enabled, contents selected.
+      stdinInput.select();
+      return;
+    }
+    if (!runtime.submitStdinLine(text)) return;
+    consoleView.input(text); // FR-031 / FR-062: echoed, styled as input.
+    stdinInput.value = '';
+    if (stdinMode === 'line') {
+      // FR-031: a line-based read is satisfied by exactly this line.
+      stdinIdle();
+    } else {
+      // FR-062: `read()` / partial `read(n)` keep taking lines until they end.
+      stdinInput.focus();
+    }
+  }
+
+  /** FR-034: end-of-file for the suspended read. */
+  function sendStdinEof(): void {
+    if (stdinInput.disabled) return;
+    runtime.sendStdinEof();
+    stdinIdle();
+  }
+
+  stdinInput.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      submitStdin();
+      return;
+    }
+    // Ctrl+D in the field is end-of-file, as in a terminal (FR-034).
+    if (event.key === 'd' && event.ctrlKey && !event.altKey && !event.metaKey) {
+      event.preventDefault();
+      sendStdinEof();
+    }
+  });
+  eofBtn.addEventListener('click', () => sendStdinEof());
+
   function startRun(): void {
     if (runBtn.disabled) return;
     // BR-006: the executed bytes are the buffer as it stands right now.
     const code = view.state.doc.toString();
+    stdinIdle();
     if (runtime.run(code) === null) return;
     consoleView.meta(formatRunSeparator(new Date())); // FR-018
     syncControls();
@@ -152,11 +223,29 @@ function boot(): void {
       consoleView.errorText(message);
       syncControls();
     },
-    onStdout: (text) => consoleView.stdout(text), // FR-019
-    onStderr: (text) => consoleView.stderr(text), // FR-020
-    onDone: (durationMs) => consoleView.meta(formatFinished(durationMs)), // FR-022
+    onStdout(text) {
+      // Output can only resume once the read that produced it has completed,
+      // so this doubles as the end of any pending read (FR-032).
+      stdinIdle();
+      consoleView.stdout(text); // FR-019
+    },
+    onStderr(text) {
+      stdinIdle();
+      consoleView.stderr(text); // FR-020
+    },
+    onStdinRequest(prompt, mode) {
+      // FR-030: written exactly once, from the message, before the field is
+      // enabled — the worker's hook keeps it out of the stdout stream.
+      if (prompt !== '') consoleView.prompt(prompt);
+      stdinPending(mode); // FR-029
+    },
+    onDone(durationMs) {
+      stdinIdle();
+      consoleView.meta(formatFinished(durationMs)); // FR-022
+    },
     onError(traceback) {
       // FR-021: the complete CPython traceback, then the notice.
+      stdinIdle();
       consoleView.errorText(traceback.replace(/\n+$/, ''));
       consoleView.errorText(PROGRAM_ERRORED);
     },
@@ -165,7 +254,8 @@ function boot(): void {
       syncControls();
     },
     onStopped() {
-      // FR-023: execution has already ceased — the worker is gone.
+      // FR-023 / FR-033: execution has already ceased — the worker is gone.
+      stdinIdle();
       restarting = true;
       statusBar.textContent = STATUS_RESTARTING; // FR-065
       consoleView.meta(PROGRAM_STOPPED);

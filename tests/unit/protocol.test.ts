@@ -12,7 +12,7 @@ describe('runId discipline (Data & Interfaces)', () => {
     expect(isCurrentRun(stdout(6), 7)).toBe(false);
     expect(isCurrentRun({ type: 'done', runId: 6, durationMs: 1 }, 7)).toBe(false);
     expect(isCurrentRun({ type: 'error', runId: 6, traceback: 't' }, 7)).toBe(false);
-    expect(isCurrentRun({ type: 'stdinRequest', runId: 6, prompt: '' }, 7)).toBe(false);
+    expect(isCurrentRun({ type: 'stdinRequest', runId: 6, prompt: '', mode: 'line' }, 7)).toBe(false);
   });
 
   it('discards run-scoped messages while no run is in flight', () => {

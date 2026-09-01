@@ -1,4 +1,6 @@
 import { STDIN_BUFFER_BYTES, isCurrentRun, type FromWorker, type ToWorker } from './protocol';
+import { writeSubmission } from './stdin-channel';
+import type { StdinMode } from './stdin-stream';
 
 /** Callbacks the page installs on the runtime. */
 export interface RuntimeHandlers {
@@ -9,6 +11,8 @@ export interface RuntimeHandlers {
   onStderr(text: string): void;
   onDone(durationMs: number): void;
   onError(traceback: string): void;
+  /** FR-029: the program is suspended on a read and needs a line or EOF. */
+  onStdinRequest(prompt: string, mode: StdinMode): void;
   onRunStateChange(running: boolean): void;
   /** FR-023: the run was killed by the visitor; recovery has begun. */
   onStopped(): void;
@@ -42,6 +46,8 @@ const PROGRESS_CEILING = 95;
  */
 export class PyodideRuntime {
   private worker: Worker | null = null;
+  /** The stdin channel of the worker currently in charge (*stdin channel*). */
+  private stdinBuffer: SharedArrayBuffer | null = null;
   private nextRunId = 1;
   private currentRunId: number | null = null;
   private state: RuntimeState = 'loading';
@@ -78,11 +84,11 @@ export class PyodideRuntime {
       this.fail(event.message || 'The Python worker could not be started.');
     });
 
-    // The stdin channel is created here and consumed in Iteration 4.
-    const init: ToWorker = {
-      type: 'init',
-      stdinBuffer: new SharedArrayBuffer(STDIN_BUFFER_BYTES),
-    };
+    // A brand-new channel per worker: nothing a killed run left behind can
+    // be read by its replacement (FR-064).
+    const stdinBuffer = new SharedArrayBuffer(STDIN_BUFFER_BYTES);
+    this.stdinBuffer = stdinBuffer;
+    const init: ToWorker = { type: 'init', stdinBuffer };
     worker.postMessage(init);
   }
 
@@ -133,6 +139,22 @@ export class PyodideRuntime {
     return runId;
   }
 
+  /**
+   * FR-031 / FR-062: hand one submitted line — plus the trailing `\n` the
+   * stdin stream is defined in terms of — to the suspended read. Returns false
+   * when nothing could be written, leaving the read blocked.
+   */
+  submitStdinLine(text: string): boolean {
+    if (!this.stdinBuffer || !this.isRunning) return false;
+    return writeSubmission(this.stdinBuffer, `${text}\n`);
+  }
+
+  /** FR-034: deliver end-of-file to the suspended read. */
+  sendStdinEof(): boolean {
+    if (!this.stdinBuffer || !this.isRunning) return false;
+    return writeSubmission(this.stdinBuffer, null);
+  }
+
   private receive(message: FromWorker): void {
     if (!isCurrentRun(message, this.currentRunId)) return;
 
@@ -159,7 +181,7 @@ export class PyodideRuntime {
         this.handlers.onStderr(message.text);
         break;
       case 'stdinRequest':
-        // Iteration 4 suspends on this; ignored for now.
+        this.handlers.onStdinRequest(message.prompt, message.mode);
         break;
       case 'done':
         this.currentRunId = null;

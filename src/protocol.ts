@@ -1,3 +1,6 @@
+import { STDIN_HEADER_BYTES } from './stdin-channel';
+import type { StdinMode } from './stdin-stream';
+
 /**
  * Main thread <-> worker message protocol (spec: *Data & Interfaces*).
  *
@@ -17,19 +20,22 @@ export type FromWorker =
   | { type: 'initError'; message: string }
   | { type: 'stdout'; runId: number; text: string }
   | { type: 'stderr'; runId: number; text: string }
-  | { type: 'stdinRequest'; runId: number; prompt: string }
+  | { type: 'stdinRequest'; runId: number; prompt: string; mode: StdinMode }
   | { type: 'done'; runId: number; durationMs: number }
   | { type: 'error'; runId: number; traceback: string };
 
 /** Where the vendored Pyodide runtime is served from (BR-001: own origin). */
 export const PYODIDE_INDEX_URL = 'pyodide/';
 
+/** FR-066: the longest stdin line the visitor may submit, in code points. */
+export const STDIN_MAX_LINE = 65_536;
+
 /**
- * Size of the stdin `SharedArrayBuffer`. Control word plus room for one
- * submitted line of 65 536 code points as UTF-8 (FR-066). The buffer is
- * created and shared at `init` now; it is consumed in Iteration 4.
+ * Size of the stdin `SharedArrayBuffer`: the control header plus room for one
+ * submitted line of 65 536 code points, each up to 4 UTF-8 bytes, plus the
+ * `\n` the main thread appends (FR-066).
  */
-export const STDIN_BUFFER_BYTES = 8 + 65_536 * 4 + 4;
+export const STDIN_BUFFER_BYTES = STDIN_HEADER_BYTES + STDIN_MAX_LINE * 4 + 4;
 
 /**
  * True when a worker message belongs to the run the main thread is currently

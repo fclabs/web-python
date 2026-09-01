@@ -26,6 +26,20 @@ export class ConsoleView {
     this.append('console-stderr', STDERR_PREFIX + text);
   }
 
+  /**
+   * FR-030: the prompt of `input(prompt)`, rendered from the `stdinRequest`
+   * message exactly once. It is deliberately not part of the stdout stream and
+   * ends no line, so the echoed answer lands beside it as in a terminal.
+   */
+  prompt(text: string): void {
+    this.append('console-prompt', text);
+  }
+
+  /** FR-031 / FR-062: the visitor's submitted line, styled as input. */
+  input(text: string): void {
+    this.append('console-input', text.endsWith('\n') ? text : `${text}\n`);
+  }
+
   /** A page-generated line: run separator, ready line, termination notice. */
   meta(text: string): void {
     this.line('console-meta', text);

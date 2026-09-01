@@ -115,6 +115,48 @@ export async function setProgram(page: Page, code: string): Promise<void> {
   }, code);
 }
 
+/** The console's spans, in DOM order, with the class that styled each one. */
+export async function consoleSpans(page: Page): Promise<{ kind: string; text: string }[]> {
+  return page.evaluate(() =>
+    Array.from(document.querySelectorAll('#console > span')).map((span) => ({
+      kind: span.className.replace('console-', ''),
+      text: span.textContent ?? '',
+    })),
+  );
+}
+
+/**
+ * Exactly what the program wrote to stdout — no run separators, no prompts
+ * (FR-030 keeps those out of the stream) and no echoed input.
+ */
+export async function programStdout(page: Page): Promise<string> {
+  const spans = await consoleSpans(page);
+  return spans
+    .filter((span) => span.kind === 'stdout')
+    .map((span) => span.text)
+    .join('');
+}
+
+/** Wait until the program is suspended on a read with the field ready (FR-029). */
+export async function waitForStdinPrompt(page: Page): Promise<void> {
+  await page.waitForFunction(
+    () => {
+      const field = document.getElementById('stdin-input') as HTMLInputElement | null;
+      return !!field && !field.disabled;
+    },
+    undefined,
+    { timeout: 30_000 },
+  );
+}
+
+/** Type a line into the stdin field and submit it with Enter (FR-031). */
+export async function submitStdin(page: Page, text: string): Promise<void> {
+  await waitForStdinPrompt(page);
+  const field = page.locator('#stdin-input');
+  await field.fill(text);
+  await field.press('Enter');
+}
+
 /** Load, wait for the runtime, put `code` in the editor and press Run. */
 export async function runProgram(page: Page, code: string): Promise<void> {
   await setProgram(page, code);
