@@ -1,5 +1,11 @@
 import type { Page } from '@playwright/test';
 
+/** The slice of the CodeMirror view the helpers reach into from the page. */
+interface EditorViewLike {
+  state: { doc: { length: number } };
+  dispatch(spec: unknown): void;
+}
+
 /** The starter program, byte for byte (spec: Data & Interfaces). */
 export const STARTER_PROGRAM =
   '# Bienvenido al playground de Python.\n' +
@@ -66,4 +72,51 @@ export async function exhaustLocalStorage(page: Page): Promise<boolean> {
       return true;
     }
   });
+}
+
+/** The console's full text content. */
+export async function consoleText(page: Page): Promise<string> {
+  return page.evaluate(() => document.getElementById('console')?.textContent ?? '');
+}
+
+/** The status indicator's text (FR-065). */
+export async function statusText(page: Page): Promise<string> {
+  return page.evaluate(() => document.getElementById('status-bar')?.textContent ?? '');
+}
+
+/** Wait for FR-013: the runtime is ready and Run is enabled. */
+export async function waitForPythonReady(page: Page): Promise<void> {
+  await page.waitForFunction(
+    () => {
+      const run = document.getElementById('btn-run') as HTMLButtonElement | null;
+      return !!run && !run.disabled;
+    },
+    undefined,
+    { timeout: 60_000 },
+  );
+}
+
+/**
+ * Replace the editor contents without typing — used when the program's exact
+ * bytes matter more than the input path (indentation, tabs, long programs).
+ * Reaches the CodeMirror view the way `EditorView.findFromDOM` does.
+ */
+export async function setProgram(page: Page, code: string): Promise<void> {
+  await page.evaluate((text) => {
+    const content = document.querySelector('.cm-content') as
+      | (HTMLElement & {
+          cmView?: { view: EditorViewLike };
+          cmTile?: { view: EditorViewLike };
+        })
+      | null;
+    const view = content?.cmTile?.view ?? content?.cmView?.view;
+    if (!view) throw new Error('CodeMirror view not found');
+    view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: text } });
+  }, code);
+}
+
+/** Load, wait for the runtime, put `code` in the editor and press Run. */
+export async function runProgram(page: Page, code: string): Promise<void> {
+  await setProgram(page, code);
+  await page.getByRole('button', { name: 'Run' }).click();
 }

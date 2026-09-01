@@ -1,4 +1,4 @@
-import { EditorState, type Extension } from '@codemirror/state';
+import { EditorState, Prec, type Extension } from '@codemirror/state';
 import {
   EditorView,
   drawSelection,
@@ -46,10 +46,25 @@ export interface EditorOptions {
   parent: HTMLElement;
   initialDoc: string;
   onChange: (doc: string) => void;
+  /** FR-008: `Ctrl+Enter` / `Cmd+Enter` triggers Run from inside the editor. */
+  onRun?: () => void;
 }
 
-export function createEditor({ parent, initialDoc, onChange }: EditorOptions): EditorView {
+export function createEditor({ parent, initialDoc, onChange, onRun }: EditorOptions): EditorView {
   const extensions: Extension[] = [
+    // Ahead of the default keymap, which binds `Mod-Enter` to insertBlankLine.
+    Prec.highest(
+      keymap.of([
+        {
+          key: 'Mod-Enter',
+          preventDefault: true,
+          run: () => {
+            onRun?.();
+            return true;
+          },
+        },
+      ]),
+    ),
     lineNumbers(),
     highlightActiveLineGutter(),
     highlightActiveLine(),
