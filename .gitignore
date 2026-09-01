@@ -8,3 +8,4 @@ playwright/.cache/
 *.log
 .DS_Store
 public/pyodide/
+public/ruff/

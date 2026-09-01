@@ -2,7 +2,7 @@ import './styles.css';
 import { Autosaver } from './autosave';
 import { writeClipboard } from './clipboard';
 import { ConsoleView } from './console';
-import { createEditor, selectAll, setDoc } from './editor';
+import { createEditor, revealPosition, selectAll, setDoc } from './editor';
 import {
   NOT_ISOLATED_BANNER,
   PROGRAM_ERRORED,
@@ -16,6 +16,11 @@ import {
   formatReady,
   formatRunSeparator,
 } from './format';
+import { CANNOT_FORMAT, formatDocument } from './lint/format-command';
+import { Linter } from './lint/linter';
+import { applyDiagnostics } from './lint/markers';
+import { DiagnosticsPanel } from './lint/panel';
+import { loadRuff, type RuffEngine } from './lint/ruff';
 import { Notices } from './notices';
 import { STDIN_MAX_LINE } from './protocol';
 import { PyodideRuntime } from './runtime';
@@ -51,8 +56,12 @@ function boot(): void {
   const view = createEditor({
     parent: need('editor'),
     initialDoc,
-    onChange: (doc) => autosaver.schedule(doc),
+    onChange: (doc) => {
+      autosaver.schedule(doc);
+      linter?.schedule(doc); // FR-035
+    },
     onRun: () => startRun(), // FR-008
+    onFormat: () => runFormat(), // FR-009
   });
 
   // FR-050: flush any pending write synchronously when the page goes away.
@@ -94,6 +103,56 @@ function boot(): void {
     autosaver.flush();
     view.focus();
   });
+
+  // --- Lint and format (FR-035 – FR-046, FR-058, FR-059, FR-067) ---------
+  const formatBtn = need<HTMLButtonElement>('btn-format');
+  const panel = new DiagnosticsPanel(
+    {
+      list: need('diagnostics-list'),
+      count: need('diagnostics-count'),
+      empty: need('diagnostics-empty'),
+    },
+    // FR-039: reveal the diagnostic and put the caret at its start.
+    (diagnostic) => revealPosition(view, diagnostic.start.line, diagnostic.start.column),
+  );
+
+  let engine: RuffEngine | null = null;
+  let linter: Linter | null = null;
+
+  /**
+   * FR-043 – FR-045, FR-067: reformat the editor. It never consults the
+   * runtime, so a program already running is untouched — it executes the
+   * snapshot taken when Run was activated (BR-006).
+   */
+  function runFormat(): void {
+    // FR-058: inert by pointer, by keyboard and via the FR-009 shortcut when
+    // the engine never loaded.
+    if (engine === null || formatBtn.disabled) return;
+    if (formatDocument(view, engine) === 'syntax-error') notices.show(CANNOT_FORMAT);
+  }
+
+  formatBtn.addEventListener('click', () => runFormat());
+
+  // FR-011: the engine loads alongside the page; Format stays disabled until
+  // it is genuinely usable.
+  void loadRuff().then(
+    (loaded) => {
+      engine = loaded;
+      formatBtn.disabled = false;
+      linter = new Linter(loaded, (diagnostics) => {
+        panel.render(diagnostics); // FR-038 / FR-040
+        applyDiagnostics(view, diagnostics); // FR-036 / FR-037
+      });
+      linter.lintNow(view.state.doc.toString());
+    },
+    () => {
+      // FR-046 / FR-058 / BR-009: the linter alone degrades — editing, Run,
+      // autosave and Copy are all untouched.
+      panel.markUnavailable();
+      formatBtn.disabled = true;
+      formatBtn.setAttribute('aria-disabled', 'true');
+    },
+  );
 
   // --- Python runtime ----------------------------------------------------
   const consoleView = new ConsoleView(need('console'));

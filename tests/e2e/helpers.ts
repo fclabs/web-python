@@ -162,3 +162,102 @@ export async function runProgram(page: Page, code: string): Promise<void> {
   await setProgram(page, code);
   await page.getByRole('button', { name: 'Run' }).click();
 }
+
+/**
+ * Wait until the Ruff engine has loaded: Format is the control that is
+ * enabled exactly when the engine is usable (FR-058).
+ */
+export async function waitForLinter(page: Page): Promise<void> {
+  await page.waitForFunction(
+    () => {
+      const btn = document.getElementById('btn-format') as HTMLButtonElement | null;
+      return !!btn && !btn.disabled;
+    },
+    undefined,
+    { timeout: 30_000 },
+  );
+}
+
+/** The diagnostics panel entries, in listed order (FR-038). */
+export async function diagnosticEntries(page: Page): Promise<string[]> {
+  return page.evaluate(() =>
+    Array.from(document.querySelectorAll('#diagnostics-list .diagnostic-entry')).map(
+      (el) => el.textContent ?? '',
+    ),
+  );
+}
+
+/** The panel's live count (FR-038) and empty-state text (FR-040, FR-046). */
+export async function diagnosticsPanelState(
+  page: Page,
+): Promise<{ count: string; empty: string; emptyHidden: boolean }> {
+  return page.evaluate(() => {
+    const empty = document.getElementById('diagnostics-empty') as HTMLElement | null;
+    return {
+      count: document.getElementById('diagnostics-count')?.textContent ?? '',
+      empty: empty?.textContent ?? '',
+      emptyHidden: !!empty?.hidden,
+    };
+  });
+}
+
+/** The editor's caret offset and the 1-based line/column it sits on. */
+export async function caretPosition(
+  page: Page,
+): Promise<{ offset: number; line: number; column: number }> {
+  return page.evaluate(() => {
+    const content = document.querySelector('.cm-content') as
+      | (HTMLElement & {
+          cmView?: { view: { state: unknown } };
+          cmTile?: { view: { state: unknown } };
+        })
+      | null;
+    const view = (content?.cmTile?.view ?? content?.cmView?.view) as
+      | {
+          state: {
+            selection: { main: { head: number } };
+            doc: { lineAt(pos: number): { number: number; from: number } };
+          };
+        }
+      | undefined;
+    if (!view) throw new Error('CodeMirror view not found');
+    const offset = view.state.selection.main.head;
+    const line = view.state.doc.lineAt(offset);
+    return { offset, line: line.number, column: offset - line.from + 1 };
+  });
+}
+
+/** Place the caret at a 1-based line/column without going through the mouse. */
+export async function setCaret(page: Page, line: number, column: number): Promise<void> {
+  await page.evaluate(
+    ({ line, column }) => {
+      const content = document.querySelector('.cm-content') as
+        | (HTMLElement & {
+            cmView?: { view: unknown };
+            cmTile?: { view: unknown };
+          })
+        | null;
+      const view = (content?.cmTile?.view ?? content?.cmView?.view) as
+        | {
+            state: { doc: { line(n: number): { from: number; to: number } } };
+            dispatch(spec: unknown): void;
+            focus(): void;
+          }
+        | undefined;
+      if (!view) throw new Error('CodeMirror view not found');
+      const target = view.state.doc.line(line);
+      view.dispatch({ selection: { anchor: Math.min(target.to, target.from + column - 1) } });
+      view.focus();
+    },
+    { line, column },
+  );
+}
+
+/**
+ * Load the playground with every Ruff asset returning 404, so the lint/format
+ * engine can never initialise (VC-049, VC-070).
+ */
+export async function openWithoutLinter(page: Page): Promise<void> {
+  await page.route('**/ruff/**', (route) => route.fulfill({ status: 404, body: 'not found' }));
+  await openPlayground(page);
+}

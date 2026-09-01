@@ -18,6 +18,7 @@ import {
 } from '@codemirror/language';
 import { python } from '@codemirror/lang-python';
 import { tags as t } from '@lezer/highlight';
+import { diagnosticMarkers } from './lint/markers';
 
 /**
  * Syntax highlighting mapped to stable class names so the palette lives in CSS
@@ -48,9 +49,17 @@ export interface EditorOptions {
   onChange: (doc: string) => void;
   /** FR-008: `Ctrl+Enter` / `Cmd+Enter` triggers Run from inside the editor. */
   onRun?: () => void;
+  /** FR-009: `Shift+Alt+F` triggers Format from inside the editor. */
+  onFormat?: () => void;
 }
 
-export function createEditor({ parent, initialDoc, onChange, onRun }: EditorOptions): EditorView {
+export function createEditor({
+  parent,
+  initialDoc,
+  onChange,
+  onRun,
+  onFormat,
+}: EditorOptions): EditorView {
   const extensions: Extension[] = [
     // Ahead of the default keymap, which binds `Mod-Enter` to insertBlankLine.
     Prec.highest(
@@ -60,6 +69,16 @@ export function createEditor({ parent, initialDoc, onChange, onRun }: EditorOpti
           preventDefault: true,
           run: () => {
             onRun?.();
+            return true;
+          },
+        },
+        {
+          // FR-009 / FR-058: the page decides whether Format is available at
+          // all, so the binding is always installed and always consumed.
+          key: 'Shift-Alt-f',
+          preventDefault: true,
+          run: () => {
+            onFormat?.();
             return true;
           },
         },
@@ -76,6 +95,8 @@ export function createEditor({ parent, initialDoc, onChange, onRun }: EditorOpti
     indentUnit.of('    '),
     syntaxHighlighting(pyHighlight),
     python(),
+    // FR-036 / FR-037: diagnostic underlines, gutter icons and tooltips.
+    diagnosticMarkers(),
     keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
     EditorView.lineWrapping,
     EditorView.updateListener.of((update) => {
@@ -101,5 +122,20 @@ export function setDoc(view: EditorView, doc: string): void {
 /** FR-007: leave the editor contents selected so the visitor can copy manually. */
 export function selectAll(view: EditorView): void {
   view.dispatch({ selection: { anchor: 0, head: view.state.doc.length } });
+  view.focus();
+}
+
+/**
+ * FR-039: scroll the given 1-based line/column into view and put the caret on
+ * it. Used by the diagnostics panel to reveal an entry's source position.
+ */
+export function revealPosition(view: EditorView, line: number, column: number): void {
+  const lineNumber = Math.min(Math.max(1, line), view.state.doc.lines);
+  const target = view.state.doc.line(lineNumber);
+  const pos = Math.min(target.to, target.from + Math.max(0, column - 1));
+  view.dispatch({
+    selection: { anchor: pos },
+    effects: EditorView.scrollIntoView(pos, { y: 'center' }),
+  });
   view.focus();
 }
