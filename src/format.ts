@@ -25,6 +25,9 @@ export function formatLoading(percent: number): string {
   return `Loading Python… ${clamped}%`;
 }
 
+/** FR-023: the visitor killed the run. */
+export const PROGRAM_STOPPED = 'Program stopped.';
+
 /** FR-021 */
 export const PROGRAM_ERRORED = 'Program exited with an error.';
 

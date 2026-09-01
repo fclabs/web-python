@@ -6,7 +6,9 @@ import { createEditor, selectAll, setDoc } from './editor';
 import {
   NOT_ISOLATED_BANNER,
   PROGRAM_ERRORED,
+  PROGRAM_STOPPED,
   RUNTIME_FAILED,
+  STATUS_RESTARTING,
   STATUS_OFFLINE_UNAVAILABLE,
   STATUS_PYTHON_UNAVAILABLE,
   formatFinished,
@@ -98,10 +100,20 @@ function boot(): void {
 
   let ready = false;
   let running = false;
+  let restarting = false;
 
-  /** FR-017 / FR-054: Run only when idle and ready; Stop only during a run. */
+  /**
+   * The status the bar returns to once the runtime is idle again. Offline
+   * precache is Iteration 7, so until then it is genuinely absent (FR-052).
+   */
+  let steadyStatus = STATUS_OFFLINE_UNAVAILABLE;
+
+  /**
+   * FR-017 / FR-054 / FR-064: Run only when idle, ready and not recovering;
+   * Stop enabled if and only if a program is currently running.
+   */
   function syncControls(): void {
-    runBtn.disabled = !ready || running;
+    runBtn.disabled = !ready || running || restarting;
     stopBtn.disabled = !running;
   }
 
@@ -126,8 +138,7 @@ function boot(): void {
       ready = true;
       runBtn.textContent = 'Run';
       delete runBtn.dataset.progress;
-      // Offline precache is Iteration 7; until then it is genuinely absent.
-      statusBar.textContent = STATUS_OFFLINE_UNAVAILABLE;
+      statusBar.textContent = steadyStatus;
       consoleView.meta(formatReady(pythonVersion)); // FR-013
       syncControls();
     },
@@ -153,9 +164,28 @@ function boot(): void {
       running = next;
       syncControls();
     },
+    onStopped() {
+      // FR-023: execution has already ceased — the worker is gone.
+      restarting = true;
+      statusBar.textContent = STATUS_RESTARTING; // FR-065
+      consoleView.meta(PROGRAM_STOPPED);
+      syncControls();
+    },
+    onRecovered() {
+      // FR-064: silent recovery — no second `Python … ready` line.
+      restarting = false;
+      statusBar.textContent = steadyStatus;
+      syncControls();
+    },
   });
 
   runBtn.addEventListener('click', () => startRun());
+
+  // FR-023 / FR-024 / FR-054: Stop is inert unless a program is running.
+  stopBtn.addEventListener('click', () => {
+    if (stopBtn.disabled) return;
+    runtime.stop();
+  });
 
   if (self.crossOriginIsolated) {
     runtime.start();

@@ -10,9 +10,13 @@ export interface RuntimeHandlers {
   onDone(durationMs: number): void;
   onError(traceback: string): void;
   onRunStateChange(running: boolean): void;
+  /** FR-023: the run was killed by the visitor; recovery has begun. */
+  onStopped(): void;
+  /** FR-064: the replacement worker reported `ready` — silently. */
+  onRecovered(): void;
 }
 
-export type RuntimeState = 'loading' | 'ready' | 'failed';
+export type RuntimeState = 'loading' | 'ready' | 'failed' | 'restarting';
 
 /**
  * Rough wall-clock cost of a cold Pyodide boot on the reference profile. It
@@ -28,7 +32,13 @@ const PROGRESS_CEILING = 95;
  * *Data & Interfaces*: ids start at 1, increment on every Run, are never
  * reset, and any message whose id is not the current one is discarded.
  *
- * Stop (terminate-and-replace) lands in Iteration 3.
+ * Stop is not a message: it is `worker.terminate()` followed by spawning a
+ * replacement worker, sending a fresh `init` with a **new**
+ * `SharedArrayBuffer`, and waiting for `ready` (FR-023, FR-024, FR-064,
+ * BR-003). Recovery is silent: no second `Python … ready` line.
+ *
+ * There is no execution timeout anywhere in this class: a run ends only by
+ * returning, raising, or being stopped by the visitor (BR-008).
  */
 export class PyodideRuntime {
   private worker: Worker | null = null;
@@ -46,15 +56,25 @@ export class PyodideRuntime {
     this.startedAt = performance.now();
     this.tickProgress();
     this.progressTimer = setInterval(() => this.tickProgress(), PROGRESS_TICK_MS);
+    this.spawn();
+  }
 
+  /**
+   * Spawn a worker and hand it a **fresh** `SharedArrayBuffer` stdin channel.
+   * Used for the first boot and for every post-Stop recovery.
+   */
+  private spawn(): void {
     // A classic worker: it pulls the self-hosted Pyodide loader in with
     // `importScripts`, so no CDN and no bundler indirection (BR-001).
     const worker = new Worker(new URL('./worker/pyodide.worker.ts', import.meta.url));
     this.worker = worker;
-    worker.addEventListener('message', (event: MessageEvent<FromWorker>) =>
-      this.receive(event.data),
-    );
+    worker.addEventListener('message', (event: MessageEvent<FromWorker>) => {
+      // A message from a worker we have already replaced is never acted on.
+      if (this.worker !== worker) return;
+      this.receive(event.data);
+    });
     worker.addEventListener('error', (event) => {
+      if (this.worker !== worker) return;
       this.fail(event.message || 'The Python worker could not be started.');
     });
 
@@ -66,12 +86,36 @@ export class PyodideRuntime {
     worker.postMessage(init);
   }
 
+  /**
+   * FR-023 / FR-024: kill the run immediately — the worker is terminated, so
+   * the stop never depends on the program yielding control — then recover the
+   * runtime in the background (FR-064).
+   */
+  stop(): void {
+    if (!this.isRunning || !this.worker) return;
+    this.worker.terminate();
+    this.worker = null;
+    // Nothing the dead worker may still have queued belongs to any run.
+    this.currentRunId = null;
+    this.state = 'restarting';
+    // Order matters: the page learns it is recovering before it learns the
+    // run ended, so Run is never briefly re-enabled (FR-064, FR-065).
+    this.handlers.onStopped();
+    this.handlers.onRunStateChange(false);
+    this.spawn();
+  }
+
   get isReady(): boolean {
     return this.state === 'ready';
   }
 
   get isRunning(): boolean {
     return this.currentRunId !== null;
+  }
+
+  /** True while a replacement worker is booting after a Stop (FR-064). */
+  get isRestarting(): boolean {
+    return this.state === 'restarting';
   }
 
   /**
@@ -94,6 +138,12 @@ export class PyodideRuntime {
 
     switch (message.type) {
       case 'ready':
+        if (this.state === 'restarting') {
+          // FR-064: recovery is silent — no second `Python … ready` line.
+          this.state = 'ready';
+          this.handlers.onRecovered();
+          break;
+        }
         this.stopProgress();
         this.handlers.onProgress(100);
         this.state = 'ready';
