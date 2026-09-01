@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Python Playground</title>
+  </head>
+  <body>
+    <div id="app" class="app">
+      <header class="toolbar" role="toolbar" aria-label="Playground controls">
+        <button id="btn-run" class="btn btn--primary" type="button" disabled>Run</button>
+        <button id="btn-stop" class="btn" type="button" disabled>Stop</button>
+        <button id="btn-clear" class="btn" type="button" disabled>Clear console</button>
+        <button id="btn-copy" class="btn" type="button">Copy code</button>
+        <button id="btn-format" class="btn" type="button" disabled>Format</button>
+        <button id="btn-reset" class="btn" type="button">Reset</button>
+      </header>
+
+      <p id="status-bar" class="status-bar" aria-live="polite">Python unavailable</p>
+
+      <div id="notices" class="notices" aria-live="polite"></div>
+
+      <section class="panel panel--console" aria-label="Console">
+        <div id="console" class="console"></div>
+      </section>
+
+      <section class="panel panel--editor" aria-label="Editor">
+        <div id="editor" class="editor"></div>
+      </section>
+
+      <section class="panel panel--stdin" aria-label="Standard input">
+        <label class="stdin-label" for="stdin-input">Input</label>
+        <input
+          id="stdin-input"
+          class="stdin-input"
+          type="text"
+          autocomplete="off"
+          placeholder="El programa no está esperando entrada"
+          disabled
+        />
+        <button id="btn-eof" class="btn" type="button" disabled>Send EOF</button>
+      </section>
+
+      <section class="panel panel--diagnostics" aria-label="Diagnostics">
+        <h2 class="panel-title">
+          Problems <span id="diagnostics-count" class="count">0</span>
+        </h2>
+        <ul id="diagnostics-list" class="diagnostics-list"></ul>
+        <p id="diagnostics-empty" class="diagnostics-empty">Linter unavailable.</p>
+      </section>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

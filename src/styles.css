@@ -1,0 +1,307 @@
+/* ---------------------------------------------------------------------------
+   Palette tokens. Light is the base; the dark palette redefines only tokens.
+   Contrast targets: text >= 4.5:1 (NFR-010), non-text UI >= 3:1 (NFR-013).
+   --------------------------------------------------------------------------- */
+:root {
+  color-scheme: light dark;
+
+  --bg: #ffffff;
+  --bg-sunken: #f2f3f5;
+  --bg-raised: #ffffff;
+  --fg: #16181d;
+  --fg-muted: #4a4f58;
+  --border: #9aa0aa;
+  --border-strong: #6b7280;
+
+  --accent: #0b5bd3;
+  --accent-fg: #ffffff;
+  --focus: #0b5bd3;
+
+  --notice-bg: #fff4d6;
+  --notice-fg: #5a3d00;
+  --notice-border: #a37a00;
+
+  --console-bg: #f7f8fa;
+  --console-fg: #16181d;
+  --console-stderr: #a1141f;
+  --console-input: #0b5bd3;
+  --console-meta: #4a4f58;
+
+  --sev-error: #a1141f;
+  --sev-warning: #8a5a00;
+
+  --tok-keyword: #7b1fa2;
+  --tok-string: #0f6b3f;
+  --tok-comment: #5b6270;
+  --tok-number: #9a4a00;
+  --tok-atom: #9a4a00;
+  --tok-def: #0b5bd3;
+  --tok-property: #16181d;
+  --tok-operator: #4a4f58;
+  --tok-punct: #4a4f58;
+
+  --disabled-fg: #5c6270;
+  --disabled-bg: #e4e6ea;
+  --disabled-border: #8c929c;
+
+  --font-ui: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #14161a;
+    --bg-sunken: #0e1013;
+    --bg-raised: #1c1f25;
+    --fg: #e9ebef;
+    --fg-muted: #b3b9c4;
+    --border: #6d7480;
+    --border-strong: #8d95a2;
+
+    --accent: #6fa8ff;
+    --accent-fg: #0d1117;
+    --focus: #8ab6ff;
+
+    --notice-bg: #3a2f10;
+    --notice-fg: #ffdf9e;
+    --notice-border: #c8a24a;
+
+    --console-bg: #0e1013;
+    --console-fg: #e9ebef;
+    --console-stderr: #ff8f8f;
+    --console-input: #8ab6ff;
+    --console-meta: #b3b9c4;
+
+    --sev-error: #ff8f8f;
+    --sev-warning: #ffc46b;
+
+    --tok-keyword: #d9a2ff;
+    --tok-string: #7ddca4;
+    --tok-comment: #9aa3b0;
+    --tok-number: #ffbe7a;
+    --tok-atom: #ffbe7a;
+    --tok-def: #8ab6ff;
+    --tok-property: #e9ebef;
+    --tok-operator: #b3b9c4;
+    --tok-punct: #b3b9c4;
+
+    --disabled-fg: #a7aeba;
+    --disabled-bg: #23272e;
+    --disabled-border: #767d8a;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-ui);
+  font-size: 14px;
+  overflow-x: hidden;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  height: 100%;
+  max-width: 100%;
+  padding: 8px;
+}
+
+/* Toolbar --------------------------------------------------------------- */
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.btn {
+  background: var(--bg-raised);
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  color: var(--fg);
+  cursor: pointer;
+  font: inherit;
+  padding: 6px 12px;
+}
+
+.btn--primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-fg);
+}
+
+.btn:disabled {
+  background: var(--disabled-bg);
+  border-color: var(--disabled-border);
+  color: var(--disabled-fg);
+  cursor: not-allowed;
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/* Status bar (FR-065) ---------------------------------------------------- */
+.status-bar {
+  background: var(--bg-sunken);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--fg-muted);
+  margin: 0;
+  padding: 4px 8px;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* Notices ---------------------------------------------------------------- */
+.notices:empty {
+  display: none;
+}
+
+.notice {
+  background: var(--notice-bg);
+  border: 1px solid var(--notice-border);
+  border-radius: 4px;
+  color: var(--notice-fg);
+  margin: 0 0 6px;
+  padding: 6px 8px;
+}
+
+/* Panels ----------------------------------------------------------------- */
+.panel {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.panel--console {
+  flex: 1 1 30%;
+  display: flex;
+}
+
+.panel--editor {
+  flex: 2 1 45%;
+  display: flex;
+}
+
+.console {
+  background: var(--console-bg);
+  color: var(--console-fg);
+  flex: 1;
+  font-family: var(--font-mono);
+  min-height: 80px;
+  overflow: auto;
+  padding: 8px;
+  white-space: pre;
+}
+
+.editor {
+  flex: 1;
+  min-height: 120px;
+  overflow: auto;
+}
+
+.cm-editor {
+  height: 100%;
+}
+
+.cm-editor .cm-content {
+  font-family: var(--font-mono);
+}
+
+.cm-editor .cm-gutters {
+  background: var(--bg-sunken);
+  border-right: 1px solid var(--border);
+  color: var(--fg-muted);
+}
+
+.cm-editor .cm-activeLine {
+  background: color-mix(in srgb, var(--fg) 6%, transparent);
+}
+
+.cm-editor .cm-activeLineGutter {
+  background: color-mix(in srgb, var(--fg) 10%, transparent);
+}
+
+/* Syntax tokens */
+.tok-keyword { color: var(--tok-keyword); }
+.tok-string { color: var(--tok-string); }
+.tok-comment { color: var(--tok-comment); font-style: italic; }
+.tok-number { color: var(--tok-number); }
+.tok-atom { color: var(--tok-atom); }
+.tok-def { color: var(--tok-def); }
+.tok-property { color: var(--tok-property); }
+.tok-operator { color: var(--tok-operator); }
+.tok-punct { color: var(--tok-punct); }
+
+/* stdin ------------------------------------------------------------------ */
+.panel--stdin {
+  align-items: center;
+  display: flex;
+  flex: 0 0 auto;
+  gap: 8px;
+  padding: 6px 8px;
+}
+
+.stdin-label {
+  color: var(--fg-muted);
+}
+
+.stdin-input {
+  background: var(--bg-raised);
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  color: var(--fg);
+  flex: 1;
+  font-family: var(--font-mono);
+  min-width: 0;
+  padding: 6px 8px;
+}
+
+.stdin-input:disabled {
+  background: var(--disabled-bg);
+  border-color: var(--disabled-border);
+  color: var(--disabled-fg);
+}
+
+/* Diagnostics ------------------------------------------------------------ */
+.panel--diagnostics {
+  flex: 0 1 auto;
+  max-height: 25vh;
+  overflow: auto;
+  padding: 6px 8px;
+}
+
+.panel-title {
+  font-size: 13px;
+  margin: 0 0 4px;
+}
+
+.count {
+  color: var(--fg-muted);
+  font-weight: normal;
+}
+
+.diagnostics-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.diagnostics-empty {
+  color: var(--fg-muted);
+  margin: 0;
+}
