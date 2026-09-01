@@ -47,3 +47,6 @@ export const STATUS_CACHING = 'Caching for offline…';
 export const STATUS_OFFLINE_READY = 'Offline ready';
 export const STATUS_OFFLINE_UNAVAILABLE = 'Offline unavailable';
 export const STATUS_RESTARTING = 'Restarting Python…';
+
+/** FR-053: a newer deployment's worker has installed and is waiting. */
+export const UPDATE_AVAILABLE = 'A new version is available — reload to update';

@@ -261,3 +261,82 @@ export async function openWithoutLinter(page: Page): Promise<void> {
   await page.route('**/ruff/**', (route) => route.fulfill({ status: 404, body: 'not found' }));
   await openPlayground(page);
 }
+
+/** Wait for the status indicator to read exactly `text` (FR-065). */
+export async function waitForStatus(page: Page, text: string, timeout = 90_000): Promise<void> {
+  await page.waitForFunction(
+    (expected) => document.getElementById('status-bar')?.textContent === expected,
+    text,
+    { timeout },
+  );
+}
+
+/**
+ * Record every value the status indicator takes, from the very first paint.
+ * Must be installed before navigation (VC-080).
+ */
+export async function recordStatuses(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    const seen: string[] = [];
+    (window as unknown as { __statuses: string[] }).__statuses = seen;
+    const start = (): void => {
+      const bar = document.getElementById('status-bar');
+      if (!bar) return;
+      const push = (): void => {
+        const text = bar.textContent ?? '';
+        if (seen[seen.length - 1] !== text) seen.push(text);
+      };
+      push();
+      new MutationObserver(push).observe(bar, {
+        childList: true,
+        characterData: true,
+        subtree: true,
+      });
+    };
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', start);
+    } else {
+      start();
+    }
+  });
+}
+
+/** The recorded status sequence (see `recordStatuses`). */
+export async function statusHistory(page: Page): Promise<string[]> {
+  return page.evaluate(() => (window as unknown as { __statuses: string[] }).__statuses ?? []);
+}
+
+/** The origin's Cache Storage bucket names. */
+export async function cacheBuckets(page: Page): Promise<string[]> {
+  return page.evaluate(() => caches.keys());
+}
+
+/**
+ * The build's precache manifest, and which of its URLs are missing from the
+ * `pyplay-assets-v<build>` bucket (VC-072).
+ */
+export async function precacheReport(
+  page: Page,
+): Promise<{ build: string; urls: string[]; missing: string[] }> {
+  return page.evaluate(async () => {
+    const manifest = (await (await fetch('/precache-manifest.json')).json()) as {
+      build: string;
+      urls: string[];
+    };
+    const cache = await caches.open(`pyplay-assets-v${manifest.build}`);
+    const missing: string[] = [];
+    for (const url of manifest.urls) {
+      if (!(await cache.match(url))) missing.push(url);
+    }
+    return { build: manifest.build, urls: manifest.urls, missing };
+  });
+}
+
+/** The texts of every non-blocking notice currently shown (FR-053, BR-009). */
+export async function noticeTexts(page: Page): Promise<string[]> {
+  return page.evaluate(() =>
+    Array.from(document.querySelectorAll('#notices [data-notice]')).map(
+      (el) => (el as HTMLElement).dataset.notice ?? '',
+    ),
+  );
+}

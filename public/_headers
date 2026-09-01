@@ -1,0 +1,30 @@
+# Host response headers for Netlify / Cloudflare Pages (spec: Deployment).
+# Copied verbatim into dist/ by Vite and excluded from the precache manifest.
+
+/*
+  Cross-Origin-Opener-Policy: same-origin
+  Cross-Origin-Embedder-Policy: require-corp
+
+/index.html
+  Cache-Control: no-cache
+  Cross-Origin-Opener-Policy: same-origin
+  Cross-Origin-Embedder-Policy: require-corp
+
+/sw.js
+  Cache-Control: no-cache
+  Content-Type: text/javascript; charset=utf-8
+
+/precache-manifest.json
+  Cache-Control: no-cache
+
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/pyodide/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/ruff/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/*.wasm
+  Content-Type: application/wasm

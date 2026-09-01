@@ -1,4 +1,6 @@
 import { defineConfig } from 'vite';
+// @ts-expect-error — plain-JS build plugin, deliberately outside the TS project.
+import { precachePlugin } from './scripts/vite-precache-plugin.mjs';
 
 /**
  * Cross-origin isolation headers (BR-002 / Deployment).
@@ -11,6 +13,7 @@ const coiHeaders = {
 };
 
 export default defineConfig({
+  plugins: [precachePlugin()],
   server: { headers: coiHeaders },
   preview: { headers: coiHeaders },
   build: {

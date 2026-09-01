@@ -10,7 +10,10 @@ import {
   RUNTIME_FAILED,
   STATUS_RESTARTING,
   STATUS_OFFLINE_UNAVAILABLE,
+  STATUS_CACHING,
+  STATUS_OFFLINE_READY,
   STATUS_PYTHON_UNAVAILABLE,
+  UPDATE_AVAILABLE,
   formatFinished,
   formatLoading,
   formatReady,
@@ -22,6 +25,7 @@ import { applyDiagnostics } from './lint/markers';
 import { DiagnosticsPanel } from './lint/panel';
 import { loadRuff, type RuffEngine } from './lint/ruff';
 import { Notices } from './notices';
+import { setupOffline } from './offline';
 import { STDIN_MAX_LINE } from './protocol';
 import { PyodideRuntime } from './runtime';
 import type { StdinMode } from './stdin-stream';
@@ -172,10 +176,21 @@ function boot(): void {
   let restarting = false;
 
   /**
-   * The status the bar returns to once the runtime is idle again. Offline
-   * precache is Iteration 7, so until then it is genuinely absent (FR-052).
+   * FR-065: the status the bar returns to once the runtime is idle again —
+   * the offline-precache state, which starts as `Caching for offline…` and
+   * settles on `Offline ready` (FR-051) or `Offline unavailable` (FR-052).
    */
-  let steadyStatus = STATUS_OFFLINE_UNAVAILABLE;
+  let steadyStatus = STATUS_CACHING;
+
+  /**
+   * Show a new steady status, but never over `Loading Python… N%`,
+   * `Restarting Python…` or `Python unavailable` — those states own the bar
+   * while they last, and pick the steady text up when they end.
+   */
+  function setSteady(next: string): void {
+    steadyStatus = next;
+    if (ready && !restarting) statusBar.textContent = steadyStatus;
+  }
 
   /**
    * FR-017 / FR-054 / FR-064: Run only when idle, ready and not recovering;
@@ -343,6 +358,17 @@ function boot(): void {
   stopBtn.addEventListener('click', () => {
     if (stopBtn.disabled) return;
     runtime.stop();
+  });
+
+  // --- Offline precache and cross-origin isolation (FR-051 – FR-053) -----
+  void setupOffline({
+    onCaching: () => setSteady(STATUS_CACHING),
+    onReady: () => setSteady(STATUS_OFFLINE_READY),
+    // BR-009: the offline feature alone degrades — Run, Format and autosave
+    // are untouched.
+    onUnavailable: () => setSteady(STATUS_OFFLINE_UNAVAILABLE),
+    // FR-053: non-modal; the open session keeps running the old version.
+    onUpdateAvailable: () => notices.show(UPDATE_AVAILABLE, 'info'),
   });
 
   if (self.crossOriginIsolated) {

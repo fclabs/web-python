@@ -9,3 +9,4 @@ playwright/.cache/
 .DS_Store
 public/pyodide/
 public/ruff/
+dist-deploy/
