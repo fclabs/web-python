@@ -226,6 +226,8 @@ body {
 .console-error { color: var(--console-stderr); }
 .console-input { color: var(--console-input); }
 .console-prompt { color: var(--console-fg); }
+/* FR-027: the marker that heads the retained region once lines were dropped. */
+.console-truncated { color: var(--console-meta); }
 
 .editor {
   flex: 1;

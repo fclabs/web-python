@@ -32,6 +32,8 @@ describe('ConsoleView (FR-019, FR-020, FR-021)', () => {
   it('renders stderr in a class distinct from stdout, so the cue is not colour-only', () => {
     view.stdout('out\n');
     view.stderr('err\n');
+    // Painting is batched onto an animation frame (NFR-009), so ask for it.
+    view.flush();
     expect(host.querySelectorAll('.console-stdout')).toHaveLength(1);
     expect(host.querySelectorAll('.console-stderr')).toHaveLength(1);
   });
@@ -50,6 +52,7 @@ describe('ConsoleView (FR-019, FR-020, FR-021)', () => {
 
   it('clears every chunk (FR-026)', () => {
     view.stdout('x\n');
+    view.flush();
     view.clear();
     expect(view.text).toBe('');
     expect(host.children).toHaveLength(0);

@@ -37,15 +37,25 @@ test('VC-017 (FR-019): output streams as it is produced, not at the end', async 
   await page.addInitScript(() => {
     const marks: { t: number; text: string }[] = [];
     (window as unknown as { __marks: typeof marks }).__marks = marks;
+    // Console painting coalesces same-styled output into one span, so text can
+    // arrive either as a new node or as a rewrite of the last one.
     const observer = new MutationObserver((records) => {
       for (const record of records) {
+        if (record.type === 'characterData') {
+          marks.push({ t: performance.now(), text: record.target.textContent ?? '' });
+          continue;
+        }
         for (const node of record.addedNodes) {
           marks.push({ t: performance.now(), text: node.textContent ?? '' });
         }
       }
     });
     document.addEventListener('DOMContentLoaded', () => {
-      observer.observe(document.getElementById('console')!, { childList: true });
+      observer.observe(document.getElementById('console')!, {
+        childList: true,
+        subtree: true,
+        characterData: true,
+      });
     });
   });
 

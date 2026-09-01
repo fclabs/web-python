@@ -192,6 +192,43 @@ const post = (message: FromWorker): void => {
 };
 
 /**
+ * NFR-009: a program printing flat out writes far more often than any main
+ * thread can consume one message per write, so writes are coalesced here into
+ * at most one message every few milliseconds. The window is opened by the
+ * *previous* post, so a lone write after a quiet stretch still goes out
+ * immediately and FR-019's 100 ms budget holds.
+ */
+const FLUSH_MS = 8;
+const FLUSH_CHARS = 8192;
+
+let pendingType: 'stdout' | 'stderr' | null = null;
+let pendingText = '';
+let lastPostAt = 0;
+
+/** Post whatever output is held, keeping stdout and stderr in program order. */
+function flushOutput(): void {
+  const type = pendingType;
+  const text = pendingText;
+  pendingType = null;
+  pendingText = '';
+  if (type === null || text === '' || currentRunId === null) return;
+  post({ type, runId: currentRunId, text });
+  lastPostAt = performance.now();
+}
+
+/** Hold `text` for the current coalescing window, or send it now. */
+function emit(type: 'stdout' | 'stderr', text: string): void {
+  if (text === '' || currentRunId === null) return;
+  // The two streams never share a message, so their order is never in doubt.
+  if (pendingType !== null && pendingType !== type) flushOutput();
+  pendingType = type;
+  pendingText += text;
+  if (pendingText.length >= FLUSH_CHARS || performance.now() - lastPostAt >= FLUSH_MS) {
+    flushOutput();
+  }
+}
+
+/**
  * One blocking read: announce the suspension, then park on the channel until
  * the main thread submits a line or EOF (FR-029, BR-002). The interpreter
  * stops here — it resumes at exactly this point, however deep in the program
@@ -199,6 +236,8 @@ const post = (message: FromWorker): void => {
  */
 const stdin = new StdinStream((mode: StdinMode, prompt: string) => {
   if (stdinBuffer === null || currentRunId === null) return null;
+  // Everything the program printed is on screen before it suspends (FR-057).
+  flushOutput();
   post({ type: 'stdinRequest', runId: currentRunId, prompt, mode });
   return waitForSubmission(stdinBuffer);
 });
@@ -212,10 +251,7 @@ function streamOptions(type: 'stdout' | 'stderr'): StreamOptions {
   return {
     isatty: true,
     write(buffer: Uint8Array): number {
-      const text = decoder.decode(buffer, { stream: true });
-      if (text !== '' && currentRunId !== null) {
-        post({ type, runId: currentRunId, text });
-      }
+      emit(type, decoder.decode(buffer, { stream: true }));
       return buffer.length;
     },
   };
@@ -255,6 +291,9 @@ function run(code: string, runId: number): void {
   currentRunId = runId;
   // BR-004: neither buffered characters nor a latched EOF survive a run.
   stdin.reset();
+  pendingType = null;
+  pendingText = '';
+  lastPostAt = 0;
   const startedAt = performance.now();
   let traceback: string;
   try {
@@ -263,6 +302,8 @@ function run(code: string, runId: number): void {
     traceback = describe(error);
   }
   const durationMs = performance.now() - startedAt;
+  // The run's last words reach the console before its termination notice.
+  flushOutput();
   if (traceback === '') {
     post({ type: 'done', runId, durationMs });
   } else {

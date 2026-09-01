@@ -102,6 +102,12 @@ function boot(): void {
   const runBtn = need<HTMLButtonElement>('btn-run');
   const stopBtn = need<HTMLButtonElement>('btn-stop');
 
+  // FR-026: Clear console removes every console line and leaves the editor
+  // completely untouched.
+  need<HTMLButtonElement>('btn-clear').addEventListener('click', () => {
+    consoleView.clear();
+  });
+
   let ready = false;
   let running = false;
   let restarting = false;
@@ -241,11 +247,13 @@ function boot(): void {
     },
     onDone(durationMs) {
       stdinIdle();
+      consoleView.endRun(); // FR-056: settle any half-truncated line first.
       consoleView.meta(formatFinished(durationMs)); // FR-022
     },
     onError(traceback) {
       // FR-021: the complete CPython traceback, then the notice.
       stdinIdle();
+      consoleView.endRun(); // FR-056
       consoleView.errorText(traceback.replace(/\n+$/, ''));
       consoleView.errorText(PROGRAM_ERRORED);
     },
@@ -256,6 +264,7 @@ function boot(): void {
     onStopped() {
       // FR-023 / FR-033: execution has already ceased — the worker is gone.
       stdinIdle();
+      consoleView.endRun(); // FR-056
       restarting = true;
       statusBar.textContent = STATUS_RESTARTING; // FR-065
       consoleView.meta(PROGRAM_STOPPED);
