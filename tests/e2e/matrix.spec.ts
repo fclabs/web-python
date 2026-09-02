@@ -282,3 +282,206 @@ test('VC-324 (NFR-306): the special-character pane on this browser', async ({
 
   info.annotations.push({ type: 'browser', description: `${info.project.name}` });
 });
+
+/**
+ * VC-516 (NFR-506) — spec-05's Must-priority subset on each pinned version.
+ *
+ * VC-502, VC-505, VC-507, VC-508, VC-510 and VC-511 condensed into one flow
+ * so the matrix stays affordable on eight engines.
+ */
+test('VC-516 (NFR-506): color mode on this browser', async ({ page }, info) => {
+  test.setTimeout(180_000);
+
+  const THEME_KEY = 'pyplay.theme.v1';
+  const LIGHT_BG = 'rgb(255, 255, 255)';
+  const DARK_BG = 'rgb(20, 22, 26)';
+
+  /** Seed then reload so the bootstrap and module both see the value. */
+  const loadWithTheme = async (value: string | null): Promise<void> => {
+    await page.goto('/');
+    await page.evaluate(
+      ({ key, value }) => {
+        if (value === null) window.localStorage.removeItem(key);
+        else window.localStorage.setItem(key, value);
+      },
+      { key: THEME_KEY, value },
+    );
+    await page.reload();
+    await page.waitForSelector('.cm-content');
+  };
+
+  const snapshot = async (): Promise<{
+    dataTheme: string | undefined;
+    bodyBg: string;
+    editorDark: boolean;
+  }> =>
+    page.evaluate(() => {
+      const content = document.querySelector('.cm-content') as HTMLElement & {
+        cmView?: {
+          view: {
+            state: { facet: (f: unknown) => unknown };
+            constructor: { darkTheme: unknown };
+          };
+        };
+        cmTile?: {
+          view: {
+            state: { facet: (f: unknown) => unknown };
+            constructor: { darkTheme: unknown };
+          };
+        };
+      };
+      const view = content?.cmTile?.view ?? content?.cmView?.view;
+      if (!view) throw new Error('CodeMirror view not found');
+      return {
+        dataTheme: document.documentElement.dataset.theme,
+        bodyBg: getComputedStyle(document.body).backgroundColor,
+        editorDark: !!view.state.facet(view.constructor.darkTheme),
+      };
+    });
+
+  // VC-505 / VC-507: forced light under OS dark.
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await loadWithTheme('light');
+  let snap = await snapshot();
+  expect(snap.dataTheme).toBe('light');
+  expect(snap.bodyBg).toBe(LIGHT_BG);
+  expect(snap.editorDark).toBe(false);
+
+  // VC-505 / VC-507: forced dark under OS light.
+  await page.emulateMedia({ colorScheme: 'light' });
+  await loadWithTheme('dark');
+  snap = await snapshot();
+  expect(snap.dataTheme).toBe('dark');
+  expect(snap.bodyBg).toBe(DARK_BG);
+  expect(snap.editorDark).toBe(true);
+
+  // VC-502: full cycle light → dark → system → light under OS light.
+  await loadWithTheme('light');
+  const btn = page.locator('#btn-theme');
+  await btn.click();
+  snap = await snapshot();
+  expect(snap.dataTheme).toBe('dark');
+  expect(await page.evaluate((k) => localStorage.getItem(k), THEME_KEY)).toBe('dark');
+  await btn.click();
+  snap = await snapshot();
+  expect(snap.dataTheme).toBe('system');
+  expect(snap.bodyBg).toBe(LIGHT_BG);
+  expect(await page.evaluate((k) => localStorage.getItem(k), THEME_KEY)).toBe('system');
+  await btn.click();
+  snap = await snapshot();
+  expect(snap.dataTheme).toBe('light');
+  expect(await page.evaluate((k) => localStorage.getItem(k), THEME_KEY)).toBe('light');
+
+  // VC-511: Tab after Symbols; focus ring; Enter advances.
+  // Start from Run so sequential focus navigation is exercised (FR-513).
+  await page.locator('#btn-run').focus();
+  let landed = false;
+  for (let i = 0; i < 16; i++) {
+    await page.keyboard.press('Tab');
+    const id = await page.evaluate(() => document.activeElement?.id ?? '');
+    if (id === 'btn-symbols') {
+      await page.keyboard.press('Tab');
+      expect(await page.evaluate(() => document.activeElement?.id)).toBe('btn-theme');
+      landed = true;
+      break;
+    }
+  }
+  expect(landed, 'Tab never reached Symbols then theme').toBe(true);
+  const ring = await page.evaluate(() => {
+    const el = document.getElementById('btn-theme')!;
+    const style = getComputedStyle(el);
+    const width = Number.parseFloat(style.outlineWidth || '0');
+    return style.outlineStyle !== 'none' && width >= 1 && style.outlineColor !== 'transparent';
+  });
+  expect(ring).toBe(true);
+  await page.keyboard.press('Enter');
+  expect((await snapshot()).dataTheme).toBe('dark');
+
+  // VC-510: doc / caret preserved across a cycle.
+  await setProgram(page, 'alpha\nbeta\ngamma\n');
+  await page.locator('.cm-content').click();
+  await page.keyboard.press('ControlOrMeta+a');
+  await page.keyboard.type('alpha\nbeta\ngamma\n');
+  await page.keyboard.press('ArrowUp');
+  const before = await page.evaluate(() => {
+    const content = document.querySelector('.cm-content') as HTMLElement & {
+      cmView?: {
+        view: {
+          state: {
+            doc: { toString(): string };
+            selection: { main: { head: number } };
+          };
+          scrollDOM: { scrollTop: number };
+        };
+      };
+      cmTile?: {
+        view: {
+          state: {
+            doc: { toString(): string };
+            selection: { main: { head: number } };
+          };
+          scrollDOM: { scrollTop: number };
+        };
+      };
+    };
+    const view = content.cmTile?.view ?? content.cmView?.view;
+    if (!view) throw new Error('no view');
+    return {
+      doc: view.state.doc.toString(),
+      head: view.state.selection.main.head,
+      scrollTop: view.scrollDOM.scrollTop,
+    };
+  });
+  await btn.click(); // dark → system
+  const after = await page.evaluate(() => {
+    const content = document.querySelector('.cm-content') as HTMLElement & {
+      cmView?: {
+        view: {
+          state: {
+            doc: { toString(): string };
+            selection: { main: { head: number } };
+          };
+          scrollDOM: { scrollTop: number };
+        };
+      };
+      cmTile?: {
+        view: {
+          state: {
+            doc: { toString(): string };
+            selection: { main: { head: number } };
+          };
+          scrollDOM: { scrollTop: number };
+        };
+      };
+    };
+    const view = content.cmTile?.view ?? content.cmView?.view;
+    if (!view) throw new Error('no view');
+    return {
+      doc: view.state.doc.toString(),
+      head: view.state.selection.main.head,
+      scrollTop: view.scrollDOM.scrollTop,
+    };
+  });
+  expect(after.doc).toBe(before.doc);
+  expect(after.head).toBe(before.head);
+  expect(after.scrollTop).toBe(before.scrollTop);
+
+  // VC-508: System ignores a mid-session OS flip until reload.
+  await page.emulateMedia({ colorScheme: 'light' });
+  await loadWithTheme('system');
+  snap = await snapshot();
+  expect(snap.dataTheme).toBe('system');
+  expect(snap.bodyBg).toBe(LIGHT_BG);
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await page.waitForTimeout(200);
+  snap = await snapshot();
+  expect(snap.bodyBg).toBe(LIGHT_BG);
+  expect(snap.editorDark).toBe(false);
+  await page.reload();
+  await page.waitForSelector('.cm-content');
+  snap = await snapshot();
+  expect(snap.bodyBg).toBe(DARK_BG);
+  expect(snap.editorDark).toBe(true);
+
+  info.annotations.push({ type: 'browser', description: `${info.project.name}` });
+});

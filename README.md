@@ -3,8 +3,9 @@
 A **static**, backend-free web page where a visitor writes a single-file Python
 program, runs it, watches `stdout`/`stderr` stream into a console, types input
 into the running program, copies the program to the clipboard, picks Python
-punctuation out of a special-character pane, and gets inline Ruff lint
-diagnostics plus one-click PEP 8 formatting.
+punctuation out of a special-character pane, forces light or dark chrome (or
+follows the system), and gets inline Ruff lint diagnostics plus one-click PEP 8
+formatting.
 
 Everything runs in the visitor's own browser:
 
@@ -16,15 +17,18 @@ Everything runs in the visitor's own browser:
 | Blocking `input()` | A `SharedArrayBuffer` + `Atomics.wait` channel between the page and the worker |
 | Offline + isolation | A **single** service worker that both injects COOP/COEP and precaches every asset the Run loop needs |
 | Special characters | A dismissible pane of 29 Python-relevant characters that copies one at a time to the clipboard, for keyboards where `[`, `]`, `{`, `}`, `\` and `|` are hard to reach |
+| Color mode | A toolbar control that cycles Light → Dark → System; System follows the OS preference sampled once per page load. The choice persists under `pyplay.theme.v1` |
 | Build | Vite → a directory of static files (`dist/`) deployable to any static host |
 
 There is **no server**. The site issues no request to any origin but its own,
 and the visitor's source code is never transmitted anywhere — it lives in the
-editor, the Web Worker, and `localStorage` on this origin (`pyplay.program.v1`).
+editor, the Web Worker, and `localStorage` on this origin (`pyplay.program.v1`
+and, when chosen, `pyplay.theme.v1`).
 
 - Specification: [`specs/01-static-python-web.md`](specs/01-static-python-web.md)
 - Implementation plan: [`specs/01-static-python-web-plan.md`](specs/01-static-python-web-plan.md)
 - Special-character pane: [`specs/03-vertical-pane.md`](specs/03-vertical-pane.md)
+- Color mode: [`specs/05-dark-mode.md`](specs/05-dark-mode.md)
 - Deploying it: [`docs/deployment.md`](docs/deployment.md)
 - How it works inside: [`docs/architecture.md`](docs/architecture.md)
 - Working on it: [`CONTRIBUTING.md`](CONTRIBUTING.md)
@@ -94,9 +98,9 @@ story. The short version:
 ```bash
 npx vitest run         # unit tests (pure logic, jsdom)
 npx playwright test    # browser verification criteria against the built dist/
-npm run audit:perf     # VC-053 performance thresholds + the 15 MB budget
-npm run audit:contrast # VC-051 / VC-071 contrast, light and dark
-npm run test:matrix    # VC-055, the pinned browser matrix
+npm run audit:perf     # VC-053 + VC-323/326 + VC-513 performance and size budgets
+npm run audit:contrast # VC-051 / VC-071 / VC-514 contrast, System and forced modes
+npm run test:matrix    # VC-055 / VC-324 / VC-516, the pinned browser matrix
 ```
 
 ## Continuous integration

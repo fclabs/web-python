@@ -259,8 +259,9 @@ Spec-03's special-character pane (FR-301 – FR-318) is main-thread UI compiled
 into the existing bundle. It adds **no** response header, **no** service-worker
 behaviour, **no** worker or worker-protocol change, **no** runtime asset and
 **no** request to any origin, and it persists nothing — the origin still holds
-exactly the one `localStorage` key and the one Cache Storage bucket listed
-above (BR-304, FR-312).
+exactly the `localStorage` keys and the one Cache Storage bucket listed in
+[`docs/architecture.md`](./architecture.md) → *Storage surface* (BR-304,
+FR-312).
 
 The only thing a deployment sees is that the content hashes of the main JS
 chunk and the main CSS file change, as they do for any code change. `VC-326`
@@ -269,6 +270,20 @@ Ruff asset is byte-identical, and the precache manifest and generated `sw.js`
 differ only in those two hashed names, with the same URL count and the same
 `pyplay-assets-v<build>` cache-name scheme. Nothing in this document needs to
 change for it.
+
+## 5c. Color mode changes nothing here either
+
+Spec-05's color-mode control (FR-501 – FR-516) is likewise main-thread UI: an
+inline bootstrap in `index.html` plus `src/theme.ts` in the existing bundle.
+It adds **no** response header, **no** service-worker behaviour, **no** worker
+or worker-protocol change, **no** runtime asset file and **no** network
+request (BR-505). Glyphs are plain text nodes, never fetched images or fonts.
+The only new origin state is the optional `localStorage` key `pyplay.theme.v1`
+(see *Storage surface* in the architecture doc). Deployment of headers,
+`sw.js`, and the asset layout is a no-op relative to spec-01 / spec-03.
+
+`VC-513` asserts the gzipped app-payload delta against commit `0a4194f` stays
+≤ 4 KB and that the emitted file *set* gains no new runtime asset.
 
 ---
 

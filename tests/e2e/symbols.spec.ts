@@ -139,19 +139,23 @@ test('VC-301 (FR-301): the toolbar ends with a closed, correctly wired Symbols t
   await expect(toggle).toHaveAttribute('aria-expanded', 'false');
   await expect(toggle).toHaveAttribute('aria-controls', 'symbol-pane');
 
-  // It is the toolbar's last control, and it has no disabled state.
+  // It sits immediately before `#btn-theme` (spec-05 amendment) and has no
+  // disabled state.
   const wiring = await page.evaluate(() => {
     const controls = Array.from(document.querySelectorAll('.toolbar > button'));
     const toggle = document.getElementById('btn-symbols')!;
+    const theme = document.getElementById('btn-theme');
     const target = document.getElementById(toggle.getAttribute('aria-controls')!);
     return {
-      isLast: controls[controls.length - 1] === toggle,
+      followedByTheme: toggle.nextElementSibling === theme,
+      themeIsLast: controls[controls.length - 1] === theme,
       resolves: target === document.getElementById('symbol-pane'),
       ariaDisabled: toggle.getAttribute('aria-disabled'),
       hidden: (document.getElementById('symbol-pane') as HTMLElement).hidden,
     };
   });
-  expect(wiring.isLast).toBe(true);
+  expect(wiring.followedByTheme).toBe(true);
+  expect(wiring.themeIsLast).toBe(true);
   expect(wiring.resolves).toBe(true);
   expect(wiring.ariaDisabled).toBeNull();
   expect(wiring.hidden).toBe(true);
@@ -885,7 +889,7 @@ test.describe('wide layout keyboard model', () => {
     await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
 
     const visited: string[] = [];
-    for (let i = 0; i < 14; i++) {
+    for (let i = 0; i < 15; i++) {
       await page.keyboard.press('Tab');
       visited.push(
         await page.evaluate(() => {
@@ -899,7 +903,7 @@ test.describe('wide layout keyboard model', () => {
     }
 
     expect(visited.filter((id) => id === 'pane')).toHaveLength(1);
-    expect(visited.slice(0, 9)).toEqual([
+    expect(visited.slice(0, 10)).toEqual([
       '#btn-run',
       '#btn-stop',
       '#btn-clear',
@@ -907,6 +911,7 @@ test.describe('wide layout keyboard model', () => {
       '#btn-format',
       '#btn-reset',
       '#btn-symbols',
+      '#btn-theme',
       'pane',
       'editor',
     ]);
@@ -1124,8 +1129,15 @@ test('VC-320 (FR-312, BR-304): opening and copying persists nothing, and a reloa
   await typeProgram(page, 'print("hi")');
   await expect.poll(() => storedProgram(page)).toBe('print("hi")');
 
+  // Allowed keys: program (required after edit) and optionally theme (spec-05).
+  // Symbols must never invent any other key.
   const before = await storageSnapshot(page);
-  expect(Object.keys(before.local)).toEqual(['pyplay.program.v1']);
+  expect(Object.keys(before.local)).toContain('pyplay.program.v1');
+  expect(
+    Object.keys(before.local).every(
+      (k) => k === 'pyplay.program.v1' || k === 'pyplay.theme.v1',
+    ),
+  ).toBe(true);
 
   await openSymbolPane(page);
   await symbolButton(page, '_').click();
@@ -1139,5 +1151,9 @@ test('VC-320 (FR-312, BR-304): opening and copying persists nothing, and a reloa
   await expect(page.locator('#symbol-pane')).toBeHidden();
   await expect(page.locator('#btn-symbols')).toHaveAttribute('aria-expanded', 'false');
   expect(await storageSnapshot(page)).toEqual(before);
-  expect(Object.keys((await storageSnapshot(page)).local)).toEqual(['pyplay.program.v1']);
+  expect(
+    Object.keys((await storageSnapshot(page)).local).every(
+      (k) => k === 'pyplay.program.v1' || k === 'pyplay.theme.v1',
+    ),
+  ).toBe(true);
 });

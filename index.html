@@ -4,6 +4,29 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Python Playground</title>
+    <!-- FR-515 / BR-505: render-blocking bootstrap before any stylesheet that
+         paints chrome colours. Allow-list matches BR-501 / src/theme.ts. -->
+    <script>
+      (function () {
+        var KEY = 'pyplay.theme.v1';
+        var pref = 'system';
+        try {
+          var raw = localStorage.getItem(KEY);
+          if (raw === 'light' || raw === 'dark' || raw === 'system') pref = raw;
+        } catch (e) {}
+        document.documentElement.dataset.theme = pref;
+        var osDark = false;
+        try {
+          osDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        } catch (e) {}
+        var effective =
+          pref === 'dark' || (pref === 'system' && osDark) ? 'dark' : 'light';
+        /* data-effective freezes System chrome against mid-session OS flips
+           (FR-510 / BR-502); data-theme still mirrors the preference (FR-514). */
+        document.documentElement.dataset.effective = effective;
+        document.documentElement.style.colorScheme = effective;
+      })();
+    </script>
   </head>
   <body>
     <div id="app" class="app">
@@ -14,15 +37,22 @@
         <button id="btn-copy" class="btn" type="button">Copy code</button>
         <button id="btn-format" class="btn" type="button" tabindex="0" aria-disabled="true">Format</button>
         <button id="btn-reset" class="btn" type="button">Reset</button>
-        <!-- FR-301: last control in the toolbar. It has no disabled state, so
-             unlike Run/Stop/Format it is never routed through `setInert()`. -->
+        <!-- FR-301: immediately before the color-mode control. It has no
+             disabled state, so unlike Run/Stop/Format it is never routed
+             through `setInert()`. -->
         <button
           id="btn-symbols"
           class="btn"
           type="button"
+          tabindex="0"
           aria-expanded="false"
           aria-controls="symbol-pane"
         >Symbols</button>
+        <!-- FR-501: last toolbar control. Glyph / title / aria-label filled by
+             src/theme.ts. Never routed through `setInert()`. Explicit
+             `tabindex="0"` matches Run/Stop/Format so WebKit keeps the control
+             in the sequential focus navigation order (FR-513 / VC-511). -->
+        <button id="btn-theme" class="btn btn--theme" type="button" tabindex="0"></button>
       </header>
 
       <p id="coi-banner" class="banner" role="status" hidden></p>
