@@ -18,6 +18,7 @@ src/                       application code (TypeScript, no framework)
   symbols.ts               the 29-row special-character set (spec-03)
   symbol-pane.ts           the special-character pane: layout, keys, feedback
   layout.ts                the layout resolver, and what the two names mean (spec-04)
+  theme.ts                 color-mode preference, bootstrap sync, editor hookup
 scripts/                   build-time and test-time tooling
   precache.mjs             manifest + service-worker generation (shared)
   sw-template.js           the single service worker's source
@@ -169,8 +170,8 @@ npm test                   # vitest run && playwright test
 ### Audits
 
 ```bash
-npm run audit:perf         # VC-053: NFR-001–NFR-005, NFR-007, NFR-008 + the NFR-004 15 MB budget
-npm run audit:contrast     # VC-051 (text >= 4.5:1) and VC-071 (non-text >= 3:1), light and dark
+npm run audit:perf         # VC-053 + VC-323/326 + VC-513: latencies and size budgets
+npm run audit:contrast     # VC-051 / VC-071 / VC-514: text and non-text contrast
 ```
 
 `audit:perf` prints every measurement next to its threshold. `audit:contrast`

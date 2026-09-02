@@ -139,19 +139,23 @@ test('VC-301 (FR-301): the toolbar ends with a closed, correctly wired Symbols t
   await expect(toggle).toHaveAttribute('aria-expanded', 'false');
   await expect(toggle).toHaveAttribute('aria-controls', 'symbol-pane');
 
-  // It is the toolbar's last control, and it has no disabled state.
+  // It sits immediately before `#btn-theme` (spec-05 amendment) and has no
+  // disabled state.
   const wiring = await page.evaluate(() => {
     const controls = Array.from(document.querySelectorAll('.toolbar > button'));
     const toggle = document.getElementById('btn-symbols')!;
+    const theme = document.getElementById('btn-theme');
     const target = document.getElementById(toggle.getAttribute('aria-controls')!);
     return {
-      isLast: controls[controls.length - 1] === toggle,
+      followedByTheme: toggle.nextElementSibling === theme,
+      themeIsLast: controls[controls.length - 1] === theme,
       resolves: target === document.getElementById('symbol-pane'),
       ariaDisabled: toggle.getAttribute('aria-disabled'),
       hidden: (document.getElementById('symbol-pane') as HTMLElement).hidden,
     };
   });
-  expect(wiring.isLast).toBe(true);
+  expect(wiring.followedByTheme).toBe(true);
+  expect(wiring.themeIsLast).toBe(true);
   expect(wiring.resolves).toBe(true);
   expect(wiring.ariaDisabled).toBeNull();
   expect(wiring.hidden).toBe(true);
@@ -885,7 +889,7 @@ test.describe('wide layout keyboard model', () => {
     await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
 
     const visited: string[] = [];
-    for (let i = 0; i < 14; i++) {
+    for (let i = 0; i < 15; i++) {
       await page.keyboard.press('Tab');
       visited.push(
         await page.evaluate(() => {
@@ -904,7 +908,7 @@ test.describe('wide layout keyboard model', () => {
     expect(visited.filter((id) => id === 'pane')).toHaveLength(1);
     // spec-04 VC-407: and the layout group likewise contributes exactly one.
     expect(visited.filter((id) => id === 'layout')).toHaveLength(1);
-    expect(visited.slice(0, 10)).toEqual([
+    expect(visited.slice(0, 11)).toEqual([
       '#btn-run',
       '#btn-stop',
       '#btn-clear',
@@ -914,6 +918,7 @@ test.describe('wide layout keyboard model', () => {
       // spec-04 FR-401: immediately after `Reset`, before `Symbols`.
       'layout',
       '#btn-symbols',
+      '#btn-theme',
       'pane',
       'editor',
     ]);
@@ -1132,14 +1137,14 @@ test('VC-320 (FR-312, BR-304): opening and copying persists nothing, and a reloa
   await expect.poll(() => storedProgram(page)).toBe('print("hi")');
 
   /*
-   * The keys that may legitimately be present: FR-002's autosave, and — under
-   * a spec-04 VC-433 run, which loads the parent suites with the layout
-   * preference pre-seeded — spec-04's `pyplay.layout.v2`. Neither is the
-   * pane's; what VC-320 asserts is that *the pane* writes nothing, which is
-   * the unchanged-snapshot comparisons below, plus the absence of any key
-   * outside this set.
+   * The keys that may legitimately be present: FR-002's autosave, spec-05's
+   * `pyplay.theme.v1`, and — under a spec-04 VC-433 run, which loads the
+   * parent suites with the layout preference pre-seeded — spec-04's
+   * `pyplay.layout.v2`. None is the pane's; what VC-320 asserts is that *the
+   * pane* writes nothing, which is the unchanged-snapshot comparisons below,
+   * plus the absence of any key outside this set.
    */
-  const ALLOWED_KEYS = ['pyplay.layout.v2', 'pyplay.program.v1'];
+  const ALLOWED_KEYS = ['pyplay.layout.v2', 'pyplay.program.v1', 'pyplay.theme.v1'];
   const unexpectedKeys = (snapshot: { local: Record<string, string> }): string[] =>
     Object.keys(snapshot.local).filter((key) => !ALLOWED_KEYS.includes(key));
 

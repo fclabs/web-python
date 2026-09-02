@@ -7,6 +7,8 @@ the implementation deliberately differs from the spec's *Data & Interfaces*.
 ┌──────────────────────────── main thread ────────────────────────────┐
 │  index.html + src/main.ts                                           │
 │    CodeMirror editor ── autosave → localStorage['pyplay.program.v1'] │
+│    color mode ── pyplay.theme.v1; editor darkTheme from effective   │
+│    layout ── pyplay.layout.v2; #app[data-layout] drives the grid    │
 │    console (rAF-batched, bounded)                                   │
 │    status bar, toolbar, stdin field, diagnostics panel              │
 │    Ruff-WASM (lint + format, in-thread)                             │
@@ -483,24 +485,55 @@ DOM contract also called it the toolbar's last child, but spec-03 had already
 shipped `Symbols` in that slot (VC-301); FR-401's own Given/When/Then says
 "immediately after `#btn-reset`", which is what ships. Recorded as an amendment
 in `specs/04-toogle-pane-aspect.md`.
+## Color mode
+
+The color-mode control of spec-05 (`src/theme.ts`, `#btn-theme`) lets the
+visitor force Light, force Dark, or keep System. Two writers keep chrome in
+sync without a flash:
+
+1. **Inline bootstrap** in `index.html` — a render-blocking `<script>` in
+   `<head>` that reads `pyplay.theme.v1`, validates the three canonical
+   strings, sets `document.documentElement.dataset.theme` to the preference,
+   samples `prefers-color-scheme` **once**, and sets `data-effective` plus
+   the used `color-scheme` to the effective palette. It never waits on the
+   Vite module and never registers a `change` listener.
+2. **Module** (`src/theme.ts`) — re-reads the same key with the same
+   allow-list, owns the toolbar cycle / persistence / glyph, and drives
+   CodeMirror's `EditorView.darkTheme` compartment via
+   `setEditorColorScheme`. On boot it re-applies the document attributes
+   idempotently with the bootstrap.
+
+`data-theme` always tracks the **preference** (`light` | `dark` | `system`);
+`color-scheme` and `data-effective` always track the **effective** palette
+(`light` | `dark`) — BR-506. When preference is System, CSS nests the dark
+token block under `@media (prefers-color-scheme: dark)` only for that
+attribute value; forced modes select tokens from `[data-theme="light"]` /
+`[data-theme="dark"]` regardless of the OS.
+
+System is **load-scoped** (BR-502): the OS sample taken at page load (and
+reused when a mid-session cycle lands on `system`) is never refreshed by a
+live `matchMedia` listener. A visitor who wants the new OS value reloads.
 
 ---
 
 ## Storage surface
 
-The origin holds exactly three things, and nothing else — no cookies, no
+The origin holds exactly four things, and nothing else — no cookies, no
 IndexedDB, no `sessionStorage`:
 
 | Store | Key | Contents |
 |---|---|---|
 | `localStorage` | `pyplay.program.v1` | the exact editor contents, UTF-8, no wrapper |
 | `localStorage` | `pyplay.layout.v2` | exactly `horizontal` (stacked) or `vertical` (two columns) — a bare string from a two-value enum, no JSON, no wrapper, no whitespace |
+| `localStorage` | `pyplay.theme.v1` | exactly `light`, `dark`, or `system` — raw string, no JSON |
 | Cache Storage | `pyplay-assets-v<build>` | the precached static assets; older buckets are deleted on activation |
 
 Autosave is debounced 500 ms and additionally flushed **synchronously** on
 `pagehide` and on `visibilitychange → hidden`, so a fast navigation away can
 never persist a half-typed prefix. A rejected write (quota, private browsing,
 storage disabled) shows one notice per page load and changes nothing else.
+Theme storage failure is quieter still: the in-memory preference and UI still
+cycle; no theme notice is shown (BR-504).
 
 `pyplay.layout.v2` is written **synchronously on selection** — there is nothing
 to debounce, and a layout choice that survived only if the visitor waited half

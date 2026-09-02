@@ -1,14 +1,16 @@
 /**
  * Record the shape and compressed size of a built `dist/`, so a later build
- * can be diffed against it (spec-03 NFR-305, VC-326).
+ * can be diffed against it (spec-03 NFR-305 / VC-326; spec-05 NFR-505 / VC-513).
  *
  * Usage:
  *   git worktree add ... <baseline commit>
  *   npm run build
  *   node scripts/record-baseline-build.mjs dist tests/e2e/baseline-build.json 8df7fa5
+ *   # color-mode budget (NFR-505):
+ *   node scripts/record-baseline-build.mjs dist tests/e2e/baseline-build-theme.json 0a4194f
  *
- * The committed record under `tests/e2e/` is the one `perf.spec.ts` compares
- * against; regenerate it only when the spec pins a new baseline commit.
+ * The committed records under `tests/e2e/` are what `perf.spec.ts` compares
+ * against; regenerate one only when its spec pins a new baseline commit.
  *
  * Record it on CI's platform. `gzipSync` is only as reproducible as the zlib
  * Node was linked against, and the flavours disagree: Node 26 ships stock zlib

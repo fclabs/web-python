@@ -43,6 +43,7 @@ import {
 } from './layout';
 import { SymbolPane } from './symbol-pane';
 import { getLocalStorage, loadProgram, saveProgram } from './storage';
+import { applyDocumentTheme, bindThemeControl, loadPreference } from './theme';
 
 const AUTOSAVE_UNAVAILABLE = 'Autosave unavailable — your code will not survive a reload';
 const COPY_FAILED = "Couldn't copy — select the code and press Ctrl/Cmd+C";
@@ -204,6 +205,10 @@ function boot(): void {
   // stored `vertical` is masked while narrow and restored on widening,
   // because `layoutPref` is re-resolved, never rewritten.
   wide.addEventListener('change', renderLayout);
+  // FR-505 / FR-506 / FR-515: preference already applied by the HTML bootstrap;
+  // re-apply so the module's load-time OS sample stays in sync (BR-502).
+  const preference = loadPreference(storage);
+  const effective = applyDocumentTheme(preference);
 
   // FR-003 / FR-004
   const initialDoc = loadProgram(storage);
@@ -216,6 +221,7 @@ function boot(): void {
   const view = createEditor({
     parent: need('editor'),
     initialDoc,
+    effectiveColorScheme: effective,
     onChange: (doc) => {
       autosaver.schedule(doc);
       linter?.schedule(doc); // FR-035
@@ -264,6 +270,9 @@ function boot(): void {
     status: need('symbol-status'),
     notices,
   });
+
+  // FR-501 – FR-504 / FR-512: cycling color-mode control (after Symbols).
+  bindThemeControl(need<HTMLButtonElement>('btn-theme'), view, storage);
 
   // FR-010: Reset.
   need<HTMLButtonElement>('btn-reset').addEventListener('click', () => {

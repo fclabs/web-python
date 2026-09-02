@@ -79,3 +79,24 @@ export const LAYOUT_NARROW_HINT = 'Vertical layout needs a window at least 900 p
 
 /** FR-418: the preference write was rejected. */
 export const LAYOUT_SAVE_FAILED = "Layout preference won't be remembered";
+
+/** Mode table labels (FR-504): tooltip and accessible-name suffix. */
+export const THEME_LABELS = {
+  light: 'Light',
+  dark: 'Dark',
+  system: 'System',
+} as const;
+
+/**
+ * Mode table glyphs (FR-503): U+2600 sun, U+263D first quarter moon, Latin `S`.
+ */
+export const THEME_GLYPHS = {
+  light: '\u2600',
+  dark: '\u263D',
+  system: 'S',
+} as const;
+
+/** FR-504: accessible name `Color mode: <label>`. */
+export function formatThemeAccessibleName(label: string): string {
+  return `Color mode: ${label}`;
+}
