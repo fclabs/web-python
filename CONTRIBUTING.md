@@ -15,6 +15,8 @@ src/                       application code (TypeScript, no framework)
   stdin-stream.ts          the pure CPython stdin semantics
   lint/                    Ruff engine, diagnostics, markers, panel, format
   offline.ts               service-worker registration and status wiring
+  symbols.ts               the 29-row special-character set (spec-03)
+  symbol-pane.ts           the special-character pane: layout, keys, feedback
 scripts/                   build-time and test-time tooling
   precache.mjs             manifest + service-worker generation (shared)
   sw-template.js           the single service worker's source
@@ -62,12 +64,37 @@ servers for you and waits for them:
 | 4174 | `scripts/serve-plain.mjs` | the same build with **no** isolation headers, for VC-015 |
 | 4175 | `scripts/serve-deploy.mjs` | a private copy that can publish a second deployment, for VC-063 |
 
+Set `PW_PORT_BASE` to shift all three ports at once — needed when two checkouts
+of this repo (a git worktree and its main clone) run the suite at the same
+time, since Playwright reuses an existing server on the port and would
+otherwise silently test the other checkout's build.
+
+The preview server is only rebuilt when Playwright has to *start* it. After
+changing `src/`, run `npm run build` before re-running the suite, or a reused
+server will keep serving the previous build.
+
 ```bash
 npx playwright test                          # or: npm run test:e2e
 npx playwright test tests/e2e/stdin.spec.ts
 npx playwright test --grep "VC-030"
 npx playwright test --headed --debug
 ```
+
+spec-03's **VC-327** asks for the spec-01 suites in two configurations — with
+the special-character pane never opened, and with it open before each spec's
+first assertion. `PANE_OPEN=1` selects the second; `openPlayground()` in
+`tests/e2e/helpers.ts` is the only place that reads it, so no spec needs to
+know the pane exists:
+
+```bash
+npx playwright test                                    # pane never opened
+PANE_OPEN=1 npx playwright test \
+  --grep-invert "VC-3[0-9][0-9]|VC-050|VC-051|VC-052|VC-071|A-305"
+```
+
+The excluded criteria are spec-03's own, plus the four parent criteria it
+amends — all of which already run with the pane open in the first
+configuration.
 
 Service workers are **blocked** by default (`use.serviceWorkers: 'block'`) so a
 cache-first worker cannot mask the deliberately-404ed assets of VC-014 and

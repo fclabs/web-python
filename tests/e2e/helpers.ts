@@ -19,10 +19,22 @@ export const STARTER_PROGRAM =
 
 export const PROGRAM_KEY = 'pyplay.program.v1';
 
-/** Load the playground and wait for the editor to be mounted. */
+/**
+ * Load the playground and wait for the editor to be mounted.
+ *
+ * spec-03 VC-327 runs the spec-01 suites twice: once with the
+ * special-character pane present but never opened (the default), and once with
+ * it opened before each spec's first assertion. `PANE_OPEN=1` selects the
+ * second configuration, so no spec needs to know about the pane to be verified
+ * against it (BR-301).
+ */
 export async function openPlayground(page: Page): Promise<void> {
   await page.goto('/');
   await page.waitForSelector('.cm-content');
+  if (process.env.PANE_OPEN) {
+    await page.locator('#btn-symbols').click();
+    await page.waitForSelector('#symbol-pane .symbol');
+  }
 }
 
 /** The editor's current contents, reconstructed from the rendered lines. */

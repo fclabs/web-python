@@ -14,6 +14,7 @@ import {
   runProgram,
   setCaret,
   setProgram,
+  storedProgram,
   submitStdin,
   typeProgram,
   waitForLinter,
@@ -1081,4 +1082,62 @@ test('VC-317 (FR-310): copying while a read is pending injects nothing into stdi
 
   await submitStdin(page, 'a,b');
   await expect.poll(() => programStdout(page), { timeout: 30_000 }).toBe('a,b\n');
+});
+
+/* -------------------------------------------------------------------------
+   FR-312 / BR-304 — the pane persists nothing
+   ------------------------------------------------------------------------- */
+
+/** Everything spec-01's *Persisted state* table says the origin may hold. */
+async function storageSnapshot(page: Page): Promise<{
+  local: Record<string, string>;
+  session: Record<string, string>;
+  cookie: string;
+  databases: string[];
+}> {
+  return page.evaluate(async () => {
+    const dump = (store: Storage): Record<string, string> => {
+      const out: Record<string, string> = {};
+      for (let i = 0; i < store.length; i++) {
+        const key = store.key(i)!;
+        out[key] = store.getItem(key) ?? '';
+      }
+      return out;
+    };
+    const databases = (await indexedDB.databases()).map((db) => db.name ?? '').sort();
+    return {
+      local: dump(window.localStorage),
+      session: dump(window.sessionStorage),
+      cookie: document.cookie,
+      databases,
+    };
+  });
+}
+
+test('VC-320 (FR-312, BR-304): opening and copying persists nothing, and a reload closes the pane', async ({
+  page,
+}) => {
+  await openPlayground(page);
+
+  // The autosave key only exists once the visitor has edited, and VC-320 names
+  // it as the one key that may be there.
+  await typeProgram(page, 'print("hi")');
+  await expect.poll(() => storedProgram(page)).toBe('print("hi")');
+
+  const before = await storageSnapshot(page);
+  expect(Object.keys(before.local)).toEqual(['pyplay.program.v1']);
+
+  await openSymbolPane(page);
+  await symbolButton(page, '_').click();
+  await expect(page.locator('#symbol-status')).toHaveText('Copied _');
+  expect(await storageSnapshot(page)).toEqual(before);
+
+  await page.reload();
+  await page.waitForSelector('.cm-content');
+
+  // FR-312: the pane is closed again — its open state was never persisted.
+  await expect(page.locator('#symbol-pane')).toBeHidden();
+  await expect(page.locator('#btn-symbols')).toHaveAttribute('aria-expanded', 'false');
+  expect(await storageSnapshot(page)).toEqual(before);
+  expect(Object.keys((await storageSnapshot(page)).local)).toEqual(['pyplay.program.v1']);
 });

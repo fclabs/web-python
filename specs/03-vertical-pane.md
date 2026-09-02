@@ -4,7 +4,7 @@
 |---|---|
 | Version | 1.1.0 |
 | Last Updated | 2026-09-02 |
-| Status | Draft — revised after `/review-spec` |
+| Status | **SHIPPED** — implemented and verified 2026-09-02 (see *Verification record*) |
 | Owner | Federico Castañeda |
 | Parent spec | `specs/01-static-python-web-frozen.md` (SHIPPED) |
 | Source issue | [fclabs/web-python#1](https://github.com/fclabs/web-python/issues/1) — *Add special-character picker for Python symbols* |
@@ -376,6 +376,44 @@ None. All decisions are folded into the sections above.
    two-character entries (`//`, `**`, `==`, `!=`, `<=`, `>=`) and `...`, which
    are rendered as their literal characters and never as a ligature or the
    single code point U+2026.
+
+---
+
+## Verification record
+
+Implemented over four iterations against
+[`specs/03-vertical-pane-plan.md`](./03-vertical-pane-plan.md); every `FR`,
+`BR` and `NFR` above is discharged by the `VC` named beside it, and every one
+of those criteria is an automated test named after it.
+
+| Where | What it covers |
+|---|---|
+| `tests/unit/symbols.test.ts` | VC-306 (data half), VC-325 |
+| `tests/e2e/symbols.spec.ts` | VC-301 – VC-306, VC-307 – VC-321, VC-325, VC-328 – VC-333, A-305 |
+| `tests/e2e/presentation.spec.ts` | VC-322, and the amended parent VC-050, VC-051, VC-052, VC-071 |
+| `tests/e2e/perf.spec.ts` | VC-323, VC-326, against the recorded baseline build of `8df7fa5` |
+| `tests/e2e/matrix.spec.ts` | VC-324, opt-in via `MATRIX=1` |
+
+Implementation notes worth carrying forward:
+
+- **Wide layout.** `.app` becomes a CSS grid at ≥ 700 px *only while the pane
+  is open*, and the pane is placed by `grid-area`. A closed pane therefore
+  leaves spec-01's shipped layout exactly as it was, and the element never
+  moves in the document at either breakpoint (FR-317).
+- **Firefox.** `.symbol` sets `user-select: text`: Firefox refuses to select
+  content inside a `<button>` otherwise, which would have left FR-308's
+  fallback advising an action the visitor could not perform. Found by VC-324.
+- **NFR-305.** The measured delta against `8df7fa5` is **2.16 KiB gzipped**,
+  against a 4 KiB budget, with no added or removed asset file.
+- **VC-324 on Chromium.** `clipboard-write` is granted per-context in the
+  matrix spec; the pinned Chromium projects do not carry the default project's
+  permissions, and that is Playwright's model rather than the app's.
+
+Still outstanding, as *Final Verification* in the plan requires: the manual
+touch-device check of **A-303** — that a character copied from the pane pastes
+into the editor via an on-screen keyboard's paste affordance at a 375 px
+viewport. If it does not, *Deliberately excluded → Insert-at-caret* is the
+follow-up spec, not a patch to this one.
 
 ---
 

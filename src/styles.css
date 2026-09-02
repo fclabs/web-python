@@ -510,6 +510,11 @@ body {
   min-width: 32px;
   padding: 2px 4px;
   text-align: center;
+  /* FR-308: the fallback asks the visitor to "select the character and press
+     Ctrl/Cmd+C". Firefox refuses to select content inside a `<button>` unless
+     the element opts back in, which would leave the denial path advising an
+     impossible action there. */
+  user-select: text;
 }
 
 /* FR-307: the activated button while its 2 000 ms window lasts. The highlight

@@ -2,8 +2,9 @@
 
 A **static**, backend-free web page where a visitor writes a single-file Python
 program, runs it, watches `stdout`/`stderr` stream into a console, types input
-into the running program, copies the program to the clipboard, and gets inline
-Ruff lint diagnostics plus one-click PEP 8 formatting.
+into the running program, copies the program to the clipboard, picks Python
+punctuation out of a special-character pane, and gets inline Ruff lint
+diagnostics plus one-click PEP 8 formatting.
 
 Everything runs in the visitor's own browser:
 
@@ -14,6 +15,7 @@ Everything runs in the visitor's own browser:
 | Lint + format | `@astral-sh/ruff-wasm-web` 0.14.x, self-hosted, default rule selection |
 | Blocking `input()` | A `SharedArrayBuffer` + `Atomics.wait` channel between the page and the worker |
 | Offline + isolation | A **single** service worker that both injects COOP/COEP and precaches every asset the Run loop needs |
+| Special characters | A dismissible pane of 29 Python-relevant characters that copies one at a time to the clipboard, for keyboards where `[`, `]`, `{`, `}`, `\` and `|` are hard to reach |
 | Build | Vite → a directory of static files (`dist/`) deployable to any static host |
 
 There is **no server**. The site issues no request to any origin but its own,
@@ -22,6 +24,7 @@ editor, the Web Worker, and `localStorage` on this origin (`pyplay.program.v1`).
 
 - Specification: [`specs/01-static-python-web.md`](specs/01-static-python-web.md)
 - Implementation plan: [`specs/01-static-python-web-plan.md`](specs/01-static-python-web-plan.md)
+- Special-character pane: [`specs/03-vertical-pane.md`](specs/03-vertical-pane.md)
 - Deploying it: [`docs/deployment.md`](docs/deployment.md)
 - How it works inside: [`docs/architecture.md`](docs/architecture.md)
 - Working on it: [`CONTRIBUTING.md`](CONTRIBUTING.md)

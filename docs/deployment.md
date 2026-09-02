@@ -228,6 +228,25 @@ The banner sits in the normal document flow and overlays nothing.
 
 ---
 
+## 5b. The special-character pane changes nothing here
+
+Spec-03's special-character pane (FR-301 – FR-318) is main-thread UI compiled
+into the existing bundle. It adds **no** response header, **no** service-worker
+behaviour, **no** worker or worker-protocol change, **no** runtime asset and
+**no** request to any origin, and it persists nothing — the origin still holds
+exactly the one `localStorage` key and the one Cache Storage bucket listed
+above (BR-304, FR-312).
+
+The only thing a deployment sees is that the content hashes of the main JS
+chunk and the main CSS file change, as they do for any code change. `VC-326`
+asserts precisely that: the emitted file *set* is unchanged, every Pyodide and
+Ruff asset is byte-identical, and the precache manifest and generated `sw.js`
+differ only in those two hashed names, with the same URL count and the same
+`pyplay-assets-v<build>` cache-name scheme. Nothing in this document needs to
+change for it.
+
+---
+
 ## 6. Checklist
 
 - [ ] `dist/` uploaded whole, including `pyodide/` and `ruff/`.

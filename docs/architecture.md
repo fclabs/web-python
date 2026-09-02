@@ -309,6 +309,67 @@ the bottom re-pins it.
 
 ---
 
+## Special-character pane
+
+The pane of spec-03 (`src/symbol-pane.ts`, `src/symbols.ts`) is a
+**roving-tabindex toolbar**: 29 buttons, exactly one of which carries
+`tabindex="0"` at any moment, so `Tab` from the toolbar reaches the pane once
+and once only (BR-305). 29 separate tab stops between the toolbar and the
+editor would have made keyboard operation of the playground's core loop
+materially worse, which is why the arrow keys — not `Tab` — move within it.
+
+Its container is `role="toolbar"`, not `role="group"`, because that is the role
+that tells assistive technology this is a *composite widget whose arrow keys
+navigate*. `aria-orientation` follows the layout: `vertical` in the ≥ 700 px
+column, `horizontal` in the wrapping band below it. The breakpoint lives twice
+— `WIDE_LAYOUT_QUERY` in `symbol-pane.ts` and one `@media` block in
+`styles.css` — and the two must always be changed together.
+
+Focus movement is resolved against the grid the pane *currently renders*:
+visual rows are derived from `getBoundingClientRect().top` at keystroke time,
+so one implementation is correct at both breakpoints and at any zoom level,
+without duplicating the media query in JavaScript.
+
+### One owner of the feedback state
+
+FR-307 (`Copied V` for 2 000 ms), FR-308 (the denial notice) and FR-316 (a pane
+closed while a write is in flight) are only consistent with each other because
+a single method, `clearFeedback()`, is the sole writer of that state — it drops
+the status text, removes `data-state="copied"` and cancels the pending revert
+timer. Both paths call it *before* they write anything, and `close()` calls it
+too. That is what makes a second copy restart the window from zero, a denial
+after a recent success leave nothing behind, and a resolution that arrives
+after the pane closed produce no feedback at all. Every activation also carries
+a monotonic id, so an overtaken write resolves into nothing rather than into
+stale text.
+
+### It never touches the editor
+
+The pane copies to the clipboard and does nothing else (BR-301). It holds no
+reference to the `EditorView`, so it can produce no CodeMirror transaction —
+and therefore no undo entry, no autosave schedule (FR-002) and no lint schedule
+(FR-035). That is what keeps this feature incapable of regressing spec-01's
+shipped behaviour, and it is why insert-at-caret was left out: it would put the
+pane inside exactly those paths. `VC-307` checks the buffer, the caret offset
+and the undo history across all 29 copies.
+
+`.symbol` sets `user-select: text` because Firefox refuses to select content
+inside a `<button>` otherwise, which would leave FR-308's fallback — "select
+the character and press Ctrl/Cmd+C" — advising an impossible action there.
+
+### Changing the character set is gated
+
+The 29 entries are a compile-time constant transcribed from spec-03's
+*Character set* table, which is normative. **BR-302** gates any change to it:
+every entry must be a Python 3 token or a punctuation character that appears in
+Python 3 source, and adding one requires naming the construct that uses it.
+Characters that merely *look* like Python operators — `≤`, `≠`, `×`, `÷`, the
+typographic quotes, full-width parentheses — are forbidden, because a student
+who pastes `“` gets `SyntaxError: invalid character '“' (U+201C)` with no idea
+why. `VC-325` greps the compiled set for exactly those code points.
+
+---
+
 ## Storage surface
 
 The origin holds exactly two things, and nothing else — no cookies, no
