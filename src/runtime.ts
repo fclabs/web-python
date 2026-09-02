@@ -2,9 +2,11 @@
 // not through `new Worker(new URL(…))`, so a replacement worker can be spawned
 // from a *distinct* URL — see `spawn()`.
 import pyodideWorkerUrl from './worker/pyodide.worker.ts?worker&url';
+import { createFsBuffer, stopFsMutations, takeFsMutation, type FsMutation } from './fs-channel';
 import { STDIN_BUFFER_BYTES, isCurrentRun, type FromWorker, type ToWorker } from './protocol';
 import { writeSubmission } from './stdin-channel';
 import type { StdinMode } from './stdin-stream';
+import type { WorkspaceFile } from './workspace';
 
 /** Callbacks the page installs on the runtime. */
 export interface RuntimeHandlers {
@@ -13,6 +15,8 @@ export interface RuntimeHandlers {
   onInitError(message: string): void;
   onStdout(text: string): void;
   onStderr(text: string): void;
+  onFsMutation(mutation: FsMutation): void;
+  onWorkspaceSnapshot(files: WorkspaceFile[]): void;
   onDone(durationMs: number): void;
   onError(traceback: string): void;
   /** FR-029: the program is suspended on a read and needs a line or EOF. */
@@ -52,6 +56,7 @@ export class PyodideRuntime {
   private worker: Worker | null = null;
   /** The stdin channel of the worker currently in charge (*stdin channel*). */
   private stdinBuffer: SharedArrayBuffer | null = null;
+  private fsBuffer: SharedArrayBuffer | null = null;
   private nextRunId = 1;
   private currentRunId: number | null = null;
   private state: RuntimeState = 'loading';
@@ -110,8 +115,10 @@ export class PyodideRuntime {
     // A brand-new channel per worker: nothing a killed run left behind can
     // be read by its replacement (FR-064).
     const stdinBuffer = new SharedArrayBuffer(STDIN_BUFFER_BYTES);
+    const fsBuffer = createFsBuffer();
     this.stdinBuffer = stdinBuffer;
-    const init: ToWorker = { type: 'init', stdinBuffer };
+    this.fsBuffer = fsBuffer;
+    const init: ToWorker = { type: 'init', stdinBuffer, fsBuffer };
     worker.postMessage(init);
   }
 
@@ -122,6 +129,12 @@ export class PyodideRuntime {
    */
   stop(): void {
     if (!this.isRunning || !this.worker) return;
+    // A completed Python file operation waits for this page to mirror the
+    // mailbox. Drain it before killing the worker so a Stop keeps that write.
+    if (this.fsBuffer) {
+      stopFsMutations(this.fsBuffer);
+      this.drainFsMutation();
+    }
     this.worker.terminate();
     this.worker = null;
     // Nothing the dead worker may still have queued belongs to any run.
@@ -152,11 +165,11 @@ export class PyodideRuntime {
    * snapshots at the moment Run was activated. Returns the allocated `runId`,
    * or null when no run could be started.
    */
-  run(code: string): number | null {
+  run(files: WorkspaceFile[]): number | null {
     if (this.state !== 'ready' || this.isRunning || !this.worker) return null;
     const runId = this.nextRunId++;
     this.currentRunId = runId;
-    const message: ToWorker = { type: 'run', code, runId };
+    const message: ToWorker = { type: 'run', files, runId };
     this.worker.postMessage(message);
     this.handlers.onRunStateChange(true);
     return runId;
@@ -203,6 +216,12 @@ export class PyodideRuntime {
       case 'stderr':
         this.handlers.onStderr(message.text);
         break;
+      case 'fsMutationAvailable':
+        this.drainFsMutation();
+        break;
+      case 'workspaceSnapshot':
+        this.handlers.onWorkspaceSnapshot(message.files);
+        break;
       case 'stdinRequest':
         this.handlers.onStdinRequest(message.prompt, message.mode);
         break;
@@ -238,5 +257,11 @@ export class PyodideRuntime {
     if (this.progressTimer === null) return;
     clearInterval(this.progressTimer);
     this.progressTimer = null;
+  }
+
+  private drainFsMutation(): void {
+    if (!this.fsBuffer) return;
+    const record = takeFsMutation(this.fsBuffer);
+    if (record !== null) this.handlers.onFsMutation(record.mutation);
   }
 }

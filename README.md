@@ -1,7 +1,7 @@
 # Python Playground (`pyplay`)
 
-A **static**, backend-free web page where a visitor writes a single-file Python
-program, runs it, watches `stdout`/`stderr` stream into a console, types input
+A **static**, backend-free web page where a visitor works in a small local Python
+workspace, runs `main.py`, watches `stdout`/`stderr` stream into a console, types input
 into the running program, copies the program to the clipboard, picks Python
 punctuation out of a special-character pane, and gets inline Ruff lint
 diagnostics plus one-click PEP 8 formatting.
@@ -18,9 +18,12 @@ Everything runs in the visitor's own browser:
 | Special characters | A dismissible pane of 29 Python-relevant characters that copies one at a time to the clipboard, for keyboards where `[`, `]`, `{`, `}`, `\` and `|` are hard to reach |
 | Build | Vite → a directory of static files (`dist/`) deployable to any static host |
 
-There is **no server**. The site issues no request to any origin but its own,
-and the visitor's source code is never transmitted anywhere — it lives in the
-editor, the Web Worker, and `localStorage` on this origin (`pyplay.program.v1`).
+There is **no server** and no cloud sync. The site issues no request to any
+origin but its own, and the visitor's workspace is never transmitted anywhere.
+It lives in the editor, the Web Worker, and `localStorage` on this origin
+(`pyplay.workspace.v1`). The workspace starts with `main.py`, permits a small
+flat set of files (including importable `.py` modules), accepts Python-created
+text or binary files, and is limited to 2 MB for classroom exercises.
 
 - Specification: [`specs/01-static-python-web.md`](specs/01-static-python-web.md)
 - Implementation plan: [`specs/01-static-python-web-plan.md`](specs/01-static-python-web-plan.md)

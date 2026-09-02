@@ -1,5 +1,6 @@
 import { STDIN_HEADER_BYTES } from './stdin-channel';
 import type { StdinMode } from './stdin-stream';
+import type { WorkspaceFile } from './workspace';
 
 /**
  * Main thread <-> worker message protocol (spec: *Data & Interfaces*).
@@ -11,8 +12,8 @@ import type { StdinMode } from './stdin-stream';
 
 /** Main -> worker. */
 export type ToWorker =
-  | { type: 'init'; stdinBuffer: SharedArrayBuffer }
-  | { type: 'run'; code: string; runId: number };
+  | { type: 'init'; stdinBuffer: SharedArrayBuffer; fsBuffer: SharedArrayBuffer }
+  | { type: 'run'; files: WorkspaceFile[]; runId: number };
 
 /** Worker -> main. */
 export type FromWorker =
@@ -20,6 +21,8 @@ export type FromWorker =
   | { type: 'initError'; message: string }
   | { type: 'stdout'; runId: number; text: string }
   | { type: 'stderr'; runId: number; text: string }
+  | { type: 'fsMutationAvailable'; runId: number; sequence: number }
+  | { type: 'workspaceSnapshot'; runId: number; files: WorkspaceFile[] }
   | { type: 'stdinRequest'; runId: number; prompt: string; mode: StdinMode }
   | { type: 'done'; runId: number; durationMs: number }
   | { type: 'error'; runId: number; traceback: string };

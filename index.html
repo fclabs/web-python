@@ -14,6 +14,7 @@
         <button id="btn-copy" class="btn" type="button">Copy code</button>
         <button id="btn-format" class="btn" type="button" tabindex="0" aria-disabled="true">Format</button>
         <button id="btn-reset" class="btn" type="button">Reset</button>
+        <button id="btn-files" class="btn" type="button" aria-expanded="false" aria-controls="file-pane">Files</button>
         <!-- FR-301: last control in the toolbar. It has no disabled state, so
              unlike Run/Stop/Format it is never routed through `setInert()`. -->
         <button
@@ -45,11 +46,36 @@
         <p id="symbol-status" class="symbol-status" role="status"></p>
       </section>
 
+      <section id="file-pane" class="panel panel--files" aria-label="Files" hidden>
+        <div class="files-heading">
+          <h2 class="panel-title">Files</h2>
+          <div class="files-actions">
+            <button id="btn-file-new" class="btn btn--small" type="button">New</button>
+            <button id="btn-file-rename" class="btn btn--small" type="button" aria-disabled="true">Rename</button>
+            <button id="btn-file-delete" class="btn btn--small" type="button" aria-disabled="true">Delete</button>
+          </div>
+        </div>
+        <input id="file-name-input" class="file-name-input" type="text" hidden />
+        <ul id="file-tree" class="file-tree" role="tree" aria-label="Workspace files"></ul>
+        <div
+          id="file-resizer"
+          class="file-resizer"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize files panel"
+          aria-valuemin="160"
+          aria-valuemax="480"
+          aria-valuenow="260"
+          tabindex="0"
+        ></div>
+      </section>
+
       <section class="panel panel--console" aria-label="Console">
         <div id="console" class="console"></div>
       </section>
 
       <section class="panel panel--editor" aria-label="Editor">
+        <h2 class="editor-heading">Editing: <span id="active-file-name">main.py</span></h2>
         <div id="editor" class="editor"></div>
       </section>
 

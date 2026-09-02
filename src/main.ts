@@ -3,7 +3,9 @@ import { Autosaver } from './autosave';
 import { writeClipboard } from './clipboard';
 import { ConsoleView } from './console';
 import { isInert, setInert } from './controls';
-import { createEditor, revealPosition, selectAll, setDoc } from './editor';
+import { createEditor, revealPosition, selectAll, setDoc, setEditorReadOnly } from './editor';
+import { FilePane } from './file-pane';
+import type { FsMutation } from './fs-channel';
 import {
   NOT_ISOLATED_BANNER,
   PROGRAM_ERRORED,
@@ -31,13 +33,21 @@ import { setupOffline } from './offline';
 import { STDIN_MAX_LINE } from './protocol';
 import { PyodideRuntime } from './runtime';
 import type { StdinMode } from './stdin-stream';
-import { STARTER_PROGRAM } from './starter';
 import { SymbolPane } from './symbol-pane';
-import { getLocalStorage, loadProgram, saveProgram } from './storage';
+import {
+  decodeText,
+  encodeText,
+  getWorkspaceStorage,
+  isText,
+  loadWorkspace,
+  MAIN_FILE,
+  saveWorkspace,
+  type WorkspaceFile,
+} from './workspace';
 
-const AUTOSAVE_UNAVAILABLE = 'Autosave unavailable — your code will not survive a reload';
+const AUTOSAVE_UNAVAILABLE = 'Autosave unavailable — your workspace will not survive a reload';
 const COPY_FAILED = "Couldn't copy — select the code and press Ctrl/Cmd+C";
-const RESET_CONFIRM = 'Discard your code?';
+const RESET_CONFIRM = 'Delete all files and reset the workspace?';
 /** FR-066 */
 const STDIN_TOO_LONG = `Input line too long (max ${STDIN_MAX_LINE} characters)`;
 
@@ -49,22 +59,40 @@ function need<T extends HTMLElement>(id: string): T {
 
 function boot(): void {
   const notices = new Notices(need('notices'));
-  const storage = getLocalStorage();
+  const storage = getWorkspaceStorage();
+  const workspace = loadWorkspace(storage);
+  const activeFileName = need('active-file-name');
+  let suppressEditorChange = false;
 
-  // FR-003 / FR-004
-  const initialDoc = loadProgram(storage);
+  const activeText = (): string => {
+    const name = workspace.activeFile;
+    if (name === null) return '';
+    return decodeText(workspace.get(name) ?? new Uint8Array()) ?? '';
+  };
 
   const autosaver = new Autosaver(
-    (code) => saveProgram(storage, code),
+    () => saveWorkspace(storage, workspace),
     () => notices.show(AUTOSAVE_UNAVAILABLE),
   );
 
   const view = createEditor({
     parent: need('editor'),
-    initialDoc,
+    initialDoc: activeText(),
     onChange: (doc) => {
-      autosaver.schedule(doc);
-      linter?.schedule(doc); // FR-035
+      if (suppressEditorChange) return;
+      const name = workspace.activeFile;
+      if (name === null) return;
+      if (!isText(workspace.get(name) ?? new Uint8Array())) return;
+      const error = workspace.put(name, encodeText(doc));
+      if (error !== null) {
+        notices.show(error);
+        suppressEditorChange = true;
+        setDoc(view, activeText());
+        suppressEditorChange = false;
+        return;
+      }
+      autosaver.schedule('workspace');
+      if (name.endsWith('.py')) linter?.schedule(doc); // FR-035
     },
     onRun: () => startRun(), // FR-008
     onFormat: () => runFormat(), // FR-009
@@ -111,14 +139,92 @@ function boot(): void {
     notices,
   });
 
-  // FR-010: Reset.
-  need<HTMLButtonElement>('btn-reset').addEventListener('click', () => {
-    if (!window.confirm(RESET_CONFIRM)) return;
-    setDoc(view, STARTER_PROGRAM);
-    autosaver.schedule(STARTER_PROGRAM);
-    autosaver.flush();
-    view.focus();
+  const filePane = new FilePane({
+    toggle: need<HTMLButtonElement>('btn-files'),
+    pane: need('file-pane'),
+    list: need('file-tree'),
+    resizer: need('file-resizer'),
+    nameInput: need<HTMLInputElement>('file-name-input'),
+    newButton: need<HTMLButtonElement>('btn-file-new'),
+    renameButton: need<HTMLButtonElement>('btn-file-rename'),
+    deleteButton: need<HTMLButtonElement>('btn-file-delete'),
+    onSelect(name) {
+      workspace.select(name);
+      openActiveFile();
+      autosaver.schedule('workspace');
+    },
+    onCreate(name) {
+      const error = workspace.put(name, new Uint8Array());
+      if (error !== null) return notices.show(error);
+      workspace.select(name);
+      autosaver.schedule('workspace');
+      autosaver.flush();
+      openActiveFile();
+    },
+    onRename(from, to) {
+      const error = workspace.rename(from, to);
+      if (error !== null) return notices.show(error);
+      autosaver.schedule('workspace');
+      autosaver.flush();
+      openActiveFile();
+    },
+    onDelete(name) {
+      workspace.remove(name);
+      autosaver.schedule('workspace');
+      autosaver.flush();
+      openActiveFile();
+    },
   });
+
+  function openActiveFile(): void {
+    const name = workspace.activeFile;
+    const bytes = name === null ? null : workspace.get(name);
+    const text = bytes === null ? '' : decodeText(bytes);
+    suppressEditorChange = true;
+    setDoc(view, text ?? `Binary file: ${name ?? ''} (${bytes?.length ?? 0} bytes)`);
+    suppressEditorChange = false;
+    setEditorReadOnly(view, text === null);
+    activeFileName.textContent = name ?? 'No file selected';
+    filePane.render(workspace);
+    if (name?.endsWith('.py') && text !== null) linter?.lintNow(text);
+    else {
+      applyDiagnostics(view, []);
+      panel?.render([]);
+    }
+  }
+
+  function applyFsMutation(mutation: FsMutation): void {
+    let error: string | null = null;
+    switch (mutation.kind) {
+      case 'replace':
+        error = workspace.put(mutation.name, mutation.data);
+        break;
+      case 'write': {
+        const previous = workspace.get(mutation.name) ?? new Uint8Array();
+        const next = new Uint8Array(Math.max(previous.length, mutation.offset + mutation.data.length));
+        next.set(previous);
+        next.set(mutation.data, mutation.offset);
+        error = workspace.put(mutation.name, next);
+        break;
+      }
+      case 'truncate': {
+        const previous = workspace.get(mutation.name) ?? new Uint8Array();
+        const next = new Uint8Array(mutation.size);
+        next.set(previous.subarray(0, mutation.size));
+        error = workspace.put(mutation.name, next);
+        break;
+      }
+      case 'rename':
+        error = workspace.rename(mutation.name, mutation.to);
+        break;
+      case 'delete':
+        workspace.remove(mutation.name);
+        break;
+    }
+    if (error !== null) notices.show(error);
+    autosaver.schedule('workspace');
+    openActiveFile(); // Python deliberately wins an overlapping editor change.
+  }
 
   // --- Lint and format (FR-035 – FR-046, FR-058, FR-059, FR-067) ---------
   const formatBtn = need<HTMLButtonElement>('btn-format');
@@ -135,6 +241,8 @@ function boot(): void {
   let engine: RuffEngine | null = null;
   let linter: Linter | null = null;
 
+  openActiveFile();
+
   /**
    * FR-043 – FR-045, FR-067: reformat the editor. It never consults the
    * runtime, so a program already running is untouched — it executes the
@@ -143,7 +251,9 @@ function boot(): void {
   function runFormat(): void {
     // FR-058: inert by pointer, by keyboard and via the FR-009 shortcut when
     // the engine never loaded.
-    if (engine === null || isInert(formatBtn)) return;
+    const active = workspace.activeFile;
+    const bytes = active === null ? null : workspace.get(active);
+    if (engine === null || isInert(formatBtn) || !active?.endsWith('.py') || bytes === null || !isText(bytes)) return;
     if (formatDocument(view, engine) === 'syntax-error') notices.show(CANNOT_FORMAT);
   }
 
@@ -159,7 +269,8 @@ function boot(): void {
         panel.render(diagnostics); // FR-038 / FR-040
         applyDiagnostics(view, diagnostics); // FR-036 / FR-037
       });
-      linter.lintNow(view.state.doc.toString());
+      if (workspace.activeFile?.endsWith('.py')) linter.lintNow(view.state.doc.toString());
+      filePane.render(workspace);
     },
     () => {
       // FR-046 / FR-058 / BR-009: the linter alone degrades — editing, Run,
@@ -208,7 +319,9 @@ function boot(): void {
    * Stop enabled if and only if a program is currently running.
    */
   function syncControls(): void {
-    setInert(runBtn, !ready || running || restarting);
+    const main = workspace.get(MAIN_FILE);
+    const runnableMain = main !== null && isText(main);
+    setInert(runBtn, !ready || running || restarting || !runnableMain);
     setInert(stopBtn, !running);
   }
 
@@ -280,10 +393,10 @@ function boot(): void {
 
   function startRun(): void {
     if (isInert(runBtn)) return;
-    // BR-006: the executed bytes are the buffer as it stands right now.
-    const code = view.state.doc.toString();
+    // BR-006: the worker receives an immutable whole-workspace snapshot.
+    autosaver.flush();
     stdinIdle();
-    if (runtime.run(code) === null) return;
+    if (runtime.run(workspace.snapshot().files) === null) return;
     consoleView.meta(formatRunSeparator(new Date())); // FR-018
     syncControls();
   }
@@ -324,6 +437,17 @@ function boot(): void {
       stdinIdle();
       consoleView.stderr(text); // FR-020
     },
+    onFsMutation(mutation) {
+      applyFsMutation(mutation);
+      syncControls();
+    },
+    onWorkspaceSnapshot(files: WorkspaceFile[]) {
+      const error = workspace.replaceFiles(files);
+      if (error !== null) notices.show(error);
+      autosaver.schedule('workspace');
+      openActiveFile();
+      syncControls();
+    },
     onStdinRequest(prompt, mode) {
       // FR-030: written exactly once, from the message, before the field is
       // enabled — the worker's hook keeps it out of the stdout stream.
@@ -331,11 +455,13 @@ function boot(): void {
       stdinPending(mode); // FR-029
     },
     onDone(durationMs) {
+      autosaver.flush();
       stdinIdle();
       consoleView.endRun(); // FR-056: settle any half-truncated line first.
       consoleView.meta(formatFinished(durationMs)); // FR-022
     },
     onError(traceback) {
+      autosaver.flush();
       // FR-021: the complete CPython traceback, then the notice.
       stdinIdle();
       consoleView.endRun(); // FR-056
@@ -353,6 +479,7 @@ function boot(): void {
       restarting = true;
       statusBar.textContent = STATUS_RESTARTING; // FR-065
       consoleView.meta(PROGRAM_STOPPED);
+      autosaver.flush();
       syncControls();
     },
     onRecovered() {
@@ -369,6 +496,17 @@ function boot(): void {
   stopBtn.addEventListener('click', () => {
     if (isInert(stopBtn)) return;
     runtime.stop();
+  });
+
+  need<HTMLButtonElement>('btn-reset').addEventListener('click', () => {
+    if (!window.confirm(RESET_CONFIRM)) return;
+    if (runtime.isRunning) runtime.stop();
+    workspace.reset();
+    autosaver.schedule('workspace');
+    autosaver.flush();
+    openActiveFile();
+    syncControls();
+    view.focus();
   });
 
   // --- Offline precache and cross-origin isolation (FR-051 – FR-053) -----

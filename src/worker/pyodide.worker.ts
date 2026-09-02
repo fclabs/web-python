@@ -1,7 +1,9 @@
 /// <reference lib="webworker" />
 import { waitForSubmission } from '../stdin-channel';
+import { publishFsMutation, type FsMutation } from '../fs-channel';
 import { StdinStream, type StdinMode } from '../stdin-stream';
 import type { FromWorker, ToWorker } from '../protocol';
+import { MAIN_FILE, WORKSPACE_MAX_BYTES, type WorkspaceFile } from '../workspace';
 
 /**
  * The Pyodide worker (BR-003: the visitor's program never runs on the main
@@ -33,6 +35,34 @@ interface PyodideAPI {
   setStdout(options: StreamOptions): void;
   setStderr(options: StreamOptions): void;
   globals: { get(name: string): unknown; set(name: string, value: unknown): void };
+  FS: EmscriptenFS;
+}
+
+interface EmscriptenFS {
+  cwd(): string;
+  chdir(path: string): void;
+  mkdir(path: string): void;
+  mkdirTree(path: string): void;
+  readdir(path: string): string[];
+  readFile(path: string, options?: { encoding?: 'utf8' | 'binary' }): string | Uint8Array;
+  writeFile(path: string, data: Uint8Array, options?: { encoding?: 'binary' }): void;
+  unlink(path: string): void;
+  rename(oldPath: string, newPath: string): void;
+  rmdir(path: string): void;
+  stat(path: string): { size: number; mode: number };
+  isFile(mode: number): boolean;
+  getPath(node: unknown): string;
+  open: (...args: unknown[]) => { node: unknown; position: number };
+  write: (...args: unknown[]) => number;
+  truncate: (...args: unknown[]) => void;
+  ftruncate: (...args: unknown[]) => void;
+  ErrnoError: new (errno: number) => Error;
+  trackingDelegate: {
+    onWriteToFile?(path: string, bytesWritten: number): void;
+    onCloseFile?(path: string): void;
+    onDeletePath?(path: string): void;
+    onMovePath?(oldPath: string, newPath: string): void;
+  };
 }
 
 interface StreamOptions {
@@ -64,6 +94,7 @@ const PYODIDE_BASE = new URL('/pyodide/', self.location.href).href;
  */
 const RUNNER_SOURCE = `
 import builtins as _pyplay_builtins
+import os as _pyplay_os
 import sys as _pyplay_sys
 import traceback as _pyplay_traceback
 import types as _pyplay_types
@@ -166,16 +197,26 @@ def _pyplay_input(prompt=""):
     return line[:-1] if line.endswith("\\n") else line
 
 
-def _pyplay_run(code):
+def _pyplay_run(code, filename):
+    workspace = "/workspace"
+    _pyplay_sys.dont_write_bytecode = True
+    for key, value in list(_pyplay_sys.modules.items()):
+        source = getattr(value, "__file__", "")
+        if isinstance(source, str) and source.startswith(workspace + "/"):
+            del _pyplay_sys.modules[key]
+    _pyplay_sys.path[:] = [path for path in _pyplay_sys.path if path != workspace]
+    _pyplay_sys.path.insert(0, workspace)
+    _pyplay_os.chdir(workspace)
     module = _pyplay_types.ModuleType("__main__")
     module.__dict__["__builtins__"] = _pyplay_builtins
     module.__dict__["__name__"] = "__main__"
     module.__dict__["__doc__"] = None
+    module.__dict__["__file__"] = filename
     _pyplay_sys.modules["__main__"] = module
     _pyplay_sys.stdin = _PyplayStdin()
     _pyplay_builtins.input = _pyplay_input
     try:
-        exec(compile(code, "<program>", "exec"), module.__dict__)
+        exec(compile(code, filename, "exec"), module.__dict__)
     except SystemExit as exc:
         if exc.code not in (None, 0):
             return "".join(_pyplay_traceback.format_exception_only(type(exc), exc))
@@ -196,16 +237,132 @@ def _pyplay_run(code):
 _pyplay_python_version = ".".join(str(part) for part in _pyplay_sys.version_info[:3])
 `;
 
-let runner: ((code: string) => string) | null = null;
+const WORKSPACE_ROOT = '/workspace';
+
+let runner: ((code: string, filename: string) => string) | null = null;
 let currentRunId: number | null = null;
 let booted = false;
 
 /** The stdin channel adopted at `init` (*Data & Interfaces*). */
 let stdinBuffer: SharedArrayBuffer | null = null;
+let fsBuffer: SharedArrayBuffer | null = null;
+let filesystem: EmscriptenFS | null = null;
+let trackWorkspace = false;
+let fsSequence = 0;
 
 const post = (message: FromWorker): void => {
   (self as unknown as DedicatedWorkerGlobalScope).postMessage(message);
 };
+
+function absolutePath(path: string, fs: EmscriptenFS): string {
+  if (path.startsWith('/')) return path;
+  return `${fs.cwd().replace(/\/$/, '')}/${path}`;
+}
+
+function workspaceName(path: string, fs: EmscriptenFS): string | null {
+  const absolute = absolutePath(path, fs);
+  if (!absolute.startsWith(`${WORKSPACE_ROOT}/`)) return null;
+  const name = absolute.slice(WORKSPACE_ROOT.length + 1);
+  return name.includes('/') || name === '' ? null : name;
+}
+
+function isInsideWorkspace(path: string, fs: EmscriptenFS): boolean {
+  const absolute = absolutePath(path, fs);
+  return absolute === WORKSPACE_ROOT || absolute.startsWith(`${WORKSPACE_ROOT}/`);
+}
+
+function fsError(fs: EmscriptenFS, code: 'ENOSPC' | 'ENOTSUP'): Error {
+  // Emscripten exposes ErrnoError but not its errno map as a public API.
+  return new fs.ErrnoError(code === 'ENOSPC' ? 51 : 58);
+}
+
+function rootFiles(fs: EmscriptenFS): WorkspaceFile[] {
+  return fs.readdir(WORKSPACE_ROOT)
+    .filter((name) => name !== '.' && name !== '..')
+    .flatMap((name) => {
+      const path = `${WORKSPACE_ROOT}/${name}`;
+      try {
+        if (!fs.isFile(fs.stat(path).mode)) return [];
+        const bytes = fs.readFile(path, { encoding: 'binary' }) as Uint8Array;
+        return [{ name, bytes: new Uint8Array(bytes) }];
+      } catch {
+        return [];
+      }
+    });
+}
+
+function workspaceBytes(fs: EmscriptenFS): number {
+  return rootFiles(fs).reduce((total, file) => total + file.bytes.length, 0);
+}
+
+function publishWorkspaceMutation(mutation: FsMutation): void {
+  if (!trackWorkspace || fsBuffer === null || currentRunId === null) return;
+  const sequence = ++fsSequence;
+  publishFsMutation(fsBuffer, mutation, sequence, () => {
+    if (currentRunId !== null) post({ type: 'fsMutationAvailable', runId: currentRunId, sequence });
+  });
+}
+
+/** Mirror completed Emscripten file operations without changing `open()` itself. */
+function installWorkspaceTracking(fs: EmscriptenFS): void {
+  let mirroring = false;
+  const publishFile = (path: string): void => {
+    const name = workspaceName(path, fs);
+    if (!trackWorkspace || mirroring || name === null) return;
+    mirroring = true;
+    try {
+      const data = new Uint8Array(fs.readFile(`${WORKSPACE_ROOT}/${name}`, { encoding: 'binary' }) as Uint8Array);
+      if (workspaceBytes(fs) > WORKSPACE_MAX_BYTES) throw fsError(fs, 'ENOSPC');
+      publishWorkspaceMutation({ kind: 'replace', name, data });
+    } catch {
+      // A deletion may win a delayed close/write callback; it has its own event.
+    } finally {
+      mirroring = false;
+    }
+  };
+
+  fs.trackingDelegate = {
+    onWriteToFile: (path) => publishFile(path),
+    onCloseFile: (path) => publishFile(path),
+    onDeletePath: (path) => {
+      const name = workspaceName(path, fs);
+      if (trackWorkspace && name !== null) publishWorkspaceMutation({ kind: 'delete', name });
+    },
+    onMovePath: (from, to) => {
+      const oldName = workspaceName(from, fs);
+      const newName = workspaceName(to, fs);
+      if (trackWorkspace && oldName !== null && newName !== null) {
+        publishWorkspaceMutation({ kind: 'rename', name: oldName, to: newName });
+      }
+    },
+  };
+
+  const originalMkdir = fs.mkdir.bind(fs);
+  fs.mkdir = (path: string) => {
+    if (trackWorkspace && isInsideWorkspace(path, fs)) throw fsError(fs, 'ENOTSUP');
+    originalMkdir(path);
+  };
+}
+
+function hydrateWorkspace(fs: EmscriptenFS, files: WorkspaceFile[]): string | null {
+  trackWorkspace = false;
+  try {
+    try { fs.mkdir(WORKSPACE_ROOT); } catch { /* already mounted */ }
+    for (const name of fs.readdir(WORKSPACE_ROOT)) {
+      if (name !== '.' && name !== '..') fs.unlink(`${WORKSPACE_ROOT}/${name}`);
+    }
+    let total = 0;
+    for (const file of files) {
+      if (file.name.includes('/') || file.name.includes('\\') || file.name.length === 0) return 'Invalid workspace file name.';
+      total += file.bytes.length;
+      if (total > WORKSPACE_MAX_BYTES) return 'Workspace is too large (max 2 MB).';
+      fs.writeFile(`${WORKSPACE_ROOT}/${file.name}`, file.bytes, { encoding: 'binary' });
+    }
+    return null;
+  } finally {
+    trackWorkspace = true;
+  }
+}
 
 /**
  * NFR-009: a program printing flat out writes far more often than any main
@@ -277,6 +434,8 @@ async function boot(): Promise<void> {
   try {
     await loadPyodideLoader(`${PYODIDE_BASE}pyodide.js`);
     const pyodide = await loadPyodide({ indexURL: PYODIDE_BASE });
+    filesystem = pyodide.FS;
+    installWorkspaceTracking(filesystem);
     pyodide.setStdout(streamOptions('stdout'));
     pyodide.setStderr(streamOptions('stderr'));
     // The Python shim reaches the stream through these two entry points.
@@ -285,7 +444,7 @@ async function boot(): Promise<void> {
     );
     pyodide.globals.set('_pyplay_js_read', (size: number) => stdin.read(size));
     pyodide.runPython(RUNNER_SOURCE);
-    runner = pyodide.globals.get('_pyplay_run') as (code: string) => string;
+    runner = pyodide.globals.get('_pyplay_run') as (code: string, filename: string) => string;
     const pythonVersion = String(pyodide.globals.get('_pyplay_python_version'));
     post({ type: 'ready', pythonVersion });
   } catch (error) {
@@ -299,12 +458,40 @@ function describe(error: unknown): string {
 }
 
 /** FR-016 / FR-021 / FR-022: one whole-program run, start to finish. */
-function run(code: string, runId: number): void {
-  if (!runner) {
+function run(files: WorkspaceFile[], runId: number): void {
+  if (!runner || !filesystem) {
     post({ type: 'error', runId, traceback: 'The Python runtime is not ready.' });
     return;
   }
   currentRunId = runId;
+  fsSequence = 0;
+  const hydrateError = hydrateWorkspace(filesystem, files);
+  if (hydrateError !== null) {
+    post({ type: 'error', runId, traceback: hydrateError });
+    currentRunId = null;
+    return;
+  }
+  let main: string | Uint8Array;
+  try {
+    main = filesystem.readFile(`${WORKSPACE_ROOT}/${MAIN_FILE}`, { encoding: 'binary' });
+  } catch {
+    post({ type: 'error', runId, traceback: 'Create a UTF-8 main.py before running.' });
+    currentRunId = null;
+    return;
+  }
+  if (!(main instanceof Uint8Array)) {
+    post({ type: 'error', runId, traceback: 'main.py must be a UTF-8 text file.' });
+    currentRunId = null;
+    return;
+  }
+  let code: string;
+  try {
+    code = new TextDecoder('utf-8', { fatal: true }).decode(main);
+  } catch {
+    post({ type: 'error', runId, traceback: 'main.py must be a UTF-8 text file.' });
+    currentRunId = null;
+    return;
+  }
   // BR-004: neither buffered characters nor a latched EOF survive a run.
   stdin.reset();
   pendingType = null;
@@ -313,13 +500,14 @@ function run(code: string, runId: number): void {
   const startedAt = performance.now();
   let traceback: string;
   try {
-    traceback = runner(code);
+    traceback = runner(code, `${WORKSPACE_ROOT}/${MAIN_FILE}`);
   } catch (error) {
     traceback = describe(error);
   }
   const durationMs = performance.now() - startedAt;
   // The run's last words reach the console before its termination notice.
   flushOutput();
+  post({ type: 'workspaceSnapshot', runId, files: rootFiles(filesystem) });
   if (traceback === '') {
     post({ type: 'done', runId, durationMs });
   } else {
@@ -334,8 +522,9 @@ self.addEventListener('message', (event: MessageEvent<ToWorker>) => {
     if (booted) return;
     booted = true;
     stdinBuffer = message.stdinBuffer;
+    fsBuffer = message.fsBuffer;
     void boot();
     return;
   }
-  if (message.type === 'run') run(message.code, message.runId);
+  if (message.type === 'run') run(message.files, message.runId);
 });
