@@ -50,3 +50,14 @@ export const STATUS_RESTARTING = 'Restarting Python…';
 
 /** FR-053: a newer deployment's worker has installed and is waiting. */
 export const UPDATE_AVAILABLE = 'A new version is available — reload to update';
+
+/** FR-401: the layout control's accessible name and its two radio labels. */
+export const LAYOUT_LABEL = 'Layout';
+export const LAYOUT_VERTICAL = 'Vertical';
+export const LAYOUT_HORIZONTAL = 'Horizontal';
+
+/** FR-406: why the horizontal layout is unavailable below 900 px. */
+export const LAYOUT_NARROW_HINT = 'Horizontal layout needs a window at least 900 px wide';
+
+/** FR-418: the preference write was rejected. */
+export const LAYOUT_SAVE_FAILED = "Layout preference won't be remembered";
