@@ -34,6 +34,8 @@ const CONTROLS = [
   '#btn-copy',
   '#btn-format',
   '#btn-reset',
+  // spec-03 FR-301: the pane's toggle is a toolbar control like any other.
+  '#btn-symbols',
   '.cm-content',
   '#stdin-input',
   '#btn-eof',
@@ -281,7 +283,7 @@ for (const scheme of ['light', 'dark'] as const) {
    VC-052 (FR-049)
    ------------------------------------------------------------------------- */
 
-test('VC-052 (FR-049): Tab reaches all nine targets, each with a visible ring', async ({ page }) => {
+test('VC-052 (FR-049): Tab reaches every target, each with a visible ring', async ({ page }) => {
   await openPlayground(page);
   await waitForPythonReady(page);
   await waitForLinter(page);
@@ -290,6 +292,11 @@ test('VC-052 (FR-049): Tab reaches all nine targets, each with a visible ring', 
   // among the targets, so the traversal is measured with one present.
   await setProgram(page, 'import os\nprint(undefined_name)\n');
   await expect.poll(() => diagnosticEntries(page)).not.toHaveLength(0);
+
+  // spec-03 amendment: the enumeration is taken with the pane **open**, which
+  // is the state in which it could add tab stops (BR-305, VC-315).
+  await page.getByRole('button', { name: 'Symbols' }).click();
+  await expect(page.locator('#symbol-pane')).toBeVisible();
 
   // Start from the very top of the document, as a fresh page load does.
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
@@ -305,7 +312,9 @@ test('VC-052 (FR-049): Tab reaches all nine targets, each with a visible ring', 
       const width = Number.parseFloat(style.outlineWidth || '0');
       const ring =
         style.outlineStyle !== 'none' && width >= 1 && style.outlineColor !== 'transparent';
-      const id = el.id
+      const id = el.classList.contains('symbol')
+        ? '.symbol'
+        : el.id
         ? `#${el.id}`
         : el.classList.contains('cm-content')
           ? '.cm-content'
@@ -316,24 +325,44 @@ test('VC-052 (FR-049): Tab reaches all nine targets, each with a visible ring', 
     });
 
   const seen = new Map<string, boolean>();
+  const sequence: string[] = [];
   for (let i = 0; i < 40; i++) {
     await page.keyboard.press('Tab');
     const { id, ring } = await focused();
+    if (id) sequence.push(id);
     if (id && !seen.has(id)) seen.set(id, ring);
   }
 
-  // FR-049's nine targets, in the order the document presents them.
+  // FR-049's targets, in the order the document presents them, as amended by
+  // spec-03: `Symbols` after `Reset`, then the pane as a single stop.
   const targets = [
     '#btn-run',
     '#btn-stop',
     '#btn-clear',
     '#btn-copy',
     '#btn-format',
+    '#btn-reset',
+    '#btn-symbols',
+    '.symbol',
     '.cm-content',
     '#stdin-input',
     '#btn-eof',
     '.diagnostic-entry',
   ];
+
+  // BR-305 / VC-315: 29 buttons, exactly one tab stop. Counted over one full
+  // cycle — the first pass over the document, before Tab wraps around.
+  const firstCycle = sequence.slice(0, sequence.indexOf('#btn-run', 1) + 1 || sequence.length);
+  expect(
+    firstCycle.filter((id) => id === '.symbol'),
+    `the pane contributed ${firstCycle.filter((id) => id === '.symbol').length} tab stops`,
+  ).toHaveLength(1);
+
+  // ...and in the amended order: `Symbols`, then the pane, then the editor.
+  const order = targets.map((t) => firstCycle.indexOf(t));
+  expect(order, `observed order: ${firstCycle.join(' -> ')}`).toEqual(
+    [...order].sort((a, b) => a - b),
+  );
 
   const unreachable = targets.filter((t) => !seen.has(t));
   expect(unreachable, `unreachable by Tab: ${unreachable.join(', ')}`).toEqual([]);

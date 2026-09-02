@@ -426,3 +426,73 @@ body {
   font-weight: bold;
   visibility: hidden;
 }
+
+/* Special-character pane (spec-03: FR-301 – FR-318) ----------------------- */
+/* Iteration 1 ships the pane as a wrapping band at every width; FR-311's
+   inline-end column arrives with the `.app` grid below. */
+
+/* `.panel--symbols` sets a display, which would otherwise defeat the `hidden`
+   property the pane is toggled with (DOM contract). */
+#symbol-pane[hidden] {
+  display: none;
+}
+
+.panel--symbols {
+  background: var(--bg-raised);
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  gap: 6px;
+  overflow-y: auto;
+  padding: 6px;
+}
+
+.symbol-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.symbol-group-title {
+  color: var(--fg-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.symbol-items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.symbol-status {
+  color: var(--fg-muted);
+  font-size: 11px;
+  margin: 0;
+  overflow-wrap: anywhere;
+  width: 100%;
+}
+
+.symbol-status:empty {
+  display: none;
+}
+
+/* A-305: the two-character entries are literal characters — never a ligature,
+   and `...` is never composed into U+2026. */
+.symbol {
+  background: var(--bg-raised);
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  color: var(--fg);
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-variant-ligatures: none;
+  line-height: 1;
+  min-height: 32px;
+  min-width: 32px;
+  padding: 2px 4px;
+}

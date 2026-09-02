@@ -14,6 +14,15 @@
         <button id="btn-copy" class="btn" type="button">Copy code</button>
         <button id="btn-format" class="btn" type="button" tabindex="0" aria-disabled="true">Format</button>
         <button id="btn-reset" class="btn" type="button">Reset</button>
+        <!-- FR-301: last control in the toolbar. It has no disabled state, so
+             unlike Run/Stop/Format it is never routed through `setInert()`. -->
+        <button
+          id="btn-symbols"
+          class="btn"
+          type="button"
+          aria-expanded="false"
+          aria-controls="symbol-pane"
+        >Symbols</button>
       </header>
 
       <p id="coi-banner" class="banner" role="status" hidden></p>
@@ -21,6 +30,20 @@
       <p id="status-bar" class="status-bar" aria-live="polite">Loading Python… 0%</p>
 
       <div id="notices" class="notices" aria-live="polite"></div>
+
+      <!-- FR-317: the pane sits here in the document at every viewport width;
+           the wide layout's inline-end column is grid placement only. Its 29
+           character buttons are rendered from `src/symbols.ts`. -->
+      <section
+        id="symbol-pane"
+        class="panel panel--symbols"
+        role="toolbar"
+        aria-label="Special characters"
+        aria-orientation="vertical"
+        hidden
+      >
+        <p id="symbol-status" class="symbol-status" role="status"></p>
+      </section>
 
       <section class="panel panel--console" aria-label="Console">
         <div id="console" class="console"></div>
