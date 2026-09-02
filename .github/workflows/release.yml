@@ -1,0 +1,364 @@
+# The release pipeline (spec 02-ci: FR-114 - FR-122, FR-124, FR-125).
+#
+# A push to `main` re-runs the same gate the pull request passed (FR-115), then
+# derives a Semantic Versioning bump from the pushed commit's subject and, when
+# that bump is not *none*, writes the version, tags it, and publishes a GitHub
+# Release with the build this very run tested attached (BR-107).
+#
+# The five gate jobs are duplicated from `pr.yml` rather than extracted into a
+# reusable `workflow_call` workflow: the spec's added-files table lists exactly
+# two workflow files, and VC-114/115/137/138/139 each grep "both workflow
+# files", so gate steps living in a third file would fall outside what those
+# criteria inspect. The duplication is deliberate; see `docs/ci.md`.
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+# BR-106: explicit, and the only place `contents: write` exists. The pull
+# request pipeline never holds it.
+permissions:
+  contents: write
+
+# FR-124: release runs queue, they are never cancelled. A cancelled release can
+# leave a tag without a Release, or a Release without its asset -- unlike a
+# superseded PR run, whose only product is a status.
+concurrency:
+  group: release-main
+  cancel-in-progress: false
+
+jobs:
+  # FR-102, re-run against the pushed commit.
+  typecheck:
+    name: typecheck
+    # BR-103's second guarantee: the version commit of FR-118 carries
+    # `[skip ci]`, so even a future trigger change cannot start a release loop.
+    # (The first guarantee is that a push made with GITHUB_TOKEN starts no run.)
+    if: "!contains(github.event.head_commit.message, '[skip ci]')"
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out the pushed commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Activate Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Type check
+        run: npx tsc --noEmit
+
+  # FR-103.
+  unit:
+    name: unit
+    if: "!contains(github.event.head_commit.message, '[skip ci]')"
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out the pushed commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Activate Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Unit tests
+        run: npm run test:unit
+
+  # FR-104. The same unnarrowed command as `pr.yml`; the browser matrix stays a
+  # local command (FR-113, BR-105).
+  e2e-chromium:
+    name: e2e-chromium
+    if: "!contains(github.event.head_commit.message, '[skip ci]')"
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out the pushed commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Activate Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Resolve the Playwright version for the browser cache key
+        id: playwright
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+      - name: Restore the Playwright browser cache
+        id: browsers
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-chromium-${{ steps.playwright.outputs.version }}
+      - name: Install the chromium browser and its system dependencies
+        if: steps.browsers.outputs.cache-hit != 'true'
+        run: npx playwright install --with-deps chromium
+      - name: Install the chromium system dependencies only
+        if: steps.browsers.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium
+      - name: End-to-end suite
+        run: npx playwright test --project=chromium
+
+  # FR-105.
+  audit-contrast:
+    name: audit-contrast
+    if: "!contains(github.event.head_commit.message, '[skip ci]')"
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out the pushed commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Activate Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Resolve the Playwright version for the browser cache key
+        id: playwright
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+      - name: Restore the Playwright browser cache
+        id: browsers
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-chromium-${{ steps.playwright.outputs.version }}
+      - name: Install the chromium browser and its system dependencies
+        if: steps.browsers.outputs.cache-hit != 'true'
+        run: npx playwright install --with-deps chromium
+      - name: Install the chromium system dependencies only
+        if: steps.browsers.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium
+      - name: Contrast audit
+        run: npm run audit:contrast
+
+  # FR-106. Thresholds exactly as spec-01 fixed them (BR-104).
+  audit-perf:
+    name: audit-perf
+    if: "!contains(github.event.head_commit.message, '[skip ci]')"
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out the pushed commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Activate Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Resolve the Playwright version for the browser cache key
+        id: playwright
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+      - name: Restore the Playwright browser cache
+        id: browsers
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-chromium-${{ steps.playwright.outputs.version }}
+      - name: Install the chromium browser and its system dependencies
+        if: steps.browsers.outputs.cache-hit != 'true'
+        run: npx playwright install --with-deps chromium
+      - name: Install the chromium system dependencies only
+        if: steps.browsers.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium
+      - name: Performance audit
+        run: npm run audit:perf
+
+  # FR-115 - FR-122. Nothing here runs until all five gates above are green.
+  #
+  # The order is deliberate: the version commit lands, *then* the tag is pushed,
+  # *then* the Release is created. A run interrupted between two of those steps
+  # leaves a recoverable state, and a re-run hits FR-122's idempotency check
+  # rather than duplicating anything.
+  publish:
+    name: publish
+    needs: [typecheck, unit, e2e-chromium, audit-contrast, audit-perf]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out the pushed commit with its full history and tags
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # BR-102 scans the tags reachable from main, so the shallow default
+          # will not do.
+          fetch-depth: 0
+          fetch-tags: true
+          # Keep the token in the local git config so the version commit and the
+          # tag can be pushed with it (BR-103's first guarantee: a push made
+          # with GITHUB_TOKEN starts no new workflow run).
+          persist-credentials: true
+      - name: Activate Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Derive the version from this run's own triggering commit
+        id: derive
+        run: |
+          set -euo pipefail
+          # FR-125: always this run's own commit, never whatever overtook it.
+          git log -1 --format=%B "${GITHUB_SHA}" > "${RUNNER_TEMP}/commit-message.txt"
+          tags="$(git tag --list --merged "${GITHUB_SHA}" | tr '\n' ' ')"
+          echo "Tags reachable from this commit: ${tags:-<none>}"
+          version="$(
+            node scripts/derive-version.mjs \
+              --tags "${tags}" \
+              < "${RUNNER_TEMP}/commit-message.txt"
+          )"
+          if [ -z "${version}" ]; then
+            # FR-117: conclude successfully, having created nothing.
+            echo "release=false" >> "$GITHUB_OUTPUT"
+          else
+            {
+              echo "release=true"
+              echo "version=${version}"
+              echo "tag=v${version}"
+            } >> "$GITHUB_OUTPUT"
+            echo "Derived version: ${version}"
+          fi
+
+      - name: Skip the release for a commit type that produces none
+        if: steps.derive.outputs.release != 'true'
+        run: |
+          echo "commit type produces no release; no tag, commit or Release created."
+
+      - name: Check whether the derived version is already released
+        id: existing
+        if: steps.derive.outputs.release == 'true'
+        env:
+          TAG: ${{ steps.derive.outputs.tag }}
+        run: |
+          set -euo pipefail
+          git fetch --tags --force origin >/dev/null 2>&1 || true
+          if git rev-parse -q --verify "refs/tags/${TAG}" >/dev/null \
+            || [ -n "$(git ls-remote --tags origin "refs/tags/${TAG}")" ]; then
+            # FR-122: change no tag, Release or asset; conclude successfully.
+            echo "already=true" >> "$GITHUB_OUTPUT"
+            echo "version already released: ${TAG}"
+          else
+            echo "already=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Write the version, tag it and push, retrying a stale base
+        id: push
+        if: steps.derive.outputs.release == 'true' && steps.existing.outputs.already == 'false'
+        env:
+          VERSION: ${{ steps.derive.outputs.version }}
+          TAG: ${{ steps.derive.outputs.tag }}
+        run: |
+          set -euo pipefail
+          git config user.name  'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+
+          version="${VERSION}"
+          tag="${TAG}"
+
+          # FR-125: at most three attempts. Each retry re-fetches main,
+          # re-reads the base version per BR-102 and re-derives from this run's
+          # own triggering commit.
+          for attempt in 1 2 3; do
+            echo "::group::Push attempt ${attempt} of 3"
+            if [ "${attempt}" -gt 1 ]; then
+              git fetch origin main --tags --force
+              git reset --hard "origin/main"
+              tags="$(git tag --list --merged origin/main | tr '\n' ' ')"
+              version="$(
+                node scripts/derive-version.mjs \
+                  --tags "${tags}" \
+                  < "${RUNNER_TEMP}/commit-message.txt"
+              )"
+              if [ -z "${version}" ]; then
+                echo "re-derivation now produces no release; nothing to publish."
+                echo "released=false" >> "$GITHUB_OUTPUT"
+                echo "::endgroup::"
+                exit 0
+              fi
+              tag="v${version}"
+              if git rev-parse -q --verify "refs/tags/${tag}" >/dev/null; then
+                echo "version already released: ${tag}"
+                echo "released=false" >> "$GITHUB_OUTPUT"
+                echo "::endgroup::"
+                exit 0
+              fi
+              echo "Re-derived after fetching main: ${version}"
+            fi
+
+            # FR-118: package.json's version and package-lock.json only.
+            npm version "${version}" --no-git-tag-version --allow-same-version >/dev/null
+            npm install --package-lock-only --ignore-scripts >/dev/null
+            git add package.json package-lock.json
+            git commit -m "chore(release): ${tag} [skip ci]"
+
+            # FR-119: an annotated tag, on the version commit.
+            git tag --annotate "${tag}" --message "${tag}"
+
+            if git push origin "HEAD:main" && git push origin "refs/tags/${tag}"; then
+              echo "Pushed ${tag} on attempt ${attempt}."
+              {
+                echo "released=true"
+                echo "version=${version}"
+                echo "tag=${tag}"
+              } >> "$GITHUB_OUTPUT"
+              echo "::endgroup::"
+              exit 0
+            fi
+
+            echo "Push rejected on attempt ${attempt}."
+            # Undo the local attempt so the retry rebuilds it on the fetched base.
+            git tag --delete "${tag}" || true
+            git reset --hard "HEAD~1"
+            echo "::endgroup::"
+          done
+
+          # FR-125: fail the run after the third rejection, having created no
+          # tag and no Release.
+          echo "Push rejected three times; failing with no tag and no Release created." >&2
+          exit 1
+
+      - name: Build the site this run tested
+        if: steps.push.outputs.released == 'true'
+        run: npm run build
+
+      - name: Pack the release asset
+        id: asset
+        if: steps.push.outputs.released == 'true'
+        env:
+          VERSION: ${{ steps.push.outputs.version }}
+        run: |
+          set -euo pipefail
+          # FR-121, BR-107: built from this run's checkout of the tagged tree,
+          # never promoted from a pull request artifact. `-C dist .` so the
+          # extraction root is dist/'s contents (spec, "Tarball layout").
+          asset="pyplay-${VERSION}.tar.gz"
+          tar -czf "${RUNNER_TEMP}/${asset}" -C dist .
+          ls -l "${RUNNER_TEMP}/${asset}"
+          echo "path=${RUNNER_TEMP}/${asset}" >> "$GITHUB_OUTPUT"
+
+      - name: Create the GitHub Release with exactly that one asset
+        if: steps.push.outputs.released == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.push.outputs.tag }}
+          ASSET: ${{ steps.asset.outputs.path }}
+        run: |
+          set -euo pipefail
+          # FR-120: non-draft, non-prerelease, named vX.Y.Z, with GitHub's
+          # generated notes for the commits since the previous tag.
+          gh release create "${TAG}" "${ASSET}" \
+            --title "${TAG}" \
+            --generate-notes \
+            --verify-tag
+          echo "Published Release ${TAG}:"
+          gh release view "${TAG}" --json name,isDraft,isPrerelease,tagName,assets
