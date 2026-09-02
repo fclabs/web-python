@@ -209,6 +209,31 @@ breaks at the first link.
 
 ---
 
+## 4a. Continuous integration does not deploy
+
+Neither CI workflow deploys anything, and neither holds a hosting credential.
+
+**Netlify deploys from its own git integration**, driven by
+[`netlify.toml`](../netlify.toml) — it watches the repository directly and
+builds `main` itself. Adding a deploy step to CI would mean two systems
+publishing the same site.
+
+What CI does produce is *downloadable* builds, never deployed ones:
+
+| Artefact | Where | Kept |
+|---|---|---|
+| `pyplay-<version>-pr.<n>+<sha>.tar.gz` | the pull request's `artifact` check | 14 days |
+| `pyplay-X.Y.Z.tar.gz` | attached to the GitHub Release for the tag | with the Release |
+
+Both extract to the contents of `dist/` and are deployable by the steps in this
+document, but nothing publishes them for you. There are no Netlify credentials
+in this repository, no `NETLIFY_AUTH_TOKEN`, and no PR preview URLs. Releases
+carry a tarball; they do not roll anything out.
+
+See [`ci.md`](ci.md) for the pipelines themselves.
+
+---
+
 ## 5. Hosts that cannot satisfy cross-origin isolation
 
 If a host offers **neither** custom response headers **nor** service-worker
@@ -240,3 +265,5 @@ The banner sits in the normal document flow and overlays nothing.
 - [ ] `assets/`, `pyodide/`, `ruff/` are immutable and long-cached.
 - [ ] Status bar reaches `Offline ready` on a fresh load.
 - [ ] Reload with the network off still runs a program end to end.
+- [ ] Remember: no CI job deployed this — Netlify's git integration or your
+      own upload did (see *4a*).
