@@ -1,0 +1,144 @@
+{
+  "commit": "384cb70",
+  "recordedOn": "darwin-arm64 chromium 151.0.7922.34",
+  "viewports": {
+    "1280x800": {
+      "boxes": {
+        "console": {
+          "top": 82,
+          "right": 1272,
+          "bottom": 317.86,
+          "left": 8
+        },
+        "editor": {
+          "top": 325.86,
+          "right": 1272,
+          "bottom": 680,
+          "left": 8
+        },
+        "stdin": {
+          "top": 688,
+          "right": 1272,
+          "bottom": 733,
+          "left": 8
+        },
+        "diagnostics": {
+          "top": 741,
+          "right": 1272,
+          "bottom": 792,
+          "left": 8
+        }
+      },
+      "flex": {
+        "console": {
+          "grow": "1",
+          "shrink": "1",
+          "basis": "30%",
+          "minHeight": "0px",
+          "maxHeight": "none"
+        },
+        "editor": {
+          "grow": "2",
+          "shrink": "1",
+          "basis": "45%",
+          "minHeight": "0px",
+          "maxHeight": "none"
+        },
+        "stdin": {
+          "grow": "0",
+          "shrink": "0",
+          "basis": "auto",
+          "minHeight": "0px",
+          "maxHeight": "none"
+        },
+        "diagnostics": {
+          "grow": "0",
+          "shrink": "1",
+          "basis": "auto",
+          "minHeight": "0px",
+          "maxHeight": "200px"
+        }
+      },
+      "diagnosticsMaxHeight": "200px",
+      "appContentWidth": 1264,
+      "stack": {
+        "top": 82,
+        "bottom": 792,
+        "height": 710,
+        "contentTop": 8,
+        "contentBottom": 792,
+        "gap": 8,
+        "toolbarHeight": 31
+      }
+    },
+    "375x667": {
+      "boxes": {
+        "console": {
+          "top": 119,
+          "right": 367,
+          "bottom": 289,
+          "left": 8
+        },
+        "editor": {
+          "top": 297,
+          "right": 367,
+          "bottom": 551.84,
+          "left": 8
+        },
+        "stdin": {
+          "top": 559.84,
+          "right": 367,
+          "bottom": 604.84,
+          "left": 8
+        },
+        "diagnostics": {
+          "top": 612.84,
+          "right": 367,
+          "bottom": 659,
+          "left": 8
+        }
+      },
+      "flex": {
+        "console": {
+          "grow": "1",
+          "shrink": "1",
+          "basis": "30%",
+          "minHeight": "0px",
+          "maxHeight": "none"
+        },
+        "editor": {
+          "grow": "2",
+          "shrink": "1",
+          "basis": "45%",
+          "minHeight": "0px",
+          "maxHeight": "none"
+        },
+        "stdin": {
+          "grow": "0",
+          "shrink": "0",
+          "basis": "auto",
+          "minHeight": "0px",
+          "maxHeight": "none"
+        },
+        "diagnostics": {
+          "grow": "0",
+          "shrink": "1",
+          "basis": "auto",
+          "minHeight": "0px",
+          "maxHeight": "166.75px"
+        }
+      },
+      "diagnosticsMaxHeight": "166.75px",
+      "appContentWidth": 359,
+      "stack": {
+        "top": 119,
+        "bottom": 659,
+        "height": 540,
+        "contentTop": 8,
+        "contentBottom": 659,
+        "gap": 8,
+        "toolbarHeight": 68
+      }
+    }
+  }
+}

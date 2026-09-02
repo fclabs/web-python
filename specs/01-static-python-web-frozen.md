@@ -232,6 +232,7 @@ verification criteria below; patch and minor upgrades do not.
 ## Known limits (still true at freeze)
 
 - **Performance (reference profile: 2020+ laptop, Chrome, 10 Mbit/s / 40 ms RTT)**: shell interactive ≤ 2.0 s cold; runtime ready ≤ 10.0 s cold / ≤ 2.5 s warm; cold transfer ≤ 15 MB compressed; Run-to-first-output ≤ 250 ms; Stop-to-stopped ≤ 500 ms; Stop-to-Run-enabled ≤ 5.0 s; lint/format of 500 lines ≤ 300 ms each; main-thread tasks ≤ 100 ms during 10 000 lines/s output.
+  - **NFR-003 as CI asserts it (amended 2026-09-02)**: ≤ 2.5 s remains the reference-profile expectation, where the audit measures ~930 ms. VC-053 runs on a GitHub-hosted `ubuntu-latest` runner, which measured 1523 – 2433 ms when it passed and 2500 – 3890 ms when it did not — on `main` as often as on a branch, and nothing in the boot path had changed. The gate is asserted at **5.0 s** there, ~28 % above the worst run observed and half of NFR-002's cold budget. A regression in warm boot still has to stay under a number the product has never approached; what stopped being asserted is the runner's spare CPU. Recorded in issue #13.
 - **Contrast**: text ≥ 4.5:1; non-text UI components ≥ 3:1 (WCAG 2.1 AA), both palettes.
 - **Browsers**: Chrome 141/140, Edge 141/140, Firefox 145/144, Safari 26.1/26.0 — all Must FRs must pass on each.
 - **Offline**: after first load reaching `Offline ready`, the full Run/output/input loop works with network disconnected.
