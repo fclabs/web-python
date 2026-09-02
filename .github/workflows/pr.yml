@@ -128,3 +128,146 @@ jobs:
         run: npm ci
       - name: Unit tests
         run: npm run test:unit
+
+  # FR-104. `--project=chromium` is the config's default project, which
+  # `testIgnore`s `matrix.spec.ts`, so the set is exactly what a local
+  # `npx playwright test` runs. The browser matrix (FR-113, BR-105) stays a
+  # local command: two of its eight pinned projects have no launchable engine
+  # on a Linux runner and would report a skip, and a skip is not a pass.
+  e2e-chromium:
+    name: e2e-chromium
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out the pull request merge result
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Activate Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Resolve the Playwright version for the browser cache key
+        id: playwright
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+      - name: Restore the Playwright browser cache
+        id: browsers
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-chromium-${{ steps.playwright.outputs.version }}
+      - name: Install the chromium browser and its system dependencies
+        if: steps.browsers.outputs.cache-hit != 'true'
+        run: npx playwright install --with-deps chromium
+      - name: Install the chromium system dependencies only
+        if: steps.browsers.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium
+      - name: End-to-end suite
+        # The log reports exactly one skip: VC-059's six-minute variant, which
+        # `Scope -> Out` excludes and which no workflow may enable. Keeping the
+        # command unnarrowed preserves FR-104's "same set as a local run"; see
+        # `docs/ci.md` ("The one skipped test") for the recorded deviation from
+        # VC-105's literal zero-skip wording.
+        run: npx playwright test --project=chromium
+      - name: Upload the report and traces
+        # FR-109: diagnostics on a red gate only. `overwrite` keeps one artifact
+        # of this name per run when more than one browser job fails.
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: playwright-report-pr.${{ github.event.pull_request.number }}
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
+          overwrite: true
+
+  # FR-105. VC-051 and VC-071 from spec-01, in both palettes.
+  audit-contrast:
+    name: audit-contrast
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out the pull request merge result
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Activate Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Resolve the Playwright version for the browser cache key
+        id: playwright
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+      - name: Restore the Playwright browser cache
+        id: browsers
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-chromium-${{ steps.playwright.outputs.version }}
+      - name: Install the chromium browser and its system dependencies
+        if: steps.browsers.outputs.cache-hit != 'true'
+        run: npx playwright install --with-deps chromium
+      - name: Install the chromium system dependencies only
+        if: steps.browsers.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium
+      - name: Contrast audit
+        run: npm run audit:contrast
+      - name: Upload the report and traces
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: playwright-report-pr.${{ github.event.pull_request.number }}
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
+          overwrite: true
+
+  # FR-106. VC-053 from spec-01, with its thresholds exactly as spec-01 fixed
+  # them (BR-104). The log is left unfiltered so VC-107's seven measured values
+  # are readable next to their thresholds -- which is also how the first runs
+  # show how much headroom a GitHub-hosted runner actually has.
+  audit-perf:
+    name: audit-perf
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out the pull request merge result
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Activate Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Resolve the Playwright version for the browser cache key
+        id: playwright
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+      - name: Restore the Playwright browser cache
+        id: browsers
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-chromium-${{ steps.playwright.outputs.version }}
+      - name: Install the chromium browser and its system dependencies
+        if: steps.browsers.outputs.cache-hit != 'true'
+        run: npx playwright install --with-deps chromium
+      - name: Install the chromium system dependencies only
+        if: steps.browsers.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium
+      - name: Performance audit
+        run: npm run audit:perf
+      - name: Upload the report and traces
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: playwright-report-pr.${{ github.event.pull_request.number }}
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
+          overwrite: true
