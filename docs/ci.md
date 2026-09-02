@@ -259,23 +259,24 @@ Then `publish` (`needs:` all five):
 3. **Idempotency check** — if the derived tag already exists locally or on the
    remote, log "version already released" and exit 0, changing no tag, Release or
    asset.
-4. **Version commit** — `npm version --no-git-tag-version` plus
-   `npm install --package-lock-only`, committing **only** `package.json` and
-   `package-lock.json` with the subject `chore(release): vX.Y.Z [skip ci]`.
-5. **Annotated tag** `vX.Y.Z` on that commit, pushed after it.
-6. **Build and pack** `pyplay-X.Y.Z.tar.gz` from this run's own checkout.
-7. **Release** — non-draft, non-prerelease, named `vX.Y.Z`, with GitHub's
+4. **Annotated tag** `vX.Y.Z` on the commit this run tested (`GITHUB_SHA`),
+   pushed on its own. The workflow does **not** write `package.json` or push a
+   commit to `main`: the branch ruleset requires a pull request and Code
+   Scanning, so a version-mirror commit is rejected. Tags remain the version
+   source of truth (BR-102).
+5. **Build and pack** `pyplay-X.Y.Z.tar.gz` from this run's own checkout.
+6. **Release** — non-draft, non-prerelease, named `vX.Y.Z`, with GitHub's
    generated notes and exactly that one asset.
 
-The order is deliberate: the version commit lands, then the tag, then the
-Release. A run interrupted between two steps leaves a recoverable state, and a
-re-run hits the idempotency check in step 3 instead of duplicating anything.
+The order is deliberate: the tag lands, then the Release. A run interrupted
+between those steps leaves a recoverable state, and a re-run hits the
+idempotency check in step 3 instead of duplicating anything.
 
 ### Version derivation
 
 The bump comes from the commit **subject** alone, and the base version comes from
-the highest `vX.Y.Z` **tag** — never from `package.json`, which is a mirror the
-pipeline maintains, not an input.
+the highest `vX.Y.Z` **tag** — never from `package.json`, which is a stale
+mirror, not an input.
 
 | Commit | Bump |
 |---|---|
@@ -306,24 +307,24 @@ they are verifiable without performing six real squash-merges.
 
 Two independent guarantees against an infinite release loop:
 
-1. the version commit is pushed with the workflow's `GITHUB_TOKEN`, and a push
-   made with that token starts no workflow run;
-2. its subject carries `[skip ci]`, and every job in `release.yml` is guarded by
-   `if: "!contains(github.event.head_commit.message, '[skip ci]')"`, so a future
-   trigger change cannot start one either.
+1. the only write this job makes is a tag, pushed with the workflow's
+   `GITHUB_TOKEN`; a push made with that token starts no workflow run, and a
+   tag-only push would not match `on: push: branches: [main]` anyway;
+2. every job in `release.yml` is still guarded by
+   `if: "!contains(github.event.head_commit.message, '[skip ci]')"`, so a later
+   commit that carries that marker cannot start a run either.
 
-### Stale-base recovery
+### Stale-tag recovery
 
-If the version-commit push is rejected because `main` advanced after the
-checkout, the run retries **at most 3 times**. Each retry re-fetches `main`,
-re-reads the base version from the tags, and re-derives the version from **its
-own** triggering commit — never from the commit that overtook it. After a third
-rejection the run fails, having created no tag and no Release.
+If the tag push is rejected (another serialized run published first, or the
+tag set moved after checkout), the run retries **at most 3 times**. Each retry
+re-fetches tags, re-reads the base version from them, and re-derives the
+version from **its own** triggering commit — never from a later merge. After a
+third rejection the run fails, having created no tag and no Release.
 
-Pushing the version commit to `main` requires that the release workflow's actor
-is allowed to push there — see *Repository settings* below. If it is not, this is
-exactly what you see: three rejected attempts and a failed run. That is the
-intended, loud failure mode, not a silent release without its version mirror.
+The workflow does not push commits to `main`. The branch ruleset requires a
+pull request and Code Scanning, which is why the earlier version-mirror commit
+failed three times and published nothing.
 
 ---
 
@@ -421,11 +422,11 @@ not complete.
 2. **Branch protection on `main`** requiring these seven checks:
    `pr-title`, `typecheck`, `unit`, `e2e-chromium`, `audit-contrast`,
    `audit-perf`, `artifact`.
-3. **The release workflow's actor may push to `main`** — branch protection either
-   exempts it or lets the release pipeline bypass the required checks it has just
-   run on that very commit. This is a hard prerequisite: without it the release
-   pipeline fails at its third rejected push, by design, rather than releasing
-   without its version mirror.
+3. **The release workflow does not push to `main`.** It only creates tags and
+   GitHub Releases. The `main` ruleset requires pull requests and Code
+   Scanning, so a version-mirror commit would be rejected. `package.json`'s
+   `version` may therefore lag the highest tag; tags remain the source of
+   truth.
 
 ---
 
