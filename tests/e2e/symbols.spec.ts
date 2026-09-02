@@ -5,11 +5,20 @@
  */
 import { expect, test, type Page } from '@playwright/test';
 import {
+  caretPosition,
   consoleText,
+  editorText,
+  noticeTexts,
   openPlayground,
+  programStdout,
+  runProgram,
+  setCaret,
   setProgram,
+  submitStdin,
+  typeProgram,
   waitForLinter,
   waitForPythonReady,
+  waitForStdinPrompt,
 } from './helpers';
 
 /** The 29 values of *Character set*, in table order (FR-305). */
@@ -107,6 +116,12 @@ export async function expectPaneNavigable(page: Page): Promise<void> {
   );
   expect(tabindexes.filter((t) => t === 0)).toHaveLength(1);
   expect(tabindexes.filter((t) => t === -1)).toHaveLength(28);
+
+  // ...and `ArrowDown` still moves focus between its buttons.
+  await page.locator('#symbol-pane .symbol').first().focus();
+  await page.keyboard.press('ArrowDown');
+  expect(await focusedSymbol(page)).not.toBe('');
+  expect(await focusedSymbol(page)).not.toBe('"');
 }
 
 /* -------------------------------------------------------------------------
@@ -512,4 +527,558 @@ test('A-305: the multi-character glyphs render as literal characters', async ({ 
     expect(row.ligatures, `${row.value} ligatures`).toBe('none');
     expect(row.width, `${row.value} rendered width`).toBeGreaterThan(0);
   }
+});
+
+/* -------------------------------------------------------------------------
+   FR-306 – FR-308, FR-313, FR-316 — copying and its feedback
+   ------------------------------------------------------------------------- */
+
+/** The pane's `role="status"` text (FR-307). */
+async function symbolStatus(page: Page): Promise<string> {
+  return page.evaluate(() => document.getElementById('symbol-status')?.textContent ?? '');
+}
+
+/** The `data-value` of every button currently in the copied state (FR-307). */
+async function copiedButtons(page: Page): Promise<string[]> {
+  return page.evaluate(() =>
+    Array.from(
+      document.querySelectorAll<HTMLElement>('#symbol-pane .symbol[data-state="copied"]'),
+    ).map((b) => b.dataset.value ?? ''),
+  );
+}
+
+/**
+ * The pane button for `value`, addressed by the value it copies. Every value
+ * is printable ASCII (VC-325), so escaping `\` and `"` is enough to make a
+ * valid attribute selector.
+ */
+function symbolButton(page: Page, value: string) {
+  const escaped = value.replace(/([\\"])/g, '\\$1');
+  return page.locator(`#symbol-pane .symbol[data-value="${escaped}"]`);
+}
+
+/** Reject every clipboard write, the way a denied permission does (FR-308). */
+async function denyClipboard(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText: () => Promise.reject(new DOMException('denied', 'NotAllowedError')) },
+    });
+  });
+}
+
+test('VC-307 (FR-306, BR-301): every value lands on the clipboard, and the editor never moves', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+
+  await openPlayground(page);
+  // The buffer as it was before the single undoable edit this test makes.
+  const original = await editorText(page);
+  await setProgram(page, 'x = 1\ny = 2\n');
+  await setCaret(page, 2, 3);
+  await openSymbolPane(page);
+
+  const before = { text: await editorText(page), caret: await caretPosition(page) };
+
+  for (const value of SYMBOL_VALUES) {
+    await symbolButton(page, value).click();
+    await expect
+      .poll(() => page.evaluate(() => navigator.clipboard.readText()), { timeout: 5_000 })
+      .toBe(value);
+  }
+
+  // BR-301: no transaction reached the editor at any point.
+  expect(await editorText(page)).toBe(before.text);
+  expect(await caretPosition(page)).toEqual(before.caret);
+
+  // ...and the undo history is exactly where it was: a single undo still
+  // reverses the one edit this test made, so no copy left an entry behind.
+  await page.evaluate(() => {
+    const content = document.querySelector('.cm-content') as
+      | (HTMLElement & { cmView?: { view: { focus(): void } }; cmTile?: { view: { focus(): void } } })
+      | null;
+    (content?.cmTile?.view ?? content?.cmView?.view)?.focus();
+  });
+  await page.keyboard.press('ControlOrMeta+z');
+  await expect.poll(() => editorText(page)).toBe(original);
+});
+
+test('VC-308 (FR-306): the copied `**` pastes as exactly two characters', async ({ page }) => {
+  await openPlayground(page);
+  await setProgram(page, 'x = 1\n');
+  await openSymbolPane(page);
+
+  await symbolButton(page, '**').click();
+  await expect(page.locator('#symbol-status')).toHaveText('Copied **');
+
+  await page.locator('.cm-content').click();
+  await page.keyboard.press('ControlOrMeta+a');
+  await page.keyboard.press('Delete');
+  await page.keyboard.press('ControlOrMeta+v');
+
+  await expect.poll(() => editorText(page)).toBe('**');
+});
+
+test('VC-309 (FR-307): `Copied (` appears at once and reverts after the window', async ({
+  page,
+}) => {
+  await openPlayground(page);
+  await openSymbolPane(page);
+
+  const clickedAt = Date.now();
+  await symbolButton(page, '(').click();
+  await expect(page.locator('#symbol-status')).toHaveText('Copied (', { timeout: 1_000 });
+  await expect(symbolButton(page, '(')).toHaveAttribute('data-state', 'copied');
+  expect(Date.now() - clickedAt, 'feedback painted promptly').toBeLessThan(1_000);
+
+  // Still there well inside the 2 000 ms window...
+  await page.waitForTimeout(1_200);
+  expect(await symbolStatus(page)).toBe('Copied (');
+
+  // ...and gone after it.
+  await expect.poll(() => symbolStatus(page), { timeout: 3_000 }).toBe('');
+  expect(await copiedButtons(page)).toEqual([]);
+});
+
+test('VC-310 (FR-307): a second copy replaces the text and restarts the timer', async ({
+  page,
+}) => {
+  await openPlayground(page);
+  await openSymbolPane(page);
+
+  await symbolButton(page, '(').click();
+  await expect(page.locator('#symbol-status')).toHaveText('Copied (');
+
+  await page.waitForTimeout(1_200);
+  const secondAt = Date.now();
+  await symbolButton(page, ':').click();
+  await expect(page.locator('#symbol-status')).toHaveText('Copied :');
+  expect(await copiedButtons(page)).toEqual([':']);
+
+  // 1 900 ms after the *first* click the second copy's text is still showing:
+  // the window restarted from zero rather than running down.
+  await page.waitForTimeout(Math.max(0, 700 - (Date.now() - secondAt)));
+  expect(await symbolStatus(page)).toBe('Copied :');
+
+  // It clears 2 000 ms after the second click, not the first.
+  await expect.poll(() => symbolStatus(page), { timeout: 3_000 }).toBe('');
+  expect(await copiedButtons(page)).toEqual([]);
+});
+
+test('VC-311 (FR-308, BR-303, FR-313): a denied write notifies, selects the glyph and degrades nothing', async ({
+  page,
+}) => {
+  const pageErrors: string[] = [];
+  page.on('pageerror', (error) => pageErrors.push(error.message));
+
+  await denyClipboard(page);
+  await openPlayground(page);
+  await openSymbolPane(page);
+
+  await symbolButton(page, '{').click();
+
+  await expect(
+    page.locator(
+      '[data-notice="Couldn\'t copy — select the character and press Ctrl/Cmd+C"]',
+    ),
+  ).toHaveCount(1);
+  await expect
+    .poll(() => page.evaluate(() => window.getSelection()?.toString() ?? ''))
+    .toBe('{');
+  expect(await symbolStatus(page)).toBe('');
+  expect(await copiedButtons(page)).toEqual([]);
+
+  // BR-303: the pane is still open and still navigable...
+  await expect(page.locator('#symbol-pane')).toBeVisible();
+  await expect(page.locator('#btn-symbols')).toHaveAttribute('aria-expanded', 'true');
+  await symbolButton(page, '"').first().focus();
+  await page.keyboard.press('ArrowDown');
+  expect(await focusedSymbol(page)).not.toBe('"');
+
+  // ...and editing plus Copy code behave exactly as spec-01 requires.
+  await typeProgram(page, 'print("hi")');
+  expect(await editorText(page)).toBe('print("hi")');
+  await page.getByRole('button', { name: 'Copy code' }).click();
+  await expect(
+    page.locator('[data-notice="Couldn\'t copy — select the code and press Ctrl/Cmd+C"]'),
+  ).toHaveCount(1);
+  await expect
+    .poll(() => page.evaluate(() => window.getSelection()?.toString() ?? ''))
+    .toBe('print("hi")');
+
+  expect(pageErrors).toEqual([]);
+});
+
+test('VC-312 (FR-313): with no clipboard API at all the pane falls back and Run still works', async ({
+  page,
+}) => {
+  const pageErrors: string[] = [];
+  page.on('pageerror', (error) => pageErrors.push(error.message));
+
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: undefined });
+  });
+
+  await openPlayground(page);
+  await waitForPythonReady(page);
+  await openSymbolPane(page);
+
+  await symbolButton(page, '+').click();
+  await expect(
+    page.locator(
+      '[data-notice="Couldn\'t copy — select the character and press Ctrl/Cmd+C"]',
+    ),
+  ).toHaveCount(1);
+  await expect
+    .poll(() => page.evaluate(() => window.getSelection()?.toString() ?? ''))
+    .toBe('+');
+  expect(await symbolStatus(page)).toBe('');
+
+  await runProgram(page, 'print("ok")\n');
+  await expect.poll(() => programStdout(page), { timeout: 30_000 }).toBe('ok\n');
+  expect(pageErrors).toEqual([]);
+});
+
+test('VC-328 (FR-307, FR-308): a denial after a success leaves no stale feedback', async ({
+  page,
+}) => {
+  // The first write succeeds; the second, 500 ms later, is rejected.
+  await page.addInitScript(() => {
+    const real = navigator.clipboard;
+    let calls = 0;
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: {
+        writeText: (text: string) =>
+          ++calls === 1
+            ? real.writeText(text)
+            : Promise.reject(new DOMException('denied', 'NotAllowedError')),
+        readText: () => real.readText(),
+      },
+    });
+  });
+
+  await openPlayground(page);
+  await openSymbolPane(page);
+
+  const firstAt = Date.now();
+  await symbolButton(page, '(').click();
+  await expect(page.locator('#symbol-status')).toHaveText('Copied (');
+
+  await page.waitForTimeout(Math.max(0, 500 - (Date.now() - firstAt)));
+  await symbolButton(page, ')').click();
+
+  await expect(
+    page.locator(
+      '[data-notice="Couldn\'t copy — select the character and press Ctrl/Cmd+C"]',
+    ),
+  ).toHaveCount(1);
+
+  // The FR-307 window that was still pending is cancelled, not merely hidden:
+  // nothing reappears at any point up to 3 000 ms after the first click.
+  const deadline = firstAt + 3_000;
+  while (Date.now() < deadline) {
+    expect(await symbolStatus(page)).toBe('');
+    expect(await copiedButtons(page)).toEqual([]);
+    await page.waitForTimeout(150);
+  }
+});
+
+test('VC-333 (FR-316): a pane closed mid-write produces no feedback at all', async ({ page }) => {
+  // Every clipboard write resolves 300 ms late, so `Escape` can land first.
+  await page.addInitScript(() => {
+    const real = navigator.clipboard;
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: {
+        writeText: (text: string) =>
+          new Promise<void>((resolve, reject) => {
+            setTimeout(() => real.writeText(text).then(resolve, reject), 300);
+          }),
+      },
+    });
+  });
+
+  await openPlayground(page);
+  await openSymbolPane(page);
+
+  await symbolButton(page, '#').click();
+  await page.waitForTimeout(50);
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#symbol-pane')).toBeHidden();
+
+  await page.waitForTimeout(500);
+  expect(await symbolStatus(page)).toBe('');
+  expect(await copiedButtons(page)).toEqual([]);
+  expect(await noticeTexts(page)).toEqual([]);
+  await expect(page.locator('#symbol-pane')).toBeHidden();
+  await expect(page.locator('#btn-symbols')).toHaveAttribute('aria-expanded', 'false');
+});
+
+/* -------------------------------------------------------------------------
+   FR-309 — keyboard navigation
+   ------------------------------------------------------------------------- */
+
+test.describe('wide layout keyboard model', () => {
+  test.use({ viewport: { width: 1280, height: 800 } });
+
+  test('VC-313 (FR-309, BR-305): one tab stop, and one button per visual row', async ({ page }) => {
+    await openPlayground(page);
+    await openSymbolPane(page);
+
+    expect(await focusedSymbol(page)).toBe('"');
+    // Exactly one button is in the tab order (the helper also moves focus, so
+    // `Home` puts it back at the start before the walk).
+    await expectPaneNavigable(page);
+    await page.keyboard.press('Home');
+    expect(await focusedSymbol(page)).toBe('"');
+
+    // 28 ArrowDown presses walk the whole set in Character set order.
+    for (let i = 1; i < 29; i++) {
+      await page.keyboard.press('ArrowDown');
+      expect(await focusedSymbol(page), `after ${i} ArrowDown presses`).toBe(SYMBOL_VALUES[i]);
+    }
+    await page.keyboard.press('ArrowDown');
+    expect(await focusedSymbol(page), 'no wrap at the end').toBe('...');
+
+    await page.keyboard.press('Home');
+    expect(await focusedSymbol(page)).toBe('"');
+    await page.keyboard.press('End');
+    expect(await focusedSymbol(page)).toBe('...');
+
+    await page.keyboard.press('ArrowUp');
+    expect(await focusedSymbol(page)).toBe('|');
+
+    for (let i = 0; i < 40; i++) await page.keyboard.press('ArrowUp');
+    expect(await focusedSymbol(page), 'no wrap at the start').toBe('"');
+
+    // One button per visual row, so the row-wise keys cannot move focus.
+    await page.keyboard.press('ArrowRight');
+    expect(await focusedSymbol(page)).toBe('"');
+    await page.keyboard.press('ArrowLeft');
+    expect(await focusedSymbol(page)).toBe('"');
+
+    // The roving tabindex followed focus, and there is still exactly one.
+    await page.keyboard.press('End');
+    expect(
+      await page.evaluate(
+        () =>
+          document.querySelector<HTMLElement>('#symbol-pane .symbol[tabindex="0"]')?.dataset
+            .value ?? '',
+      ),
+    ).toBe('...');
+    await expectPaneNavigable(page);
+  });
+
+  test('VC-315 (FR-049, BR-305): the pane contributes exactly one tab stop', async ({ page }) => {
+    await openPlayground(page);
+    await openSymbolPane(page);
+
+    // Start the traversal from the very top of the document, as a fresh page
+    // load does. Blurring alone leaves the sequential starting point where it
+    // was; a click on the page background moves it (and, per FR-318, leaves
+    // the pane open).
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+    await page.locator('body').click({ position: { x: 2, y: 2 } });
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+
+    const visited: string[] = [];
+    for (let i = 0; i < 14; i++) {
+      await page.keyboard.press('Tab');
+      visited.push(
+        await page.evaluate(() => {
+          const el = document.activeElement as HTMLElement | null;
+          if (!el || el === document.body) return '';
+          if (el.classList.contains('symbol')) return 'pane';
+          if (el.classList.contains('cm-content')) return 'editor';
+          return el.id ? `#${el.id}` : el.tagName.toLowerCase();
+        }),
+      );
+    }
+
+    expect(visited.filter((id) => id === 'pane')).toHaveLength(1);
+    expect(visited.slice(0, 9)).toEqual([
+      '#btn-run',
+      '#btn-stop',
+      '#btn-clear',
+      '#btn-copy',
+      '#btn-format',
+      '#btn-reset',
+      '#btn-symbols',
+      'pane',
+      'editor',
+    ]);
+  });
+
+  test('VC-314 (FR-309, FR-306): Enter and Space both copy the focused character', async ({
+    page,
+  }) => {
+    await openPlayground(page);
+
+    for (const key of ['Enter', 'Space']) {
+      await openSymbolPane(page);
+      // Reach `//` with arrow keys alone: it is row 13 of the wide layout.
+      for (let i = 0; i < 12; i++) await page.keyboard.press('ArrowDown');
+      expect(await focusedSymbol(page)).toBe('//');
+
+      await page.keyboard.press(key);
+      await expect(page.locator('#symbol-status'), key).toHaveText('Copied //');
+      await expect(symbolButton(page, '//'), key).toHaveAttribute('data-state', 'copied');
+      expect(await page.evaluate(() => navigator.clipboard.readText()), key).toBe('//');
+
+      await page.keyboard.press('Escape');
+      await expect(page.locator('#symbol-pane')).toBeHidden();
+    }
+  });
+});
+
+test.describe('narrow layout keyboard model', () => {
+  test.use({ viewport: { width: 375, height: 667 } });
+
+  test('VC-329 (FR-309, FR-311): row-wise and column-wise moves over the rendered grid', async ({
+    page,
+  }) => {
+    await openPlayground(page);
+    await openSymbolPane(page);
+
+    /** The rendered visual rows, as values, derived exactly as FR-309 says. */
+    const rows: string[][] = await page.evaluate(() => {
+      const out: { top: number; values: string[] }[] = [];
+      for (const button of document.querySelectorAll<HTMLElement>('#symbol-pane .symbol')) {
+        const top = button.getBoundingClientRect().top;
+        const row = out.find((candidate) => Math.abs(candidate.top - top) <= 2);
+        if (row) row.values.push(button.dataset.value ?? '');
+        else out.push({ top, values: [button.dataset.value ?? ''] });
+      }
+      return out.sort((a, b) => a.top - b.top).map((row) => row.values);
+    });
+
+    expect(rows.length, 'the narrow layout wraps into several rows').toBeGreaterThan(1);
+    expect(rows.flat()).toEqual(SYMBOL_VALUES);
+
+    /** Focus the button for `value` without going through the arrow keys. */
+    const focus = async (value: string): Promise<void> => {
+      await symbolButton(page, value).focus();
+    };
+
+    const secondRow = rows[1]!;
+    await focus(secondRow[0]!);
+    await page.keyboard.press('ArrowLeft');
+    expect(await focusedSymbol(page), 'no wrap at a row’s start').toBe(secondRow[0]);
+
+    await page.keyboard.press('ArrowRight');
+    expect(await focusedSymbol(page)).toBe(secondRow[1]);
+
+    await focus(secondRow[0]!);
+    await page.keyboard.press('ArrowUp');
+    expect(await focusedSymbol(page), 'ArrowUp keeps the column index').toBe(rows[0]![0]);
+
+    const lastOfSecond = secondRow[secondRow.length - 1]!;
+    await focus(lastOfSecond);
+    await page.keyboard.press('ArrowRight');
+    expect(await focusedSymbol(page), 'no wrap at a row’s end').toBe(lastOfSecond);
+
+    // A column index past the next row's length clamps to that row's last
+    // button rather than moving nowhere.
+    const short = rows.findIndex(
+      (row, i) => i > 0 && rows[i - 1] !== undefined && row.length < rows[i - 1]!.length,
+    );
+    expect(short, 'the narrow layout has a shorter row to clamp into').toBeGreaterThan(0);
+    const above = rows[short - 1]!;
+    await focus(above[above.length - 1]!);
+    await page.keyboard.press('ArrowDown');
+    expect(await focusedSymbol(page), 'ArrowDown clamps to the shorter row’s last button').toBe(
+      rows[short]![rows[short]!.length - 1],
+    );
+
+    await page.keyboard.press('Home');
+    expect(await focusedSymbol(page)).toBe('"');
+    await page.keyboard.press('End');
+    expect(await focusedSymbol(page)).toBe('...');
+  });
+});
+
+/* -------------------------------------------------------------------------
+   FR-310 — the pane never reaches a running program
+   ------------------------------------------------------------------------- */
+
+test('VC-316 (FR-310, BR-301): copying mid-run interrupts neither the run nor its output', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+
+  await openPlayground(page);
+  await waitForPythonReady(page);
+  await runProgram(page, 'import time\nfor i in range(20):\n    print(i)\n    time.sleep(0.2)\n');
+
+  const run = page.getByRole('button', { name: 'Run' });
+  const stop = page.getByRole('button', { name: 'Stop' });
+  await expect(stop).toBeEnabled();
+  await expect(run).toBeDisabled();
+
+  // Sample the two controls continuously while the pane is used.
+  const states: string[] = [];
+  const sample = async (): Promise<void> => {
+    states.push(
+      await page.evaluate(
+        () =>
+          `${document.getElementById('btn-run')!.getAttribute('aria-disabled')}/` +
+          `${document.getElementById('btn-stop')!.getAttribute('aria-disabled')}`,
+      ),
+    );
+  };
+
+  await sample();
+  await openSymbolPane(page);
+  await sample();
+  await symbolButton(page, '%').click();
+  await expect(page.locator('#symbol-status')).toHaveText('Copied %');
+  await sample();
+  await page.getByRole('button', { name: 'Symbols' }).click();
+  await expect(page.locator('#symbol-pane')).toBeHidden();
+  await sample();
+
+  expect(new Set(states), 'Run stayed disabled and Stop stayed enabled').toEqual(
+    new Set(['true/false']),
+  );
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('%');
+
+  await expect
+    .poll(() => consoleText(page), { timeout: 60_000 })
+    .toMatch(/Program finished in \d+\.\d{2} s/);
+
+  // The program was neither interrupted nor restarted: 0–19, in order, once.
+  expect(await programStdout(page)).toBe(
+    Array.from({ length: 20 }, (_, i) => `${i}\n`).join(''),
+  );
+});
+
+test('VC-317 (FR-310): copying while a read is pending injects nothing into stdin', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+
+  await openPlayground(page);
+  await waitForPythonReady(page);
+  await runProgram(page, 'x = input("? ")\nprint(x)\n');
+  await waitForStdinPrompt(page);
+
+  const stdinEnabled = async (): Promise<boolean> =>
+    page.evaluate(
+      () => document.getElementById('stdin-input')!.getAttribute('aria-disabled') !== 'true',
+    );
+
+  expect(await stdinEnabled()).toBe(true);
+  await openSymbolPane(page);
+  expect(await stdinEnabled()).toBe(true);
+  await symbolButton(page, ',').click();
+  await expect(page.locator('#symbol-status')).toHaveText('Copied ,');
+  expect(await stdinEnabled()).toBe(true);
+
+  // The pane put nothing in the field, and the read is still the one pending.
+  expect(await page.inputValue('#stdin-input')).toBe('');
+
+  await submitStdin(page, 'a,b');
+  await expect.poll(() => programStdout(page), { timeout: 30_000 }).toBe('a,b\n');
 });

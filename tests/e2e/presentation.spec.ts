@@ -171,6 +171,13 @@ async function paintEverySurface(page: Page): Promise<void> {
   await page.locator('#btn-symbols').focus();
   await page.keyboard.press('Enter');
   await expect(page.locator('#symbol-pane')).toBeVisible();
+
+  // VC-322 samples *inside* FR-307's 2 000 ms window, so the feedback text and
+  // the `data-state="copied"` highlight are both genuinely on screen. `Enter`
+  // on the focused button keeps the run in keyboard modality, which is what
+  // makes the focus rings VC-071 samples visible.
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#symbol-status')).toHaveText('Copied "');
 }
 
 /** Every text surface NFR-010 lists, plus the syntax colours around them. */
@@ -201,6 +208,8 @@ const TEXT_SAMPLES: Sample[] = [
   // feedback text is sampled separately, once a copy has actually happened.
   { label: 'symbol glyph', selector: '#symbol-pane .symbol', prop: 'color' },
   { label: 'symbol group heading', selector: '#symbol-pane .symbol-group-title', prop: 'color' },
+  { label: 'symbol copy feedback', selector: '#symbol-status', prop: 'color' },
+  { label: 'copied-state glyph', selector: '#symbol-pane .symbol[data-state="copied"]', prop: 'color' },
 ];
 
 /** Every non-text component NFR-013 lists. */
@@ -238,11 +247,17 @@ const NON_TEXT_SAMPLES: Sample[] = [
     focus: true,
   },
   // spec-03 NFR-303: the pane's non-text components.
-  { label: 'symbol button border', selector: '#symbol-pane .symbol', prop: 'borderTopColor' },
+  // A button in its resting state: the copied one is a filled highlight,
+  // measured separately below.
+  {
+    label: 'symbol button border',
+    selector: '#symbol-pane .symbol:not([data-state])',
+    prop: 'borderTopColor',
+  },
   { label: 'symbol pane edge', selector: '#symbol-pane', prop: 'borderTopColor' },
   {
     label: 'focus ring (symbol button)',
-    selector: '#symbol-pane .symbol',
+    selector: '#symbol-pane .symbol:not([data-state])',
     prop: 'outlineColor',
     focus: true,
   },
@@ -304,13 +319,8 @@ for (const scheme of ['light', 'dark'] as const) {
       );
 
       // spec-03 FR-307: the copied highlight is a fill on the activated
-      // button, measured against the pane behind it (NFR-303). Copying puts
-      // the live button into exactly this state; setting the one attribute
-      // that distinguishes it measures the same rendering, the way FR-058's
-      // affordance is measured just below.
-      await page.evaluate(() =>
-        document.querySelector('#symbol-pane .symbol')!.setAttribute('data-state', 'copied'),
-      );
+      // button, measured against the pane behind it (NFR-303), in the state a
+      // real copy put it in.
       measured.push(
         ...(await measureContrast(page, [
           {

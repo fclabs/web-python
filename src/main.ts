@@ -108,6 +108,7 @@ function boot(): void {
     toggle: need<HTMLButtonElement>('btn-symbols'),
     pane: need('symbol-pane'),
     status: need('symbol-status'),
+    notices,
   });
 
   // FR-010: Reset.

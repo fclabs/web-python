@@ -13,6 +13,9 @@
  * else" true by construction rather than by enumeration. A grep of this file
  * for those listener names is part of the criterion.
  */
+import { writeClipboard } from './clipboard';
+import { COPIED_MS, SYMBOL_COPY_FAILED, formatSymbolCopied } from './format';
+import type { Notices } from './notices';
 import { SYMBOLS, SYMBOL_GROUPS, type SymbolRow } from './symbols';
 
 /**
@@ -32,12 +35,28 @@ export interface SymbolPaneElements {
    * FR-307's copy feedback lands.
    */
   status: HTMLElement;
+  /** The existing notice strip, reused unchanged for FR-308. */
+  notices: Notices;
+}
+
+/**
+ * FR-308: put the document selection over exactly this button's glyph and
+ * nothing else, so `Ctrl/Cmd+C` copies the character the visitor asked for.
+ */
+function selectGlyph(button: HTMLButtonElement): void {
+  const selection = window.getSelection();
+  if (!selection) return;
+  const range = document.createRange();
+  range.selectNodeContents(button);
+  selection.removeAllRanges();
+  selection.addRange(range);
 }
 
 export class SymbolPane {
   private readonly toggle: HTMLButtonElement;
   private readonly pane: HTMLElement;
   private readonly status: HTMLElement;
+  private readonly notices: Notices;
 
   /** The 29 character buttons, in *Character set* order. */
   private readonly buttons: HTMLButtonElement[] = [];
@@ -45,11 +64,24 @@ export class SymbolPane {
   /** Which button currently holds the roving `tabindex="0"` (FR-309). */
   private rovingIndex = 0;
 
+  /** The pending FR-307 revert, or null when no feedback is showing. */
+  private revertTimer: ReturnType<typeof setTimeout> | null = null;
+
+  /** The button currently carrying `data-state="copied"`, if any. */
+  private copiedButton: HTMLButtonElement | null = null;
+
+  /**
+   * FR-316: monotonic id of the most recent activation. A write that resolves
+   * after a newer activation — or after the pane closed — is discarded.
+   */
+  private activationId = 0;
+
   constructor(elements: SymbolPaneElements) {
     this.toggle = elements.toggle;
     this.pane = elements.pane;
     this.status = elements.status;
     this.status.textContent = '';
+    this.notices = elements.notices;
 
     this.render();
     this.setRoving(0);
@@ -90,6 +122,8 @@ export class SymbolPane {
   /** FR-303 / FR-304: hide the pane and return focus to the toggle. */
   close(): void {
     if (!this.isOpen) return;
+    // FR-316: a write still in flight resolves into nothing.
+    this.clearFeedback();
     this.pane.hidden = true;
     this.toggle.setAttribute('aria-expanded', 'false');
     this.toggle.focus();
@@ -99,7 +133,114 @@ export class SymbolPane {
     if (event.key === 'Escape') {
       event.preventDefault();
       this.close();
+      return;
     }
+
+    const from = this.buttons.indexOf(event.target as HTMLButtonElement);
+    if (from < 0) return;
+
+    const target = this.arrowTarget(event.key, from);
+    // FR-309: a move with no target in that direction leaves focus where it
+    // is — focus never wraps and never leaves the pane.
+    if (target === null) return;
+    event.preventDefault();
+    if (target === from) return;
+    this.setRoving(target);
+    this.buttons[target]?.focus();
+  }
+
+  /**
+   * FR-309's focus model, resolved against the grid the pane *currently*
+   * renders: `ArrowRight`/`ArrowLeft` within the visual row,
+   * `ArrowUp`/`ArrowDown` to the same column index of the adjacent row (or
+   * that row's last button when it is shorter), `Home`/`End` to the ends.
+   * Returns null when the key is not a navigation key.
+   */
+  private arrowTarget(key: string, from: number): number | null {
+    if (key === 'Home') return 0;
+    if (key === 'End') return this.buttons.length - 1;
+    if (key !== 'ArrowRight' && key !== 'ArrowLeft' && key !== 'ArrowUp' && key !== 'ArrowDown') {
+      return null;
+    }
+
+    const rows = this.visualRows();
+    const row = rows.findIndex((entries) => entries.includes(from));
+    if (row < 0) return from;
+    const column = rows[row]!.indexOf(from);
+
+    if (key === 'ArrowRight' || key === 'ArrowLeft') {
+      const next = column + (key === 'ArrowRight' ? 1 : -1);
+      return rows[row]![next] ?? from;
+    }
+
+    const adjacent = rows[row + (key === 'ArrowDown' ? 1 : -1)];
+    if (!adjacent) return from;
+    return adjacent[Math.min(column, adjacent.length - 1)] ?? from;
+  }
+
+  /**
+   * The pane's *visual rows* — buttons grouped by rendered top edge, ordered
+   * top to bottom, group headings taking no part (FR-309). Derived from the
+   * live geometry at keystroke time, so it needs no knowledge of the CSS and
+   * is correct at both FR-311 breakpoints and at any zoom level.
+   */
+  private visualRows(): number[][] {
+    const rows: { top: number; entries: number[] }[] = [];
+    this.buttons.forEach((button, index) => {
+      const top = button.getBoundingClientRect().top;
+      // Sub-pixel rounding means two buttons on one row can differ slightly.
+      const row = rows.find((candidate) => Math.abs(candidate.top - top) <= 2);
+      if (row) row.entries.push(index);
+      else rows.push({ top, entries: [index] });
+    });
+    return rows.sort((a, b) => a.top - b.top).map((row) => row.entries);
+  }
+
+  /**
+   * FR-306 – FR-308, FR-316. The clipboard write is the pane's *only* effect
+   * outside its own feedback: no CodeMirror transaction, so no undo entry, no
+   * autosave and no lint schedule (BR-301).
+   */
+  private activate(button: HTMLButtonElement): void {
+    const value = button.dataset.value ?? '';
+    const id = ++this.activationId;
+    void (async () => {
+      const ok = await writeClipboard(value);
+
+      // FR-316: the pane closed, or a newer activation overtook this one —
+      // either way this resolution produces no feedback at all.
+      if (id !== this.activationId || !this.isOpen) return;
+
+      // One owner of the feedback state, clearing before either path writes:
+      // a second success restarts FR-307's window from zero, and a denial
+      // after a recent success leaves no `Copied V` behind (FR-308).
+      this.clearFeedback();
+
+      if (ok) {
+        this.status.textContent = formatSymbolCopied(value);
+        button.dataset.state = 'copied';
+        this.copiedButton = button;
+        this.revertTimer = setTimeout(() => this.clearFeedback(), COPIED_MS);
+      } else {
+        // BR-303: the pane degrades alone — it stays open and navigable, and
+        // the core write-run-read loop is untouched.
+        this.notices.show(SYMBOL_COPY_FAILED);
+        selectGlyph(button);
+      }
+    })();
+  }
+
+  /** The single writer of FR-307 / FR-308 feedback state. */
+  private clearFeedback(): void {
+    if (this.revertTimer !== null) {
+      clearTimeout(this.revertTimer);
+      this.revertTimer = null;
+    }
+    if (this.copiedButton) {
+      delete this.copiedButton.dataset.state;
+      this.copiedButton = null;
+    }
+    this.status.textContent = '';
   }
 
   /**
@@ -137,6 +278,12 @@ export class SymbolPane {
     button.title = row.name; // FR-315
     button.textContent = row.glyph;
     button.tabIndex = -1; // BR-305; `setRoving` promotes exactly one to 0.
+    // A native button turns `Enter` and `Space` into a click, so this one
+    // listener is all three activation paths of FR-309.
+    button.addEventListener('click', () => {
+      this.setRoving(this.buttons.indexOf(button));
+      this.activate(button);
+    });
     this.buttons.push(button);
     return button;
   }
