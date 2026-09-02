@@ -190,6 +190,18 @@ body {
   color: var(--accent-fg);
 }
 
+/* FR-501 / NFR-504: icon-only color-mode control; ≥ 32×32 hit area; no
+   adjacent mode-name text. Focus ring comes from the shared :focus-visible. */
+#btn-theme,
+.btn--theme {
+  box-sizing: border-box;
+  min-width: 32px;
+  min-height: 32px;
+  padding: 6px;
+  line-height: 1;
+  text-align: center;
+}
+
 /* FR-054 / FR-058: visibly disabled and non-activatable, yet still in the tab
    order (FR-049) — see src/controls.ts. `aria-disabled`, not `disabled`. */
 .btn[aria-disabled='true'] {

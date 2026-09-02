@@ -34,7 +34,7 @@ import type { StdinMode } from './stdin-stream';
 import { STARTER_PROGRAM } from './starter';
 import { SymbolPane } from './symbol-pane';
 import { getLocalStorage, loadProgram, saveProgram } from './storage';
-import { applyDocumentTheme, loadPreference } from './theme';
+import { applyDocumentTheme, bindThemeControl, loadPreference } from './theme';
 
 const AUTOSAVE_UNAVAILABLE = 'Autosave unavailable — your code will not survive a reload';
 const COPY_FAILED = "Couldn't copy — select the code and press Ctrl/Cmd+C";
@@ -117,6 +117,9 @@ function boot(): void {
     status: need('symbol-status'),
     notices,
   });
+
+  // FR-501 – FR-504 / FR-512: cycling color-mode control (after Symbols).
+  bindThemeControl(need<HTMLButtonElement>('btn-theme'), view, storage);
 
   // FR-010: Reset.
   need<HTMLButtonElement>('btn-reset').addEventListener('click', () => {

@@ -1,3 +1,10 @@
+import type { EditorView } from '@codemirror/view';
+import { setEditorColorScheme } from './editor';
+import {
+  THEME_GLYPHS,
+  THEME_LABELS,
+  formatThemeAccessibleName,
+} from './format';
 import { getLocalStorage, type StorageLike } from './storage';
 
 /** localStorage key for the color-mode preference (BR-501). */
@@ -77,4 +84,37 @@ export function savePreference(
   } catch {
     return false;
   }
+}
+
+/** FR-503 / FR-504: glyph, title, and accessible name for the current preference. */
+export function refreshThemeControl(
+  button: HTMLButtonElement,
+  preference: ThemePreference,
+): void {
+  const label = THEME_LABELS[preference];
+  button.textContent = THEME_GLYPHS[preference];
+  button.title = label;
+  button.setAttribute('aria-label', formatThemeAccessibleName(label));
+}
+
+/**
+ * FR-501 – FR-504 / FR-512: wire `#btn-theme` to cycle preference, paint chrome
+ * + editor, persist, and refresh the control chrome. Not routed through
+ * `setInert()` (same posture as Symbols).
+ */
+export function bindThemeControl(
+  button: HTMLButtonElement,
+  view: EditorView,
+  storage: StorageLike | null = getLocalStorage(),
+): void {
+  let preference = loadPreference(storage);
+  refreshThemeControl(button, preference);
+
+  button.addEventListener('click', () => {
+    preference = cyclePreference(preference);
+    const effective = applyDocumentTheme(preference);
+    setEditorColorScheme(view, effective);
+    savePreference(storage, preference);
+    refreshThemeControl(button, preference);
+  });
 }

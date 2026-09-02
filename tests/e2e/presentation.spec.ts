@@ -36,6 +36,8 @@ const CONTROLS = [
   '#btn-reset',
   // spec-03 FR-301: the pane's toggle is a toolbar control like any other.
   '#btn-symbols',
+  // spec-05 FR-501: color-mode control after Symbols.
+  '#btn-theme',
   '.cm-content',
   '#stdin-input',
   '#btn-eof',
@@ -392,7 +394,7 @@ test('VC-052 (FR-049): Tab reaches every target, each with a visible ring', asyn
   }
 
   // FR-049's targets, in the order the document presents them, as amended by
-  // spec-03: `Symbols` after `Reset`, then the pane as a single stop.
+  // spec-03 / spec-05: `Symbols`, then color mode, then the pane as a single stop.
   const targets = [
     '#btn-run',
     '#btn-stop',
@@ -401,6 +403,7 @@ test('VC-052 (FR-049): Tab reaches every target, each with a visible ring', asyn
     '#btn-format',
     '#btn-reset',
     '#btn-symbols',
+    '#btn-theme',
     '.symbol',
     '.cm-content',
     '#stdin-input',

@@ -34,8 +34,9 @@
         <button id="btn-copy" class="btn" type="button">Copy code</button>
         <button id="btn-format" class="btn" type="button" tabindex="0" aria-disabled="true">Format</button>
         <button id="btn-reset" class="btn" type="button">Reset</button>
-        <!-- FR-301: last control in the toolbar. It has no disabled state, so
-             unlike Run/Stop/Format it is never routed through `setInert()`. -->
+        <!-- FR-301: immediately before the color-mode control. It has no
+             disabled state, so unlike Run/Stop/Format it is never routed
+             through `setInert()`. -->
         <button
           id="btn-symbols"
           class="btn"
@@ -43,6 +44,9 @@
           aria-expanded="false"
           aria-controls="symbol-pane"
         >Symbols</button>
+        <!-- FR-501: last toolbar control. Glyph / title / aria-label filled by
+             src/theme.ts. Never routed through `setInert()`. -->
+        <button id="btn-theme" class="btn btn--theme" type="button"></button>
       </header>
 
       <p id="coi-banner" class="banner" role="status" hidden></p>
