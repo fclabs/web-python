@@ -428,8 +428,6 @@ body {
 }
 
 /* Special-character pane (spec-03: FR-301 – FR-318) ----------------------- */
-/* Iteration 1 ships the pane as a wrapping band at every width; FR-311's
-   inline-end column arrives with the `.app` grid below. */
 
 /* `.panel--symbols` sets a display, which would otherwise defeat the `hidden`
    property the pane is toggled with (DOM contract). */
@@ -437,12 +435,25 @@ body {
   display: none;
 }
 
+/*
+ * FR-311 / FR-317: below 700 px the pane is a full-width band that keeps its
+ * place in `.app`'s flex column; at 700 px and above `.app` becomes a grid and
+ * the pane is *placed* in an inline-end column. The element never moves in the
+ * document, so sequential focus order is the same at both widths (VC-331).
+ *
+ * The grid is switched on only while the pane is open, so a closed pane leaves
+ * the shipped spec-01 layout byte-for-byte as it was.
+ */
 .panel--symbols {
   background: var(--bg-raised);
+  border-color: var(--border-strong); /* NFR-303: the pane's edge, >= 3:1 */
   display: flex;
   flex: 0 0 auto;
-  flex-wrap: wrap;
+  flex-direction: column;
   gap: 6px;
+  /* NFR-301: at 375 px all 29 buttons stay reachable by scrolling the pane
+     itself, never the page. */
+  max-height: 25vh;
   overflow-y: auto;
   padding: 6px;
 }
@@ -468,12 +479,14 @@ body {
   gap: 4px;
 }
 
+/* FR-307's feedback region. Hidden while empty so it costs no space, which is
+   also why the contrast sample needs the region actually populated. */
 .symbol-status {
   color: var(--fg-muted);
+  font-family: var(--font-mono);
   font-size: 11px;
   margin: 0;
   overflow-wrap: anywhere;
-  width: 100%;
 }
 
 .symbol-status:empty {
@@ -481,7 +494,8 @@ body {
 }
 
 /* A-305: the two-character entries are literal characters — never a ligature,
-   and `...` is never composed into U+2026. */
+   and `...` is never composed into U+2026.
+   NFR-301: >= 32 x 32 px of rendered hit area at every breakpoint. */
 .symbol {
   background: var(--bg-raised);
   border: 1px solid var(--border-strong);
@@ -495,4 +509,59 @@ body {
   min-height: 32px;
   min-width: 32px;
   padding: 2px 4px;
+  text-align: center;
+}
+
+/* FR-307: the activated button while its 2 000 ms window lasts. The highlight
+   is a fill, which NFR-303 measures against the pane behind it. */
+.symbol[data-state='copied'] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-fg);
+}
+
+/*
+ * FR-311's breakpoint. It is mirrored by `WIDE_LAYOUT_QUERY` in
+ * `src/symbol-pane.ts`, which drives `aria-orientation`; the two must always
+ * be changed together.
+ */
+@media (min-width: 700px) {
+  .app:has(#symbol-pane:not([hidden])) {
+    display: grid;
+    grid-template-areas:
+      "toolbar toolbar"
+      "banner  banner"
+      "status  status"
+      "notices notices"
+      "console symbols"
+      "editor  symbols"
+      "stdin   symbols"
+      "diag    symbols";
+    grid-template-columns: minmax(0, 1fr) 72px;
+    grid-template-rows: auto auto auto auto minmax(80px, 1fr) minmax(120px, 2fr) auto auto;
+  }
+
+  /* Grid placement is inert while `.app` is still a flex column, so these need
+     no `:has()` guard of their own. */
+  .toolbar { grid-area: toolbar; }
+  .banner { grid-area: banner; }
+  .status-bar { grid-area: status; }
+  .notices { grid-area: notices; }
+  .panel--symbols { grid-area: symbols; }
+  .panel--console { grid-area: console; }
+  .panel--editor { grid-area: editor; }
+  .panel--stdin { grid-area: stdin; }
+  .panel--diagnostics { grid-area: diag; }
+
+  /* FR-311: a column 44–96 px wide, as tall as the console + editor region,
+     with its buttons stacked so every visual row holds exactly one (FR-309). */
+  .panel--symbols {
+    max-height: none;
+    min-width: 0;
+  }
+
+  .symbol-items {
+    flex-wrap: nowrap;
+    flex-direction: column;
+  }
 }

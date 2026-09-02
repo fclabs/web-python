@@ -44,12 +44,20 @@ const CONTROLS = [
 test.describe('375 px viewport', () => {
   test.use({ viewport: NARROW });
 
-  test('VC-050 (FR-047, FR-065): nothing is clipped and the page never scrolls sideways', async ({
+  // spec-03 amendment: the same assertions hold with the special-character
+  // pane open, which is the state VC-319 constrains.
+  for (const pane of ['closed', 'open'] as const) {
+  test(`VC-050 (FR-047, FR-065): nothing is clipped and the page never scrolls sideways — pane ${pane}`, async ({
     page,
   }) => {
     await openPlayground(page);
     await waitForPythonReady(page);
     await waitForLinter(page);
+
+    if (pane === 'open') {
+      await page.getByRole('button', { name: 'Symbols' }).click();
+      await expect(page.locator('#symbol-pane')).toBeVisible();
+    }
 
     // A long line in the editor and a long line in the console: the two places
     // horizontal overflow can originate.
@@ -112,6 +120,7 @@ test.describe('375 px viewport', () => {
     expect(geometry.pointerEvents).toBe('none');
     expect(geometry.tabIndex).toBeLessThan(0);
   });
+  }
 });
 
 /* -------------------------------------------------------------------------
@@ -154,6 +163,14 @@ async function paintEverySurface(page: Page): Promise<void> {
   await expect(page.locator('.cm-diagnostic-mark.cm-diagnostic-warning')).not.toHaveCount(0);
   await expect(page.locator('.cm-diagnostic-gutter-error')).not.toHaveCount(0);
   await expect(page.locator('.cm-diagnostic-gutter-warning')).not.toHaveCount(0);
+
+  // spec-03 VC-322: the pane's own surfaces are only measurable with the pane
+  // open, so every sampling run paints it too. Opened from the keyboard, not
+  // by pointer: a click would switch the browser's focus-visible heuristic to
+  // pointer modality and suppress the focus rings VC-071 goes on to sample.
+  await page.locator('#btn-symbols').focus();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#symbol-pane')).toBeVisible();
 }
 
 /** Every text surface NFR-010 lists, plus the syntax colours around them. */
@@ -180,6 +197,10 @@ const TEXT_SAMPLES: Sample[] = [
   { label: 'syntax: string', selector: '.tok-string', prop: 'color' },
   { label: 'syntax: definition', selector: '.tok-def', prop: 'color' },
   { label: 'syntax: operator', selector: '.tok-operator', prop: 'color' },
+  // spec-03 NFR-302: the pane's text — glyphs and group headings. The FR-307
+  // feedback text is sampled separately, once a copy has actually happened.
+  { label: 'symbol glyph', selector: '#symbol-pane .symbol', prop: 'color' },
+  { label: 'symbol group heading', selector: '#symbol-pane .symbol-group-title', prop: 'color' },
 ];
 
 /** Every non-text component NFR-013 lists. */
@@ -213,6 +234,15 @@ const NON_TEXT_SAMPLES: Sample[] = [
   {
     label: 'focus ring (diagnostics entry)',
     selector: '.diagnostic-entry',
+    prop: 'outlineColor',
+    focus: true,
+  },
+  // spec-03 NFR-303: the pane's non-text components.
+  { label: 'symbol button border', selector: '#symbol-pane .symbol', prop: 'borderTopColor' },
+  { label: 'symbol pane edge', selector: '#symbol-pane', prop: 'borderTopColor' },
+  {
+    label: 'focus ring (symbol button)',
+    selector: '#symbol-pane .symbol',
     prop: 'outlineColor',
     focus: true,
   },
@@ -273,7 +303,25 @@ for (const scheme of ['light', 'dark'] as const) {
         ])),
       );
 
-      expect(measured).toHaveLength(NON_TEXT_SAMPLES.length + 2);
+      // spec-03 FR-307: the copied highlight is a fill on the activated
+      // button, measured against the pane behind it (NFR-303). Copying puts
+      // the live button into exactly this state; setting the one attribute
+      // that distinguishes it measures the same rendering, the way FR-058's
+      // affordance is measured just below.
+      await page.evaluate(() =>
+        document.querySelector('#symbol-pane .symbol')!.setAttribute('data-state', 'copied'),
+      );
+      measured.push(
+        ...(await measureContrast(page, [
+          {
+            label: 'copied-state highlight',
+            selector: '#symbol-pane .symbol[data-state="copied"]',
+            prop: 'backgroundColor',
+          },
+        ])),
+      );
+
+      expect(measured).toHaveLength(NON_TEXT_SAMPLES.length + 3);
       expect(failures(measured, 3)).toEqual([]);
     });
   });

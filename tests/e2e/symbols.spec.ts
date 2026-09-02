@@ -350,3 +350,166 @@ test('VC-332 (FR-318): nothing but the toggle and Escape dismisses the pane', as
   await expect.poll(() => consoleText(page), { timeout: 15_000 }).toContain('Program stopped.');
   await stillOpen('after Stop');
 });
+
+/* -------------------------------------------------------------------------
+   FR-311 / NFR-301 — the two layouts
+   ------------------------------------------------------------------------- */
+
+/** The geometry FR-311 constrains, measured on the rendered page. */
+async function layout(page: Page): Promise<{
+  pane: DOMRect;
+  editor: DOMRect;
+  /** `.app`'s content width — what "the app content width" means in VC-319. */
+  appContentWidth: number;
+  scrollWidth: number;
+  paneScrolls: boolean;
+}> {
+  return page.evaluate(() => {
+    const rect = (selector: string): DOMRect =>
+      document.querySelector(selector)!.getBoundingClientRect().toJSON() as DOMRect;
+    const pane = document.getElementById('symbol-pane')!;
+    const app = document.querySelector('.app')!;
+    const appStyle = getComputedStyle(app);
+    return {
+      pane: rect('#symbol-pane'),
+      editor: rect('.panel--editor'),
+      appContentWidth:
+        app.clientWidth -
+        Number.parseFloat(appStyle.paddingLeft) -
+        Number.parseFloat(appStyle.paddingRight),
+      scrollWidth: document.documentElement.scrollWidth,
+      paneScrolls: pane.scrollHeight > pane.clientHeight,
+    };
+  });
+}
+
+test.describe('wide layout', () => {
+  test.use({ viewport: { width: 1280, height: 800 } });
+
+  test('VC-318 (FR-311): the pane docks as an inline-end column', async ({ page }) => {
+    await openPlayground(page);
+    await openSymbolPane(page);
+
+    const { pane, editor } = await layout(page);
+
+    expect(pane.x, 'pane starts at or after the editor panel’s inline-end edge').toBeGreaterThanOrEqual(
+      editor.x + editor.width - 1,
+    );
+    expect(pane.width, 'pane inline size').toBeGreaterThanOrEqual(44);
+    expect(pane.width, 'pane inline size').toBeLessThanOrEqual(96);
+    expect(pane.height, 'pane block size vs the editor panel').toBeGreaterThanOrEqual(
+      editor.height - 1,
+    );
+
+    // FR-309: one button per visual row, so ArrowRight/ArrowLeft cannot move.
+    const rows = await page.evaluate(() => {
+      const tops = Array.from(document.querySelectorAll('#symbol-pane .symbol')).map(
+        (b) => Math.round(b.getBoundingClientRect().top),
+      );
+      return new Set(tops).size;
+    });
+    expect(rows, 'distinct visual rows in the wide layout').toBe(29);
+
+    await expect(page.locator('#symbol-pane')).toHaveAttribute('aria-orientation', 'vertical');
+  });
+});
+
+test.describe('narrow layout', () => {
+  test.use({ viewport: { width: 375, height: 667 } });
+
+  test('VC-319 (FR-311, FR-047, NFR-301): a full-width band that scrolls itself', async ({
+    page,
+  }) => {
+    await openPlayground(page);
+    await openSymbolPane(page);
+
+    const { pane, editor, appContentWidth, scrollWidth, paneScrolls } = await layout(page);
+
+    expect(scrollWidth, 'no horizontal page scrolling').toBeLessThanOrEqual(375);
+    expect(pane.y, 'pane sits above the editor').toBeLessThan(editor.y);
+    expect(pane.width, 'pane spans the app content width').toBeCloseTo(appContentWidth, 0);
+
+    // Every button is inside the pane's scrollable content and big enough to
+    // hit; the pane scrolls, the page does not.
+    const buttons = await page.evaluate(() => {
+      const pane = document.getElementById('symbol-pane')!;
+      const box = pane.getBoundingClientRect();
+      return Array.from(document.querySelectorAll('#symbol-pane .symbol')).map((b) => {
+        const r = b.getBoundingClientRect();
+        return { w: r.width, h: r.height, left: r.left - box.left, right: box.right - r.right };
+      });
+    });
+    expect(buttons).toHaveLength(29);
+    for (const [i, b] of buttons.entries()) {
+      expect(b.w, `button ${i + 1} width`).toBeGreaterThanOrEqual(32);
+      expect(b.h, `button ${i + 1} height`).toBeGreaterThanOrEqual(32);
+      expect(b.left, `button ${i + 1} clipped at the pane’s inline start`).toBeGreaterThanOrEqual(-1);
+      expect(b.right, `button ${i + 1} clipped at the pane’s inline end`).toBeGreaterThanOrEqual(-1);
+    }
+    expect(paneScrolls, 'the pane scrolls within its own bounds').toBe(true);
+
+    // Scrolling the pane alone brings the last button into view.
+    await page.evaluate(() => {
+      const pane = document.getElementById('symbol-pane')!;
+      pane.scrollTop = pane.scrollHeight;
+    });
+    const lastVisible = await page.evaluate(() => {
+      const pane = document.getElementById('symbol-pane')!.getBoundingClientRect();
+      const all = document.querySelectorAll('#symbol-pane .symbol');
+      const last = all[all.length - 1]!.getBoundingClientRect();
+      return last.top >= pane.top - 1 && last.bottom <= pane.bottom + 1;
+    });
+    expect(lastVisible, 'the last button is reachable by pane-only scrolling').toBe(true);
+
+    await expect(page.locator('#symbol-pane')).toHaveAttribute('aria-orientation', 'horizontal');
+  });
+});
+
+test('VC-330 (FR-311): the 700/699 px boundary flips the layout', async ({ page }) => {
+  await page.setViewportSize({ width: 700, height: 800 });
+  await openPlayground(page);
+  await openSymbolPane(page);
+
+  {
+    const { pane, editor, scrollWidth } = await layout(page);
+    expect(pane.x, '700 px: pane after the editor').toBeGreaterThanOrEqual(
+      editor.x + editor.width - 1,
+    );
+    expect(pane.width, '700 px: pane inline size').toBeGreaterThanOrEqual(44);
+    expect(pane.width, '700 px: pane inline size').toBeLessThanOrEqual(96);
+    expect(scrollWidth, '700 px: no horizontal page scrolling').toBeLessThanOrEqual(700);
+  }
+
+  await page.setViewportSize({ width: 699, height: 800 });
+  {
+    const { pane, editor, appContentWidth, scrollWidth } = await layout(page);
+    expect(pane.y, '699 px: pane above the editor').toBeLessThan(editor.y);
+    expect(pane.width, '699 px: pane spans the app content width').toBeCloseTo(appContentWidth, 0);
+    expect(scrollWidth, '699 px: no horizontal page scrolling').toBeLessThanOrEqual(699);
+  }
+});
+
+test('A-305: the multi-character glyphs render as literal characters', async ({ page }) => {
+  await openPlayground(page);
+  await openSymbolPane(page);
+
+  const rendered = await page.evaluate(() =>
+    ['//', '**', '==', '!=', '<=', '>=', '...'].map((value) => {
+      const button = document.querySelector<HTMLElement>(
+        `#symbol-pane .symbol[data-value="${CSS.escape(value)}"]`,
+      )!;
+      return {
+        value,
+        text: button.textContent ?? '',
+        ligatures: getComputedStyle(button).fontVariantLigatures,
+        width: button.getBoundingClientRect().width,
+      };
+    }),
+  );
+
+  for (const row of rendered) {
+    expect(row.text, `${row.value} text`).toBe(row.value);
+    expect(row.ligatures, `${row.value} ligatures`).toBe('none');
+    expect(row.width, `${row.value} rendered width`).toBeGreaterThan(0);
+  }
+});
