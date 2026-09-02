@@ -28,12 +28,14 @@ editor, the Web Worker, and `localStorage` on this origin (`pyplay.program.v1`).
 - Deploying it: [`docs/deployment.md`](docs/deployment.md)
 - How it works inside: [`docs/architecture.md`](docs/architecture.md)
 - Working on it: [`CONTRIBUTING.md`](CONTRIBUTING.md)
+- CI, PR builds and releases: [`docs/ci.md`](docs/ci.md)
 
 ---
 
 ## Requirements
 
-- Node.js 20 or newer, and npm.
+- Node.js **26.x** (the version in [`.nvmrc`](.nvmrc), which CI reads and
+  `nvm use` picks up), and npm.
 - A browser with `WebAssembly`, `SharedArrayBuffer`, `Atomics.wait`, Web
   Workers, service workers and the async Clipboard API. The pinned baseline is
   Chrome 141/140, Edge 141/140, Firefox 145/144 and Safari 26.1/26.0.
@@ -96,6 +98,67 @@ npm run audit:perf     # VC-053 performance thresholds + the 15 MB budget
 npm run audit:contrast # VC-051 / VC-071 contrast, light and dark
 npm run test:matrix    # VC-055, the pinned browser matrix
 ```
+
+## Continuous integration
+
+Every pull request into `main` runs the suite as a merge gate. Seven required
+checks must be green before GitHub will let the pull request merge:
+
+| Check | What it runs |
+|---|---|
+| `pr-title` | the pull request title against the Conventional Commits grammar |
+| `typecheck` | `tsc --noEmit` |
+| `unit` | `npm run test:unit` |
+| `e2e-chromium` | `npx playwright test --project=chromium` |
+| `audit-contrast` | `npm run audit:contrast` |
+| `audit-perf` | `npm run audit:perf` |
+| `artifact` | `npm run build`, then packs `dist/` |
+
+The pinned browser matrix (`npm run test:matrix`) stays a **local** command: two
+of its eight pinned projects have no launchable engine on a Linux runner, and a
+skipped test is never reported as a pass.
+
+### Downloading a build from a pull request
+
+A passing run publishes the built site as one workflow artifact named
+`pyplay-<version>-pr.<number>+<short-sha>`, kept for 14 days, containing a
+single `.tar.gz` that extracts to the contents of `dist/`. Find it under the
+pull request's **Checks** → `artifact` → **Artifacts**, or:
+
+```bash
+gh run download --name "pyplay-<version>-pr.<number>+<sha>" --dir /tmp/build
+```
+
+Serve it with the two isolation headers, or blocking `input()` will not work.
+
+When a browser check fails, that run instead uploads
+`playwright-report-pr.<number>` — the Playwright HTML report plus traces — kept
+for 7 days.
+
+### Versions and releases
+
+Pull requests are squash-merged, so the **pull request title becomes the commit
+subject**, and that subject decides the release:
+
+| Title starts with | Result |
+|---|---|
+| `feat:` | minor bump |
+| `fix:` / `perf:` / `revert:` | patch bump |
+| anything with `!` before the colon, or a `BREAKING CHANGE:` footer | major bump, including from `0.x` |
+| `chore:` `docs:` `style:` `refactor:` `test:` `build:` `ci:` | no release |
+
+On merge, the release pipeline re-runs the whole gate against `main` and then,
+if the bump is not *none*, writes the version to `package.json`, commits it as
+`chore(release): vX.Y.Z [skip ci]`, creates the annotated tag `vX.Y.Z`, and
+publishes a GitHub Release with generated notes and one asset,
+`pyplay-X.Y.Z.tar.gz`. The version's source of truth is the highest `vX.Y.Z`
+git tag, not `package.json`.
+
+No CI job deploys anything — Netlify deploys from its own git integration.
+
+Full detail, including the caches, the fork-PR permission model and the
+repository settings that live outside this repository:
+[`docs/ci.md`](docs/ci.md).
 
 ## Keyboard
 

@@ -22,10 +22,13 @@ scripts/                   build-time and test-time tooling
   sw-template.js           the single service worker's source
   serve-plain.mjs          a non-isolated origin, for VC-015
   serve-deploy.mjs         a second deployment, for VC-063
+  derive-version.mjs       the release bump derivation (pure; unit-tested)
 tests/unit/                Vitest units
 tests/e2e/                 Playwright specs, one test per Verification Criterion
-docs/                      deployment and architecture references
-specs/                     the spec and its implementation plan
+docs/                      deployment, architecture and CI references
+specs/                     the specs and their implementation plans
+.github/workflows/         the PR gate and the release pipeline
+.nvmrc                     the Node.js major both CI and `nvm use` read
 ```
 
 Every test is named after the Verification Criterion it discharges
@@ -150,6 +153,72 @@ for what each pinned name is actually mapped onto.
   second build and watch for the update notice) and VC-021's greyscale check
   that the `[stderr] ` prefix survives without colour.
 
+## Node.js version
+
+[`.nvmrc`](.nvmrc) pins **Node.js 26**. Both workflows activate it with
+`node-version-file: .nvmrc`, and locally `nvm use` picks up the same value, so
+CI and your machine agree by construction. Bump the file, not the workflows.
+
+## Pull request titles
+
+Pull requests are **squash-merged**, and the squash commit's subject defaults to
+the pull request title. That subject is what the release pipeline derives the
+version from — so the title is validated by the `pr-title` check before the
+merge is allowed.
+
+```
+<type>[(<scope>)][!]: <subject>
+```
+
+| Type | Bump on merge |
+|---|---|
+| `feat` | **minor** — `0.1.0` → `0.2.0` |
+| `fix`, `perf`, `revert` | **patch** — `0.2.0` → `0.2.1` |
+| any type with `!` before the colon, or a `BREAKING CHANGE:` footer in the body | **major** — including from `0.x`, so `0.1.0` → `1.0.0` |
+| `chore`, `docs`, `style`, `refactor`, `test`, `build`, `ci` | none — no release is cut |
+
+The scope is optional and must be non-empty if present; the subject must be
+non-empty after the `: `. Examples that pass:
+
+```
+fix: boot the worker under Vite
+feat(editor)!: drop the v1 storage key
+chore: bump docs
+```
+
+A breaking change bumps major **even below 1.0**. The usual alternative
+(breaking → minor while below 1.0) means the version stops carrying breakage
+information for the whole pre-1.0 period — exactly when the persisted-state and
+worker-protocol contracts are most likely to break.
+
+### Fixing a bad title needs no push
+
+The PR workflow also triggers on `edited`, so correcting the title alone starts
+a fresh run and clears the red `pr-title` check. You do not need an empty
+commit, and you do not need to re-request a review.
+
+## What CI runs
+
+Seven required checks gate the merge: `pr-title`, `typecheck`, `unit`,
+`e2e-chromium`, `audit-contrast`, `audit-perf` and `artifact`. Everything they
+run, you can run locally — the commands are identical, with no CI-only
+thresholds or tolerances (see *Conventions* below).
+
+**The browser matrix stays local.** CI never runs `npm run test:matrix`. Two of
+its eight pinned projects (`edge-141`, `edge-140`) have no launchable engine on
+a GitHub Linux runner and would report `skipped`, and a skip is not a pass — so
+VC-055 remains a local, manual criterion and CI makes no eight-browser claim.
+Run it yourself before a change that touches rendering or engine behaviour.
+
+A passing `e2e-chromium` log reads `85 passed, 1 skipped`. That one skip is
+VC-059's six-minute variant, which is out of CI scope; it is the **only**
+permitted skip, and a second one is a regression. See
+[`docs/ci.md`](docs/ci.md#the-one-skipped-test).
+
+A green run attaches the built site to the pull request as a downloadable
+artifact, so a reviewer can try your actual build —
+[`docs/ci.md`](docs/ci.md#downloading-a-pr-build) has the commands.
+
 ## Conventions
 
 - **TypeScript is strict** and the build type-checks before it bundles
@@ -165,4 +234,11 @@ for what each pinned name is actually mapped onto.
   [`docs/architecture.md` → *Inert controls*](docs/architecture.md#inert-controls-fr-049-vs-fr-054--fr-058).
 - **Docs are part of the change.** If you touch the worker protocol, the stdin
   channel or the deployment shape, update `docs/architecture.md` or
-  `docs/deployment.md` in the same commit.
+  `docs/deployment.md` in the same commit; if you touch a workflow, update
+  `docs/ci.md`.
+- **Never relax a threshold to make CI pass.** Every number the audits assert is
+  the value spec-01 fixed. A gate that goes red because a runner is slow is
+  fixed by a faster runner, a larger runner label, or a real performance fix —
+  never by editing a threshold, adding a CI-only tolerance, or skipping the
+  assertion. A threshold that moves to match the hardware measures the hardware
+  instead of the product.
