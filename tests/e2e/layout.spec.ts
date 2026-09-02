@@ -78,17 +78,34 @@ interface Measurement {
 
 interface BaselineGeometry {
   commit: string;
+  /** `<platform>-<arch> chromium <version>` of the run that recorded it. */
+  recordedOn?: string;
   viewports: Record<string, Measurement>;
 }
 
 /**
  * VC-408's reference measurements, recorded from a build of commit `384cb70`
- * by `scripts/record-baseline-geometry.mjs` — see that file's header for the
- * exact procedure. Regenerate it only when the spec pins a new baseline.
+ * by `scripts/record-baseline-geometry.mjs`.
+ *
+ * The panel column's top and the toolbar's height are text metrics, so a
+ * record is only comparable to a run of the environment that produced it: the
+ * same `384cb70` build puts the stacked column's top at 82 px on a GitHub
+ * `ubuntu-latest` runner, at 84 px in the Playwright Linux image and at 82 px
+ * on darwin-arm64, with the toolbar a pixel taller in the two linux ones.
+ * Comparing across that gap reports a font as a layout regression — it is what
+ * made VC-408 red on CI while the same tree passed locally.
+ *
+ * So CI records its own baseline from `384cb70` before the suite runs and
+ * points `PYPLAY_BASELINE_GEOMETRY` at it (`.github/workflows/pr.yml`), and
+ * the committed record is the fallback for a local run of the environment it
+ * names. A run that matches neither *skips* rather than reporting a pass it
+ * did not earn — `scripts/record-baselines.mjs` records one in a command.
  */
-const BASELINE = JSON.parse(
-  readFileSync(fileURLToPath(new URL('./baseline-geometry.json', import.meta.url)), 'utf8'),
-) as BaselineGeometry;
+const GEOMETRY_RECORD =
+  process.env.PYPLAY_BASELINE_GEOMETRY ??
+  fileURLToPath(new URL('./baseline-geometry.json', import.meta.url));
+
+const BASELINE = JSON.parse(readFileSync(GEOMETRY_RECORD, 'utf8')) as BaselineGeometry;
 
 /** Seed the preference before any script of the page runs (FR-416, FR-417). */
 async function seedPreference(page: Page, value: string | null): Promise<void> {
@@ -228,6 +245,16 @@ for (const viewport of [WIDE, NARROW]) {
   }) => {
     test.skip(BASELINE.viewports[key] === undefined, `no baseline recorded for ${key}`);
     const reference = BASELINE.viewports[key]!;
+
+    // The record has to come from this environment — see `GEOMETRY_RECORD`.
+    const here = `${process.platform}-${process.arch} chromium ${page.context().browser()!.version()}`;
+    test.skip(
+      BASELINE.recordedOn !== here,
+      `${GEOMETRY_RECORD} was recorded on "${BASELINE.recordedOn ?? 'an unrecorded environment'}", ` +
+        `this run is "${here}" — text metrics differ between them, so the two are not ` +
+        `comparable. Record one with: node scripts/record-baselines.mjs ${BASELINE.commit} ` +
+        `--geometry <out.json>, then set PYPLAY_BASELINE_GEOMETRY to it.`,
+    );
 
     await page.setViewportSize(viewport);
     // The preference is how the shipped resolver is asked for vertical at a

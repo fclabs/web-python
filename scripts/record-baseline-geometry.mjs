@@ -38,6 +38,18 @@ export const GEOMETRY_VIEWPORTS = [
 const browser = await chromium.launch();
 const viewports = {};
 
+/**
+ * Which environment produced these numbers. The stacked column's height and
+ * the toolbar's are text metrics: the same build measures 82 px of header on
+ * a GitHub `ubuntu-latest` runner, 84 px in the Playwright Linux image and
+ * 82 px on darwin — differences of the installed fonts, not of the product.
+ * A record is therefore only comparable to a run of the same environment, and
+ * `tests/e2e/layout.spec.ts` refuses to compare across a mismatch rather than
+ * reporting a font as a layout regression. See CONTRIBUTING.md
+ * ("Re-recording the pinned baselines").
+ */
+const recordedOn = `${process.platform}-${process.arch} chromium ${browser.version()}`;
+
 for (const viewport of GEOMETRY_VIEWPORTS) {
   const page = await browser.newPage({ viewport });
   /*
@@ -66,8 +78,8 @@ for (const viewport of GEOMETRY_VIEWPORTS) {
 }
 
 await browser.close();
-writeFileSync(out, `${JSON.stringify({ commit, viewports }, null, 2)}\n`);
-console.log(`recorded ${commit} geometry into ${out}`);
+writeFileSync(out, `${JSON.stringify({ commit, recordedOn, viewports }, null, 2)}\n`);
+console.log(`recorded ${commit} geometry into ${out} (${recordedOn})`);
 
 /**
  * Serialised in the page. Kept in this file so the recorder and the assertion
