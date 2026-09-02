@@ -1,0 +1,130 @@
+# The pull-request gate (spec 02-ci: FR-100 - FR-112, FR-123).
+#
+# Every check here is a required check for merging into `main`; the seven names
+# GitHub's branch protection references are the job names below. Nothing in this
+# file deploys, publishes, or writes to the repository: PR code is untrusted by
+# construction (BR-106), so this workflow holds `contents: read` and no secret
+# beyond the GitHub-provided `GITHUB_TOKEN`, and its only trigger is the
+# `pull_request` event below. BR-106 forbids the fork-code-with-a-writable-token
+# trigger variant by name; see `docs/ci.md` for why, since naming it here would
+# trip the spec's own scope greps.
+name: PR
+
+on:
+  pull_request:
+    branches: [main]
+    # `edited` is required by FR-100: `pr-title` gates on the pull request
+    # title, which can change with no push. Without it a PR opened with a
+    # malformed title keeps a red required check no contributor action can
+    # refresh.
+    types: [opened, synchronize, reopened, edited]
+
+# BR-106: explicit, never the runner default.
+permissions:
+  contents: read
+
+# FR-110: a superseded run is cancelled, so only the newest run reports a
+# merge-gating status.
+concurrency:
+  group: pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  # FR-111. The title is read from the event through `env:`, never interpolated
+  # into a `run:` body.
+  pr-title:
+    name: pr-title
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out the pull request merge result
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Activate Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Validate the pull request title against the Conventional Commits grammar
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          cat > "${RUNNER_TEMP}/pr-title.mjs" <<'VALIDATOR'
+          // <type>[(<scope>)][!]: <subject>   (spec 02-ci, Data & Interfaces)
+          const TYPES = [
+            "feat", "fix", "perf", "revert", "chore",
+            "docs", "style", "refactor", "test", "build", "ci",
+          ];
+          const GRAMMAR = new RegExp(
+            "^(" + TYPES.join("|") + ")" + // type
+            "(\\([^)]+\\))?" +             // optional non-empty scope
+            "!?" +                         // optional breaking marker
+            ": " +                         // separator
+            "(?=.*\\S).+$"                 // non-empty subject
+          );
+          const title = process.env.PR_TITLE ?? "";
+          if (GRAMMAR.test(title)) {
+            console.log("Pull request title matches the Conventional Commits grammar:");
+            console.log("  " + title);
+            process.exit(0);
+          }
+          console.error("Pull request title does not match the required grammar.");
+          console.error("");
+          console.error("  got:      " + JSON.stringify(title));
+          console.error("  expected: <type>[(<scope>)][!]: <subject>");
+          console.error("");
+          console.error("Accepted types: " + TYPES.join(", "));
+          console.error("");
+          console.error("The title becomes the squash-merge commit subject, which is the");
+          console.error("input the release pipeline derives the semver bump from:");
+          console.error("  feat -> minor,  fix/perf/revert -> patch,  ! or a");
+          console.error("  BREAKING CHANGE: footer -> major,  everything else -> no release.");
+          console.error("");
+          console.error("Examples: 'fix: boot the worker under Vite',");
+          console.error("          'feat(editor)!: drop the v1 storage key',");
+          console.error("          'chore: bump docs'");
+          console.error("");
+          console.error("Edit the pull request title; the check re-runs on the edit alone,");
+          console.error("with no push needed.");
+          process.exit(1);
+          VALIDATOR
+          node "${RUNNER_TEMP}/pr-title.mjs"
+
+  # FR-102. `tsc --noEmit` is invoked directly: `package.json` has no
+  # `typecheck` script and adding one is an out-of-scope edit to an existing
+  # file. The required check name is this job's name.
+  typecheck:
+    name: typecheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out the pull request merge result
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Activate Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Type check
+        run: npx tsc --noEmit
+
+  # FR-103.
+  unit:
+    name: unit
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out the pull request merge result
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Activate Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Unit tests
+        run: npm run test:unit
