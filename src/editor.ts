@@ -43,13 +43,11 @@ const pyHighlight = HighlightStyle.define([
   { tag: t.punctuation, class: 'tok-punct' },
 ]);
 
-/** Follow the page palette when the OS switches light/dark. */
+/** Drive CodeMirror's dark-theme facet from the effective palette (BR-503). */
 const colorScheme = new Compartment();
 
-function colorSchemeExtensions(): Extension[] {
-  return window.matchMedia('(prefers-color-scheme: dark)').matches
-    ? [EditorView.darkTheme.of(true)]
-    : [];
+function colorSchemeExtensions(effective: 'light' | 'dark'): Extension[] {
+  return effective === 'dark' ? [EditorView.darkTheme.of(true)] : [];
 }
 
 export interface EditorOptions {
@@ -60,6 +58,8 @@ export interface EditorOptions {
   onRun?: () => void;
   /** FR-009: `Shift+Alt+F` triggers Format from inside the editor. */
   onFormat?: () => void;
+  /** Effective palette from the theme module (BR-502 — no matchMedia here). */
+  effectiveColorScheme: 'light' | 'dark';
 }
 
 export function createEditor({
@@ -68,6 +68,7 @@ export function createEditor({
   onChange,
   onRun,
   onFormat,
+  effectiveColorScheme,
 }: EditorOptions): EditorView {
   const extensions: Extension[] = [
     // Ahead of the default keymap, which binds `Mod-Enter` to insertBlankLine.
@@ -118,21 +119,23 @@ export function createEditor({
       if (update.docChanged) onChange(update.state.doc.toString());
     }),
     EditorView.contentAttributes.of({ 'aria-label': 'Python program editor' }),
-    colorScheme.of(colorSchemeExtensions()),
+    colorScheme.of(colorSchemeExtensions(effectiveColorScheme)),
   ];
 
-  const view = new EditorView({
+  return new EditorView({
     parent,
     state: EditorState.create({ doc: initialDoc, extensions }),
   });
+}
 
-  const media = window.matchMedia('(prefers-color-scheme: dark)');
-  const onSchemeChange = (): void => {
-    view.dispatch({ effects: colorScheme.reconfigure(colorSchemeExtensions()) });
-  };
-  media.addEventListener('change', onSchemeChange);
-
-  return view;
+/** Reconfigure the editor's dark-theme compartment (BR-502, BR-503). */
+export function setEditorColorScheme(
+  view: EditorView,
+  effective: 'light' | 'dark',
+): void {
+  view.dispatch({
+    effects: colorScheme.reconfigure(colorSchemeExtensions(effective)),
+  });
 }
 
 /** Replace the whole document as a single undoable edit. */

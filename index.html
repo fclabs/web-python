@@ -4,6 +4,26 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Python Playground</title>
+    <!-- FR-515 / BR-505: render-blocking bootstrap before any stylesheet that
+         paints chrome colours. Allow-list matches BR-501 / src/theme.ts. -->
+    <script>
+      (function () {
+        var KEY = 'pyplay.theme.v1';
+        var pref = 'system';
+        try {
+          var raw = localStorage.getItem(KEY);
+          if (raw === 'light' || raw === 'dark' || raw === 'system') pref = raw;
+        } catch (e) {}
+        document.documentElement.dataset.theme = pref;
+        var osDark = false;
+        try {
+          osDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        } catch (e) {}
+        var effective =
+          pref === 'dark' || (pref === 'system' && osDark) ? 'dark' : 'light';
+        document.documentElement.style.colorScheme = effective;
+      })();
+    </script>
   </head>
   <body>
     <div id="app" class="app">

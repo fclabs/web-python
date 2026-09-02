@@ -34,6 +34,7 @@ import type { StdinMode } from './stdin-stream';
 import { STARTER_PROGRAM } from './starter';
 import { SymbolPane } from './symbol-pane';
 import { getLocalStorage, loadProgram, saveProgram } from './storage';
+import { applyDocumentTheme, loadPreference } from './theme';
 
 const AUTOSAVE_UNAVAILABLE = 'Autosave unavailable — your code will not survive a reload';
 const COPY_FAILED = "Couldn't copy — select the code and press Ctrl/Cmd+C";
@@ -51,6 +52,11 @@ function boot(): void {
   const notices = new Notices(need('notices'));
   const storage = getLocalStorage();
 
+  // FR-505 / FR-506 / FR-515: preference already applied by the HTML bootstrap;
+  // re-apply so the module's load-time OS sample stays in sync (BR-502).
+  const preference = loadPreference(storage);
+  const effective = applyDocumentTheme(preference);
+
   // FR-003 / FR-004
   const initialDoc = loadProgram(storage);
 
@@ -62,6 +68,7 @@ function boot(): void {
   const view = createEditor({
     parent: need('editor'),
     initialDoc,
+    effectiveColorScheme: effective,
     onChange: (doc) => {
       autosaver.schedule(doc);
       linter?.schedule(doc); // FR-035

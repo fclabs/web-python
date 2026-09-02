@@ -1,9 +1,18 @@
 /* ---------------------------------------------------------------------------
-   Palette tokens. Light is the base; the dark palette redefines only tokens.
-   Contrast targets: text >= 4.5:1 (NFR-010), non-text UI >= 3:1 (NFR-013).
+   Palette tokens. Selection is via data-theme (FR-514); token *values* are
+   unchanged (A-501). Contrast: text >= 4.5:1 (NFR-010), non-text >= 3:1 (NFR-013).
+   color-scheme on light/dark tracks the preference; for system, the FR-515
+   bootstrap / theme module sets documentElement.style.colorScheme to the
+   load-time effective palette (FR-516, BR-506).
    --------------------------------------------------------------------------- */
 :root {
-  color-scheme: light dark;
+  --font-ui: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+
+[data-theme="light"],
+[data-theme="system"] {
+  color-scheme: light;
 
   --bg: #ffffff;
   --bg-sunken: #f2f3f5;
@@ -43,13 +52,53 @@
   --disabled-fg: #5c6270;
   --disabled-bg: #e4e6ea;
   --disabled-border: #777d87;
+}
 
-  --font-ui: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  --bg: #14161a;
+  --bg-sunken: #0e1013;
+  --bg-raised: #1c1f25;
+  --fg: #e9ebef;
+  --fg-muted: #b3b9c4;
+  --border: #6d7480;
+  --border-strong: #8d95a2;
+
+  --accent: #6fa8ff;
+  --accent-fg: #0d1117;
+  --focus: #8ab6ff;
+
+  --notice-bg: #3a2f10;
+  --notice-fg: #ffdf9e;
+  --notice-border: #c8a24a;
+
+  --console-bg: #0e1013;
+  --console-fg: #e9ebef;
+  --console-stderr: #ff8f8f;
+  --console-input: #8ab6ff;
+  --console-meta: #b3b9c4;
+
+  --sev-error: #ff8f8f;
+  --sev-warning: #ffc46b;
+
+  --tok-keyword: #d9a2ff;
+  --tok-string: #7ddca4;
+  --tok-comment: #9aa3b0;
+  --tok-number: #ffbe7a;
+  --tok-atom: #ffbe7a;
+  --tok-def: #8ab6ff;
+  --tok-property: #e9ebef;
+  --tok-operator: #b3b9c4;
+  --tok-punct: #b3b9c4;
+
+  --disabled-fg: #a7aeba;
+  --disabled-bg: #23272e;
+  --disabled-border: #767d8a;
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
+  [data-theme="system"] {
     --bg: #14161a;
     --bg-sunken: #0e1013;
     --bg-raised: #1c1f25;
