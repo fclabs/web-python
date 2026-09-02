@@ -104,10 +104,13 @@ npx playwright test --project=chrome-141 --project=chrome-140 \
 ```
 
 Those eight projects run `tests/e2e/matrix.spec.ts` only; the default
-`chromium` project runs everything else, so a plain `npx playwright test` runs
-each spec exactly once. A project whose engine cannot be launched on this
-machine is **omitted** from the config rather than stubbed, and the runner
-prints which ones — see
+`chromium` project runs everything else. The matrix is **opt-in** via `MATRIX=1`
+(which `npm run test:matrix` sets, along with `--workers=1`): VC-024's NFR-014
+budget is a *reference-profile* wall-clock measurement, and six browser engines
+running concurrently is not that profile. Without the flag the matrix projects
+report `skipped`. A project whose engine cannot be launched on this machine is
+also **skipped** — never stubbed onto a substitute engine under a pinned name —
+and the runner prints which ones. See
 [`docs/architecture.md` → *Browser matrix*](docs/architecture.md#browser-matrix)
 for what each pinned name is actually mapped onto.
 

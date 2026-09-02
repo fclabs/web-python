@@ -10,6 +10,14 @@
  *
  * This file is the *only* one those projects run: the rest of the suite runs
  * on the default `chromium` project.
+ *
+ * It is opt-in via `MATRIX=1` (`npm run test:matrix`, which also pins
+ * `--workers=1`). VC-024's NFR-014 budget is a *reference-profile* wall-clock
+ * measurement, and running six browser engines concurrently — which a plain
+ * `npx playwright test` would do — is not that profile: the recovery it timed
+ * was contention, not the app. The plan's Final Verification already invokes
+ * the matrix as its own command, so this matches it. Without the flag the
+ * matrix projects report `skipped`, never a pass they did not earn.
  */
 import { expect, test } from '@playwright/test';
 import {
@@ -24,6 +32,22 @@ import {
   waitForPythonReady,
   waitForStdinPrompt,
 } from './helpers';
+
+import { UNAVAILABLE_MATRIX_PROJECTS } from '../../playwright.config';
+
+test.skip(
+  !process.env.MATRIX,
+  'NFR-011 matrix is opt-in: run `npm run test:matrix` (serial, uncontended).',
+);
+
+// A pinned version whose engine cannot be launched here is skipped, never
+// silently run on a substitute engine under its name.
+test.beforeEach(({}, testInfo) => {
+  test.skip(
+    UNAVAILABLE_MATRIX_PROJECTS.includes(testInfo.project.name),
+    `${testInfo.project.name}: no such engine installed on this machine — uncovered, not passing.`,
+  );
+});
 
 /** VC-067's six reads at four depths, condensed but structurally identical. */
 const DEPTHS_PROGRAM = [

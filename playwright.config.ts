@@ -23,9 +23,10 @@ export const DEPLOY_BASE_URL = `http://localhost:${DEPLOY_PORT}`;
  * 145/144 and Safari 26.1/26.0. Playwright cannot install arbitrary historical
  * builds, so each pinned name is declared as its own project and mapped onto
  * the closest engine this machine can actually launch. A project whose engine
- * is genuinely unavailable is *omitted* rather than stubbed, so a matrix run
- * can never report a pass it did not earn — see `docs/architecture.md`
- * ("Browser matrix") for the honest coverage table.
+ * is genuinely unavailable still exists — so the documented eight-project
+ * command runs as written — but its tests *skip*; nothing is ever stubbed into
+ * a pass it did not earn. See `docs/architecture.md` ("Browser matrix") for the
+ * honest coverage table.
  */
 interface PinnedBrowser {
   /** The project name the plan's verification command uses. */
@@ -106,11 +107,20 @@ const MATRIX: PinnedBrowser[] = [
   },
 ];
 
-const unavailable = MATRIX.filter((browser) => !browser.available).map((b) => b.name);
+/**
+ * Pinned versions whose engine cannot be launched on this machine. These
+ * projects are still *defined* — so the plan's Final Verification command,
+ * which names all eight, runs as written — but `matrix.spec.ts` skips them.
+ * A skip is never a pass, so the matrix still cannot report coverage it did
+ * not earn; `docs/architecture.md` carries the coverage table.
+ */
+export const UNAVAILABLE_MATRIX_PROJECTS = MATRIX.filter((b) => !b.available).map((b) => b.name);
+
+const unavailable = UNAVAILABLE_MATRIX_PROJECTS;
 // Only the runner process reports it; the workers would repeat it once each.
 if (unavailable.length > 0 && process.env.TEST_WORKER_INDEX === undefined) {
   console.warn(
-    `[NFR-011] no engine available for: ${unavailable.join(', ')} — those projects are not defined, ` +
+    `[NFR-011] no engine available for: ${unavailable.join(', ')} — those projects skip, ` +
       'so a matrix run cannot report a pass for them.',
   );
 }
@@ -150,10 +160,12 @@ export default defineConfig({
         permissions: ['clipboard-read', 'clipboard-write'],
       },
     },
-    ...MATRIX.filter((browser) => browser.available).map(({ name, use }) => ({
+    ...MATRIX.map(({ name, use, available }) => ({
       name,
       testMatch: /matrix\.spec\.ts$/,
-      use,
+      // An unlaunchable engine keeps its project so the documented eight-project
+      // command works; the spec skips it rather than trying to launch it.
+      use: available ? use : { ...devices['Desktop Chrome'] },
     })),
   ],
   webServer: [

@@ -9,11 +9,11 @@
     "preview": "vite preview",
     "test:unit": "vitest run",
     "test:e2e": "playwright test",
-    "test": "vitest run && playwright test",
+    "test": "vitest run && playwright test && npm run test:matrix",
     "vendor": "node scripts/vendor-pyodide.mjs && node scripts/vendor-ruff.mjs",
     "audit:perf": "playwright test --project=chromium --grep VC-053",
     "audit:contrast": "playwright test --project=chromium --grep \"VC-051|VC-071\"",
-    "test:matrix": "playwright test --project=chrome-141 --project=chrome-140 --project=edge-141 --project=edge-140 --project=firefox-145 --project=firefox-144 --project=safari-26.1 --project=safari-26.0"
+    "test:matrix": "MATRIX=1 playwright test --workers=1 --project=chrome-141 --project=chrome-140 --project=edge-141 --project=edge-140 --project=firefox-145 --project=firefox-144 --project=safari-26.1 --project=safari-26.0"
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1",

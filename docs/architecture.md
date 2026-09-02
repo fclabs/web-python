@@ -331,8 +331,16 @@ storage disabled) shows one notice per page load and changes nothing else.
 The spec pins eight browser versions. Playwright cannot install arbitrary
 historical builds, so `playwright.config.ts` declares one project per pinned
 name and maps it onto the closest engine it can actually launch. A project
-whose engine is unavailable on the machine is **omitted** from the config, and
-the runner prints which — a matrix run can never report a pass it did not earn.
+whose engine is unavailable on the machine still exists — so the documented
+eight-project command runs as written — but its test **skips**, and the runner
+prints which ones. A skip is never a pass, so a matrix run can never report
+coverage it did not earn.
+
+The matrix is opt-in (`MATRIX=1`, set by `npm run test:matrix`) and runs
+`--workers=1`. VC-024 asserts NFR-014's 5.0 s recovery budget, which the spec
+states for the reference profile; six engines competing for one machine is not
+that profile, and measuring under that contention times the machine rather than
+the app.
 
 As executed on the development machine (macOS arm64, Playwright 1.62.1):
 
@@ -340,7 +348,7 @@ As executed on the development machine (macOS arm64, Playwright 1.62.1):
 |---|---|---|
 | `chrome-141` | Google Chrome 152 (`channel: 'chrome'`, locally installed) | **alias** — same engine family (Blink), newer version |
 | `chrome-140` | Playwright's bundled Chromium (≈152) | **alias** — Blink, newer version |
-| `edge-141` | `channel: 'msedge'` | **not run** — Edge is not installed here; the project is omitted |
+| `edge-141` | `channel: 'msedge'` | **not run** — Edge is not installed here; the project skips |
 | `edge-140` | `channel: 'msedge'` | **not run** — same |
 | `firefox-145` | Playwright's bundled Firefox 153 | **alias** — Gecko, newer version |
 | `firefox-144` | Playwright's bundled Firefox 153 | **alias** — Gecko, newer version |
