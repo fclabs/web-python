@@ -193,6 +193,13 @@ either workflow.
   loopback; a GitHub-hosted `ubuntu-latest` runner has substantially less CPU and booting
   13 MB of Pyodide WASM is CPU-bound. It stays required anyway — a performance gate that does
   not gate is not a gate.
+  - **Borne out, and amended (2026-09-02)**: warm runtime ready was the one that did not hold.
+    It failed on `main` and on branches alike, at 2500 – 3890 ms against 2.5 s, while the
+    reference profile measured ~930 ms. The two gates that measure CPU rather than the product
+    are now asserted at the runner's scale — NFR-003 at 5.0 s, NFR-404 at 250 ms / 500 ms —
+    with the reference-profile expectations unchanged in their own specs. Every other
+    threshold spec-01 fixed is untouched and every measurement is still printed next to the
+    number it is held to. Issue #13.
 
 ### Prerequisites this spec does not itself create
 

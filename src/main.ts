@@ -20,6 +20,8 @@ import {
   formatLoading,
   formatReady,
   formatRunSeparator,
+  LAYOUT_NARROW_HINT,
+  LAYOUT_SAVE_FAILED,
 } from './format';
 import { CANNOT_FORMAT, formatDocument } from './lint/format-command';
 import { Linter } from './lint/linter';
@@ -32,6 +34,13 @@ import { STDIN_MAX_LINE } from './protocol';
 import { PyodideRuntime } from './runtime';
 import type { StdinMode } from './stdin-stream';
 import { STARTER_PROGRAM } from './starter';
+import {
+  LAYOUT_MIN_WIDTH,
+  type Layout,
+  loadLayoutPreference,
+  resolveLayout,
+  saveLayoutPreference,
+} from './layout';
 import { SymbolPane } from './symbol-pane';
 import { getLocalStorage, loadProgram, saveProgram } from './storage';
 import { applyDocumentTheme, bindThemeControl, loadPreference } from './theme';
@@ -48,10 +57,154 @@ function need<T extends HTMLElement>(id: string): T {
   return el as T;
 }
 
+/** FR-411 / FR-412: the query that mirrors `LAYOUT_MIN_WIDTH` in the CSS. */
+const LAYOUT_QUERY = `(min-width: ${LAYOUT_MIN_WIDTH}px)`;
+
 function boot(): void {
   const notices = new Notices(need('notices'));
   const storage = getLocalStorage();
 
+  // --- Layout (FR-411, FR-412, FR-416, FR-417) ---------------------------
+  //
+  // FR-416: this runs before the editor is created and before anything else
+  // in `boot()` touches the DOM. The entry script is `type="module"`, so it is
+  // deferred to after parse but still before the first paint — `#app` already
+  // carries the resolved `data-layout` in the frame the browser paints, and no
+  // frame ever shows the other layout. No inline script is needed for that.
+  const app = need('app');
+  const layoutGroup = need('layout-group');
+  const layoutHint = need('layout-narrow-hint');
+  // FR-401's two radios, in the order `ArrowRight` walks them and `Home` /
+  // `End` address them. Both names describe the orientation of the divider
+  // between the panels — see the contract in `src/layout.ts`.
+  const layoutRadios: { layout: Layout; radio: HTMLButtonElement }[] = [
+    { layout: 'horizontal', radio: need<HTMLButtonElement>('layout-horizontal') },
+    { layout: 'vertical', radio: need<HTMLButtonElement>('layout-vertical') },
+  ];
+
+  const wide = window.matchMedia(LAYOUT_QUERY);
+  // FR-411's `P`. Held in a variable rather than re-read, because a resize
+  // must re-resolve without re-reading — and must never write (BR-405).
+  let layoutPref = loadLayoutPreference(storage);
+  // FR-418: at most one notice per page load.
+  let layoutSaveWarned = false;
+
+  /**
+   * Render the effective layout: the `data-layout` attribute, the control's
+   * checked state and roving tabindex, its inertness and FR-406's hint.
+   *
+   * BR-401 / FR-424: this is the whole switch. It schedules no autosave,
+   * sends the worker no message and issues no network request.
+   */
+  const renderLayout = (): void => {
+    const effective = resolveLayout(layoutPref, wide.matches ? LAYOUT_MIN_WIDTH : 0);
+    if (app.dataset.layout !== effective) app.dataset.layout = effective;
+
+    // FR-415: below 900 px the group is inert but focusable — `aria-disabled`
+    // via `setInert()`, never the `disabled` attribute, which would drop it
+    // out of the tab order and break FR-049 from spec-01.
+    const narrow = !wide.matches;
+    setInert(layoutGroup, narrow);
+
+    for (const { layout, radio } of layoutRadios) {
+      // FR-402: the *effective* layout is checked, never a stored preference
+      // the narrow override is currently masking.
+      const checked = layout === effective;
+      radio.setAttribute('aria-checked', checked ? 'true' : 'false');
+      // FR-405: exactly one radio is tabbable — the checked one — so the group
+      // is a single tab stop (parent VC-052).
+      radio.tabIndex = checked ? 0 : -1;
+      setInert(radio, narrow);
+    }
+
+    // FR-406: the hint is carried by `title` *and* `aria-describedby`, so it
+    // is announced rather than only hovered. VC-415 requires the string to be
+    // absent from the document at >= 900 px, so it is written and cleared
+    // rather than merely hidden.
+    if (narrow) {
+      layoutHint.textContent = LAYOUT_NARROW_HINT;
+      layoutGroup.setAttribute('title', LAYOUT_NARROW_HINT);
+      layoutGroup.setAttribute('aria-describedby', layoutHint.id);
+    } else {
+      layoutHint.textContent = '';
+      layoutGroup.removeAttribute('title');
+      layoutGroup.removeAttribute('aria-describedby');
+    }
+  };
+
+  /**
+   * FR-403 / FR-404 / FR-405: the visitor chose `layout`. Persist it, apply
+   * it, and move focus to the radio that now owns the group's tab stop.
+   *
+   * FR-415 makes every path here a strict no-op below 900 px: focus,
+   * `aria-checked`, `data-layout` and storage all stay as they were.
+   */
+  const selectLayout = (layout: Layout): void => {
+    if (isInert(layoutGroup)) return;
+    layoutPref = layout;
+    // FR-414 writes the bare string; FR-418 / BR-406 degrade this feature
+    // alone when the write is refused — the layout still applies.
+    if (!saveLayoutPreference(storage, layout) && !layoutSaveWarned) {
+      layoutSaveWarned = true;
+      notices.show(LAYOUT_SAVE_FAILED);
+    }
+    renderLayout();
+    layoutRadios.find((entry) => entry.layout === layout)?.radio.focus();
+  };
+
+  for (const { layout, radio } of layoutRadios) {
+    radio.addEventListener('click', () => selectLayout(layout));
+  }
+
+  layoutGroup.addEventListener('keydown', (event) => {
+    // FR-415: the whole navigation model of FR-405 applies only at >= 900 px.
+    if (isInert(layoutGroup)) return;
+    const index = layoutRadios.findIndex((entry) => entry.radio === event.target);
+    if (index < 0) return;
+
+    let target: number | null = null;
+    switch (event.key) {
+      // FR-405: both directions wrap, over a group of exactly two.
+      case 'ArrowRight':
+      case 'ArrowDown':
+        target = (index + 1) % layoutRadios.length;
+        break;
+      case 'ArrowLeft':
+      case 'ArrowUp':
+        target = (index - 1 + layoutRadios.length) % layoutRadios.length;
+        break;
+      case 'Home':
+        target = 0;
+        break;
+      case 'End':
+        target = layoutRadios.length - 1;
+        break;
+      // FR-403 / FR-404: `Enter` and `Space` activate. `Space` on a `<button>`
+      // would scroll the page if it reached the document (VC-406), and a
+      // `<button>`'s own `Enter`/`Space` click synthesis would double-apply.
+      case 'Enter':
+      case ' ':
+        target = index;
+        break;
+      default:
+        return;
+    }
+
+    // Every key handled above is one the browser would otherwise act on —
+    // arrows and `Home`/`End` scroll, `Space` scrolls and clicks. VC-406
+    // asserts `window.scrollY` is untouched by any activation.
+    event.preventDefault();
+    selectLayout(layoutRadios[target]!.layout);
+  });
+
+  renderLayout();
+
+  // FR-412: the 900 px crossing re-resolves synchronously in the `change`
+  // handler — no `resize` listener and no debounce — and writes nothing, so an
+  // unset preference tracks the viewport and stays unset (BR-405). FR-413: a
+  // stored `vertical` is masked while narrow and restored on widening,
+  // because `layoutPref` is re-resolved, never rewritten.
+  wide.addEventListener('change', renderLayout);
   // FR-505 / FR-506 / FR-515: preference already applied by the HTML bootstrap;
   // re-apply so the module's load-time OS sample stays in sync (BR-502).
   const preference = loadPreference(storage);

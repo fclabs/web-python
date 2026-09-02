@@ -69,6 +69,17 @@ export function formatSymbolCopied(value: string): string {
 /** FR-308: the notice shown when the pane's clipboard write is rejected. */
 export const SYMBOL_COPY_FAILED = "Couldn't copy — select the character and press Ctrl/Cmd+C";
 
+/** FR-401: the layout control's accessible name and its two radio labels. */
+export const LAYOUT_LABEL = 'Layout';
+export const LAYOUT_VERTICAL = 'Vertical';
+export const LAYOUT_HORIZONTAL = 'Horizontal';
+
+/** FR-406: why the two-column `vertical` layout is unavailable below 900 px. */
+export const LAYOUT_NARROW_HINT = 'Vertical layout needs a window at least 900 px wide';
+
+/** FR-418: the preference write was rejected. */
+export const LAYOUT_SAVE_FAILED = "Layout preference won't be remembered";
+
 /** Mode table labels (FR-504): tooltip and accessible-name suffix. */
 export const THEME_LABELS = {
   light: 'Light',

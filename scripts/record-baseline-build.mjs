@@ -9,21 +9,20 @@
  *   # color-mode budget (NFR-505):
  *   node scripts/record-baseline-build.mjs dist tests/e2e/baseline-build-theme.json 0a4194f
  *
- * The committed records under `tests/e2e/` are what `perf.spec.ts` compares
- * against; regenerate one only when its spec pins a new baseline commit.
+ * `scripts/record-baselines.mjs` drives this from a commit rather than from a
+ * built `dist/`, and is what CI and CONTRIBUTING.md use; call this one
+ * directly only when the build is already in front of you.
  *
- * Record it on CI's platform. `gzipSync` is only as reproducible as the zlib
- * Node was linked against, and the flavours disagree: Node 26 ships stock zlib
- * 1.2.12 on macOS and zlib-ng on linux-x64, which differ by ~152 KB over the
- * vendored blobs and ~1.1 KB over the app files. `perf.spec.ts` therefore
- * diffs the app files only, but their baseline still has to come from a linux
- * run — from a checkout of the baseline commit, that is:
- *
- *   docker run --rm -v "$PWD:/w" -w /w node:26 \
- *     node scripts/record-baseline-build.mjs dist tests/e2e/baseline-build.json 8df7fa5
+ * `gzipSync` is only as reproducible as the zlib Node was linked against, and
+ * the flavours disagree: Node 26 ships stock zlib on darwin and zlib-ng on
+ * linux, which differ by ~152 KB over the vendored blobs and ~1.1 KB over the
+ * app files, and even the two linux arches differ by 2 B. `perf.spec.ts`
+ * therefore diffs the app files only, against the entry of `gzippedAppBy` that
+ * names the compressor doing the comparing — so a record grows an entry per
+ * environment it is recorded on, and covers none it has not seen.
  */
 import { createHash } from 'node:crypto';
-import { readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { gzipSync } from 'node:zlib';
 
@@ -71,6 +70,21 @@ for (const url of [...manifest.urls, '/index.html']) {
 const digest = (path) => createHash('sha256').update(readFileSync(join(dist, path))).digest('hex');
 const vendored = files.filter(isVendored);
 
+const compressor = `${process.platform}-${process.arch} zlib ${process.versions.zlib}`;
+
+/*
+ * A committed record is read by whoever runs the suite, so it carries one app
+ * size per compressor and re-recording it *adds* this run's entry rather than
+ * replacing the others' — a record narrowed to one machine makes the budget
+ * skip on every other. Entries for a different commit are dropped: they are
+ * measurements of a different tree.
+ */
+const previous =
+  existsSync(out) && JSON.parse(readFileSync(out, 'utf8')).commit === commit
+    ? JSON.parse(readFileSync(out, 'utf8'))
+    : {};
+const gzippedAppBy = { ...previous.gzippedAppBy, [compressor]: gzippedApp };
+
 writeFileSync(
   out,
   `${JSON.stringify(
@@ -83,7 +97,8 @@ writeFileSync(
       vendored: Object.fromEntries(vendored.map((f) => [f, digest(f.slice(1))])),
       gzippedApp,
       gzippedVendored,
-      gzippedBy: `${process.platform}-${process.arch} zlib ${process.versions.zlib}`,
+      gzippedBy: compressor,
+      gzippedAppBy,
     },
     null,
     2,
@@ -91,6 +106,5 @@ writeFileSync(
 );
 console.log(
   `recorded ${files.length} files: ${(gzippedApp / 1024).toFixed(2)} KiB app + ` +
-    `${(gzippedVendored / 1024 / 1024).toFixed(2)} MiB vendored, gzipped by ` +
-    `${process.platform}-${process.arch} zlib ${process.versions.zlib}`,
+    `${(gzippedVendored / 1024 / 1024).toFixed(2)} MiB vendored, gzipped by ${compressor}`,
 );

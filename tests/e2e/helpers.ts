@@ -28,13 +28,65 @@ export const PROGRAM_KEY = 'pyplay.program.v1';
  * second configuration, so no spec needs to know about the pane to be verified
  * against it (BR-301).
  */
-export async function openPlayground(page: Page): Promise<void> {
+export interface OpenOptions {
+  /**
+   * Whether `PYPLAY_LAYOUT_PREF` may seed the layout preference for this load.
+   * spec-04's own suites assert on that preference, so they pass `false` and
+   * seed it themselves — otherwise a VC-433 run would overwrite the value
+   * under test (the env seed is installed last and would win).
+   */
+  seedLayout?: boolean;
+}
+
+export async function openPlayground(page: Page, options: OpenOptions = {}): Promise<void> {
+  if (options.seedLayout !== false) await seedLayoutPreference(page);
   await page.goto('/');
   await page.waitForSelector('.cm-content');
   if (process.env.PANE_OPEN) {
     await page.locator('#btn-symbols').click();
     await page.waitForSelector('#symbol-pane .symbol');
   }
+}
+
+/**
+ * spec-04's `localStorage` key (spec-04: Constants). `v2` — `v1` held the same
+ * two strings with their meanings swapped; see `src/layout.ts`.
+ */
+export const LAYOUT_KEY = 'pyplay.layout.v2';
+
+/**
+ * spec-04 VC-433 runs the spec-01 and spec-03 suites three times — with the
+ * layout preference unset, `vertical` and `horizontal` — because the layout is
+ * presentation only (BR-401) and every criterion those suites cover must hold
+ * in both renderings.
+ *
+ * `PYPLAY_LAYOUT_PREF` selects the run. Unset (the default) is the shipped
+ * behaviour: nothing is written, and FR-411 resolves from the viewport width.
+ * The seed is installed with `addInitScript`, so it is in place before the
+ * page's own scripts run and therefore before FR-416's first paint.
+ *
+ * A spec that asserts on the preference itself must not have it seeded from
+ * the environment underneath it, so `tests/e2e/layout.spec.ts` and
+ * `tests/e2e/layout-state.spec.ts` seed explicitly and never call this.
+ */
+export async function seedLayoutPreference(page: Page): Promise<void> {
+  const preference = process.env.PYPLAY_LAYOUT_PREF;
+  if (!preference) return;
+  if (preference !== 'vertical' && preference !== 'horizontal') {
+    throw new Error(
+      `PYPLAY_LAYOUT_PREF must be "vertical" or "horizontal", got "${preference}"`,
+    );
+  }
+  await page.addInitScript(
+    ({ key, value }) => {
+      try {
+        window.localStorage.setItem(key, value);
+      } catch {
+        // VC-418: an unwritable store is the subject of its own criterion.
+      }
+    },
+    { key: LAYOUT_KEY, value: preference },
+  );
 }
 
 /** The editor's current contents, reconstructed from the rendered lines. */

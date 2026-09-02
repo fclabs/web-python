@@ -551,7 +551,12 @@ body {
  * be changed together.
  */
 @media (min-width: 700px) {
-  .app:has(#symbol-pane:not([hidden])) {
+  /* spec-04 BR-404: at 900 px and above `#app[data-layout='vertical']`
+     redefines this grid with its own two-column split (see below). The
+     `:not()` keeps exactly one of the two definitions live at any width, and
+     matches when the attribute is absent so a JS failure still leaves spec-03
+     rendering as it shipped. */
+  .app:not([data-layout='vertical']):has(#symbol-pane:not([hidden])) {
     display: grid;
     grid-template-areas:
       "toolbar toolbar"
@@ -589,4 +594,224 @@ body {
     flex-wrap: nowrap;
     flex-direction: column;
   }
+}
+
+/* The layout control (spec-04: FR-401 – FR-406, FR-415, NFR-401 – NFR-403) - */
+
+/*
+ * FR-406's description target. Removed from the visual layout without leaving
+ * the accessibility tree, so `aria-describedby` still resolves to it — the
+ * clip-rect idiom rather than `display: none`, which would make the
+ * description unreadable to the very assistive technology it is for.
+ */
+.visually-hidden {
+  border: 0;
+  clip-path: inset(50%);
+  height: 1px;
+  overflow: hidden;
+  padding: 0;
+  position: absolute;
+  white-space: nowrap;
+  width: 1px;
+}
+
+/*
+ * The radiogroup renders as one segmented control: a single outer border with
+ * the two segments butted together, so it reads as one control rather than as
+ * two adjacent buttons. NFR-402 / NFR-403 are satisfied by reusing the pairs
+ * spec-01 already proved — `.btn`'s surface for the unchecked segment,
+ * `.btn--primary`'s for the checked one and `.btn[aria-disabled]`'s for the
+ * disabled rendering. This spec adds no palette token and changes no colour.
+ */
+.segmented {
+  display: flex;
+}
+
+/*
+ * The border lives on the segments, not on the group, and the second segment
+ * pulls back over the first's edge — so the pair reads as one control with a
+ * single outline while the group's rendered height stays exactly a segment's.
+ *
+ * That last part is FR-407's business: a border on the group would add 2 px to
+ * the toolbar row and push every panel below it down by that much, which
+ * VC-408 measures against the baseline build at +/-1 px per edge. The segments
+ * are 1 px taller than a `.btn` because NFR-401 asks for a 32 x 32 px hit area
+ * and a `.btn` renders 31 px high; that single pixel is inside VC-408's
+ * tolerance, and is the whole of this spec's effect on the vertical layout.
+ */
+.segment {
+  background: var(--bg-raised);
+  border: 1px solid var(--border-strong);
+  color: var(--fg);
+  cursor: pointer;
+  font: inherit;
+  /* NFR-401: >= 32 x 32 px of rendered hit area at every breakpoint. */
+  min-height: 32px;
+  min-width: 32px;
+  padding: 5px 12px;
+}
+
+.segment:first-child {
+  border-radius: 6px 0 0 6px;
+}
+
+/* NFR-403: the edge between the segments is one shared 1 px border, >= 3:1
+   against both surfaces, rather than two abutting ones. */
+.segment + .segment {
+  border-radius: 0 6px 6px 0;
+  margin-left: -1px;
+}
+
+/* The checked segment's fill must not be cut in half by its neighbour's
+   border, so it is lifted above it. */
+.segment[aria-checked='true'] {
+  position: relative;
+}
+
+/* FR-402: the checked segment is the effective layout's, never a masked
+   preference. `--accent` on `--accent-fg` is `.btn--primary`'s pair. */
+.segment[aria-checked='true'] {
+  background: var(--accent);
+  color: var(--accent-fg);
+}
+
+/*
+ * FR-415: below 900 px the group is styled as disabled while staying in the
+ * tab order — `aria-disabled`, never the `disabled` attribute, exactly as
+ * `src/controls.ts` describes for Run, Stop and Format. The checked segment
+ * keeps its indicator so the visitor can still see which layout is in force.
+ */
+.segmented[aria-disabled='true'] .segment {
+  background: var(--disabled-bg);
+  border-color: var(--disabled-border);
+  color: var(--disabled-fg);
+  cursor: not-allowed;
+}
+
+/*
+ * NFR-403: the indicator survives the disabled rendering as a border rather
+ * than a fill — an `--accent` fill would read as an active control at a width
+ * where FR-415 has made it inert. It has to be a *border*, not a
+ * `box-shadow`: the contrast harness samples computed colour properties, and
+ * a shadow is not one, so an indicator drawn as a shadow would be an
+ * indicator no criterion could measure. `--fg-muted` on `--disabled-bg`
+ * clears 3:1 in both palettes.
+ */
+.segmented[aria-disabled='true'] .segment[aria-checked='true'] {
+  border-color: var(--fg-muted);
+  /* Above its neighbour's border, so the indicator is a closed outline. */
+  position: relative;
+}
+
+/* Horizontal / vertical pane layout (spec-04: FR-407 – FR-409, FR-425) ---- */
+
+/*
+ * Both layout names describe the orientation of the **divider** between the
+ * panels, as `vim`'s `:split` / `:vsplit` do — see the contract in
+ * `src/layout.ts`, which is normative for these two words.
+ *
+ * `data-layout="horizontal"` — panels separated by horizontal rules, stacked
+ * in one column — is the shipped spec-01 rendering: `.app` stays the flex
+ * column defined above, with its flex ratios, minimum heights and the
+ * diagnostics panel's `max-height: 25vh` exactly as they were (FR-407). There
+ * is deliberately no `#app[data-layout='horizontal']` rule — the stacked
+ * layout is the absence of the two-column one, which is what makes VC-408's
+ * ±1 px comparison against the baseline build true by construction.
+ *
+ * FR-411's breakpoint. `LAYOUT_MIN_WIDTH` in `src/layout.ts` is the same 900,
+ * evaluated with `matchMedia('(min-width: 900px)')` on the main thread; the
+ * two must always be changed together. Guarding the two-column rendering by
+ * the same query the resolver uses is what makes it impossible for the CSS to
+ * paint a layout the resolver did not choose.
+ */
+@media (min-width: 900px) {
+  /*
+   * FR-408: four full-width rows above a two-column split — the editor alone
+   * on the inline-start side, spanning the full block height, and the console,
+   * stdin and diagnostics stacked in that order on the inline-end side.
+   *
+   * FR-410 / BR-402: placement only. The document order stays console,
+   * editor, stdin, diagnostics; no element is moved, re-parented or
+   * re-created, so CodeMirror never re-measures from a DOM change and the
+   * sequential focus order is identical in both layouts (BR-407).
+   */
+  #app[data-layout='vertical'] {
+    display: grid;
+    grid-template-areas:
+      "toolbar toolbar"
+      "banner  banner"
+      "status  status"
+      "notices notices"
+      "editor  console"
+      "editor  stdin"
+      "editor  diag";
+    /*
+     * `LAYOUT_EDITOR_COLUMN` — 58 % of the app content box, inside FR-409's
+     * 50–65 % band. Grid resolves the percentage against the content box, so
+     * the gap comes out of the `1fr` remainder and the editor column is
+     * exactly 58 % at every width. At the 900 px floor that leaves 513 px and
+     * 363 px, both clear of FR-409's 320 px minimum.
+     */
+    grid-template-columns: 58% minmax(0, 1fr);
+    /*
+     * The right column's three rows. The console takes the free space the
+     * stdin row and the diagnostics panel do not, with FR-409's 80 px floor;
+     * `0.66fr` caps the diagnostics row at 0.66/1.66 = 39.8 % of that free
+     * space, which is below 40 % of the whole right column and so satisfies
+     * FR-409's cap at every viewport height without a percentage that would
+     * have to resolve against its own track.
+     */
+    grid-template-rows: auto auto auto auto minmax(80px, 1fr) auto minmax(0, 0.66fr);
+  }
+
+  /*
+   * spec-03 FR-311 / FR-317: the pane keeps its full-height inline-end column
+   * in *both* layouts — never inside the editor column and never inside the
+   * right column (spec-04: Relationship to spec 03). Only the track list and
+   * the area map change; every `grid-area` assignment is the one the 700 px
+   * block above already made.
+   */
+  #app[data-layout='vertical']:has(#symbol-pane:not([hidden])) {
+    grid-template-areas:
+      "toolbar toolbar toolbar"
+      "banner  banner  banner"
+      "status  status  status"
+      "notices notices notices"
+      "editor  console symbols"
+      "editor  stdin   symbols"
+      "editor  diag    symbols";
+    grid-template-columns: 58% minmax(0, 1fr) 72px;
+  }
+
+  /*
+   * FR-409: in the inline-end column the cap is the 0.66fr track above, not
+   * the `25vh` the stacked layout keeps. The panel still scrolls its own overflow
+   * (`.panel--diagnostics { overflow: auto }`), so at short viewport heights
+   * the entries stay reachable by scrolling inside the right column rather
+   * than by scrolling the page (VC-435).
+   */
+  #app[data-layout='vertical'] .panel--diagnostics {
+    max-height: none;
+  }
+
+  /* The two panels' flex ratios are the stacked column's; as grid items they
+     are sized by the tracks, and a stale `flex-basis` would only fight the
+     `minmax()` minimums. */
+  #app[data-layout='vertical'] .panel--console,
+  #app[data-layout='vertical'] .panel--editor {
+    flex: 1 1 auto;
+  }
+}
+
+/*
+ * FR-425: the switch is painted in one frame. Nothing in either layout may
+ * transition or animate a size or position property, so no panel is ever
+ * mid-flight when the new geometry lands — which is also what lets VC-426
+ * assert that no `transitionrun` or `animationstart` event fires on a
+ * `.panel` at all.
+ */
+.app,
+.panel {
+  transition: none;
+  animation: none;
 }

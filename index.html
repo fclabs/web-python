@@ -37,6 +37,48 @@
         <button id="btn-copy" class="btn" type="button">Copy code</button>
         <button id="btn-format" class="btn" type="button" tabindex="0" aria-disabled="true">Format</button>
         <button id="btn-reset" class="btn" type="button">Reset</button>
+        <!-- spec-04 FR-401: immediately after `#btn-reset`. A `radiogroup`
+             is one tab stop (FR-405), so the roving `tabindex` below is what
+             keeps the toolbar's tab-order enumeration unchanged in length by
+             more than one (parent VC-052).
+
+             spec-04's DOM contract also calls this the toolbar's last child;
+             spec-03 FR-301 / VC-301 had already claimed that slot for
+             `Symbols`. FR-401's own Given/When/Then says "immediately after
+             `#btn-reset`", which is what ships — see the amendment recorded
+             in `specs/04-toogle-pane-aspect.md`. -->
+        <div id="layout-group" class="segmented" role="radiogroup" aria-label="Layout">
+          <!-- Both labels name the orientation of the **divider** between the
+               panels, as `vim`'s `:split` / `:vsplit` do: `Horizontal` stacks
+               them in one column, `Vertical` puts the editor beside the
+               console. `src/layout.ts` is normative for the two words.
+
+               `Horizontal` is first because it is the layout that is always
+               available — it is spec-01's rendering and the only one below
+               900 px (BR-404) — so `Home` reaches it and `End` reaches the
+               one the narrow override can take away. -->
+          <button
+            id="layout-horizontal"
+            class="segment"
+            type="button"
+            role="radio"
+            aria-checked="true"
+            tabindex="0"
+          >Horizontal</button>
+          <button
+            id="layout-vertical"
+            class="segment"
+            type="button"
+            role="radio"
+            aria-checked="false"
+            tabindex="-1"
+          >Vertical</button>
+        </div>
+        <!-- FR-406's description target. Deliberately empty: VC-415 requires
+             the hint string to be absent from the document at >= 900 px, so
+             `src/main.ts` writes it only while the narrow override is in
+             force and clears it again on the way back up. -->
+        <span id="layout-narrow-hint" class="visually-hidden"></span>
         <!-- FR-301: immediately before the color-mode control. It has no
              disabled state, so unlike Run/Stop/Format it is never routed
              through `setInert()`. -->
