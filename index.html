@@ -122,34 +122,6 @@
         <div id="console" class="console"></div>
       </section>
 
-      <!-- FR-317 pins only `#symbol-pane`'s position (between `#notices` and
-           the console panel); the files pane sits here instead, and its
-           `.panel--files` grid-area places it visually without moving it in
-           the document. -->
-      <section id="file-pane" class="panel panel--files" aria-label="Files" hidden>
-        <div class="files-heading">
-          <h2 class="panel-title">Files</h2>
-          <div class="files-actions">
-            <button id="btn-file-new" class="btn btn--small" type="button">New</button>
-            <button id="btn-file-rename" class="btn btn--small" type="button" aria-disabled="true">Rename</button>
-            <button id="btn-file-delete" class="btn btn--small" type="button" aria-disabled="true">Delete</button>
-          </div>
-        </div>
-        <input id="file-name-input" class="file-name-input" type="text" hidden />
-        <ul id="file-tree" class="file-tree" role="tree" aria-label="Workspace files"></ul>
-        <div
-          id="file-resizer"
-          class="file-resizer"
-          role="separator"
-          aria-orientation="vertical"
-          aria-label="Resize files panel"
-          aria-valuemin="160"
-          aria-valuemax="480"
-          aria-valuenow="260"
-          tabindex="0"
-        ></div>
-      </section>
-
       <section class="panel panel--editor" aria-label="Editor">
         <h2 class="editor-heading">Editing: <span id="active-file-name">main.py</span></h2>
         <div id="editor" class="editor"></div>
@@ -176,6 +148,35 @@
         </h2>
         <ul id="diagnostics-list" class="diagnostics-list"></ul>
         <p id="diagnostics-empty" class="diagnostics-empty">Linter unavailable.</p>
+      </section>
+
+      <!-- FR-317 pins `#symbol-pane` immediately after `#notices` and before
+           the console panel; FR-410 pins console/editor/stdin/diagnostics as
+           one uninterrupted run. The files pane sits here instead, after both
+           runs — its `.panel--files` grid-area places it visually without
+           moving it in the document. -->
+      <section id="file-pane" class="panel panel--files" aria-label="Files" hidden>
+        <div class="files-heading">
+          <h2 class="panel-title">Files</h2>
+          <div class="files-actions">
+            <button id="btn-file-new" class="btn btn--small" type="button">New</button>
+            <button id="btn-file-rename" class="btn btn--small" type="button" aria-disabled="true">Rename</button>
+            <button id="btn-file-delete" class="btn btn--small" type="button" aria-disabled="true">Delete</button>
+          </div>
+        </div>
+        <input id="file-name-input" class="file-name-input" type="text" hidden />
+        <ul id="file-tree" class="file-tree" role="tree" aria-label="Workspace files"></ul>
+        <div
+          id="file-resizer"
+          class="file-resizer"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize files panel"
+          aria-valuemin="160"
+          aria-valuemax="480"
+          aria-valuenow="260"
+          tabindex="0"
+        ></div>
       </section>
     </div>
     <script type="module" src="/src/main.ts"></script>

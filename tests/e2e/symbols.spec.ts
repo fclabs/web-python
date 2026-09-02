@@ -889,7 +889,7 @@ test.describe('wide layout keyboard model', () => {
     await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
 
     const visited: string[] = [];
-    for (let i = 0; i < 16; i++) {
+    for (let i = 0; i < 19; i++) {
       await page.keyboard.press('Tab');
       visited.push(
         await page.evaluate(() => {
@@ -910,9 +910,9 @@ test.describe('wide layout keyboard model', () => {
     // spec-04 VC-407: the layout group contributes exactly one tab stop.
     expect(visited.filter((id) => id === 'layout')).toHaveLength(1);
     // The files pane is open by default at this width (`FilePane`'s
-    // `syncLayout`), contributing its own toolbar buttons, one roving-tabindex
-    // stop for the file tree, and the resizer before the editor.
-    expect(visited.slice(0, 17)).toEqual([
+    // `syncLayout`); its own DOM position (after Diagnostics, per FR-317 and
+    // FR-410's fixed runs) puts its tab stops after the editor/stdin group.
+    expect(visited.slice(0, 19)).toEqual([
       '#btn-run',
       '#btn-stop',
       '#btn-clear',
@@ -925,12 +925,14 @@ test.describe('wide layout keyboard model', () => {
       '#btn-symbols',
       '#btn-theme',
       'pane',
+      'editor',
+      '#stdin-input',
+      '#btn-eof',
       '#btn-file-new',
       '#btn-file-rename',
       '#btn-file-delete',
       'file-tree',
       '#file-resizer',
-      'editor',
     ]);
   });
 

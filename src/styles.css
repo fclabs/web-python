@@ -696,7 +696,9 @@ body {
     flex-direction: column;
   }
 
-  .app:has(#file-pane:not([hidden])) {
+  /* spec-04 BR-404: at 900 px and above `#app[data-layout='vertical']`'s own
+     rules below take over, exactly as the symbols-only rule already does. */
+  .app:not([data-layout='vertical']):has(#file-pane:not([hidden])) {
     display: grid;
     grid-template-areas:
       "toolbar toolbar"
@@ -711,7 +713,7 @@ body {
     grid-template-rows: auto auto auto auto minmax(80px, 1fr) minmax(120px, 2fr) auto auto;
   }
 
-  .app:has(#file-pane:not([hidden])):has(#symbol-pane:not([hidden])) {
+  .app:not([data-layout='vertical']):has(#file-pane:not([hidden])):has(#symbol-pane:not([hidden])) {
     grid-template-areas:
       "toolbar toolbar toolbar"
       "banner banner banner"
@@ -936,6 +938,38 @@ body {
       "editor  stdin   symbols"
       "editor  diag    symbols";
     grid-template-columns: 58% minmax(0, 1fr) 72px;
+  }
+
+  /*
+   * The files pane (undocumented by spec-04) sits as an additional
+   * inline-start column, ahead of the editor. `58fr`/`42fr` keep FR-409's
+   * 58 % split exact against the space `fr` tracks divide — the remainder
+   * after the fixed-width files (and, combined below, symbols) columns are
+   * subtracted — rather than against the whole grid, which a literal `58%`
+   * would resolve against and so shrink under a wide files pane.
+   */
+  #app[data-layout='vertical']:has(#file-pane:not([hidden])) {
+    grid-template-areas:
+      "toolbar toolbar toolbar"
+      "banner  banner  banner"
+      "status  status  status"
+      "notices notices notices"
+      "files   editor  console"
+      "files   editor  stdin"
+      "files   editor  diag";
+    grid-template-columns: minmax(160px, var(--files-width)) 58fr 42fr;
+  }
+
+  #app[data-layout='vertical']:has(#file-pane:not([hidden])):has(#symbol-pane:not([hidden])) {
+    grid-template-areas:
+      "toolbar toolbar toolbar toolbar"
+      "banner  banner  banner  banner"
+      "status  status  status  status"
+      "notices notices notices notices"
+      "files   editor  console symbols"
+      "files   editor  stdin   symbols"
+      "files   editor  diag    symbols";
+    grid-template-columns: minmax(160px, var(--files-width)) 58fr 42fr 72px;
   }
 
   /*

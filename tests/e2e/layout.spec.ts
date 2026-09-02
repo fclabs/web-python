@@ -437,6 +437,12 @@ test.describe('the two-column layout', () => {
       await waitForLinter(page);
       expect(await renderedLayout(page)).toBe('vertical');
 
+      // The files pane (undocumented by spec-04) opens by default at this
+      // width; close it so FR-409's split is measured the way this frozen
+      // requirement defines it — the editor/console column alone.
+      await page.locator('#btn-files').click();
+      await expect(page.locator('#file-pane')).toBeHidden();
+
       const { boxes, appContentWidth } = await measurePanels(page);
       const editor = boxes['editor']!;
       const consolePanel = boxes['console']!;
@@ -479,7 +485,15 @@ test.describe('the two-column layout', () => {
       );
 
     const stacked = await readOrder();
-    expect(stacked).toEqual(['Special characters', 'Console', 'Editor', 'Standard input', 'Diagnostics']);
+    // 'Files' (undocumented by spec-04) sits last, after the run FR-410 pins.
+    expect(stacked).toEqual([
+      'Special characters',
+      'Console',
+      'Editor',
+      'Standard input',
+      'Diagnostics',
+      'Files',
+    ]);
 
     // Watch for re-parenting across the switch (BR-402), then switch by the
     // only means that exists in this iteration.
@@ -1083,7 +1097,7 @@ test.describe('the layout control', () => {
     // the state VC-430's "exactly these two keys" describes.
     await page.locator('.cm-content').click();
     await page.keyboard.type('x');
-    await expect.poll(() => page.evaluate(() => window.localStorage.getItem('pyplay.program.v1'))).
+    await expect.poll(() => page.evaluate(() => window.localStorage.getItem('pyplay.workspace.v1'))).
       not.toBeNull();
 
     for (const layout of ['horizontal', 'vertical', 'horizontal', 'vertical'] as const) {
@@ -1098,7 +1112,7 @@ test.describe('the layout control', () => {
     expect(
       await page.evaluate(() => Object.keys(window.localStorage).sort()),
       'exactly the autosave key and the layout key',
-    ).toEqual(['pyplay.layout.v2', 'pyplay.program.v1']);
+    ).toEqual(['pyplay.layout.v2', 'pyplay.workspace.v1']);
     expect(await storedLayout(page), 'the choice survived the reload').toBe('vertical');
   });
 });
@@ -1135,7 +1149,7 @@ test.describe('the layout control below 900 px', () => {
     expect(
       await page.evaluate(() => document.activeElement?.id),
       'the group contributes exactly one stop',
-    ).toBe('btn-symbols');
+    ).toBe('btn-files');
 
     // `:focus-visible` is a pseudo-*class*, so it cannot be passed to
     // `getComputedStyle`; the rule is already in effect on the focused
@@ -1293,6 +1307,10 @@ test('VC-407 (FR-049 from spec-01, FR-405): Tab reaches every control once, iden
     // spec-04 FR-405 / parent VC-052: exactly one stop for the whole group,
     // however many radios it holds.
     'layout-group',
+    // The files toggle (undocumented by spec-04), immediately after the
+    // layout group. The pane's own internal stops sit after `Diagnostics` in
+    // the document, past where this enumeration stops.
+    'btn-files',
     // spec-03 FR-301.
     'btn-symbols',
     // spec-05 FR-501: the color-mode control, immediately after Symbols.
