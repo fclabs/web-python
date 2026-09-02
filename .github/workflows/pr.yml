@@ -1,0 +1,365 @@
+# The pull-request gate (spec 02-ci: FR-100 - FR-112, FR-123).
+#
+# Every check here is a required check for merging into `main`; the seven names
+# GitHub's branch protection references are the job names below. Nothing in this
+# file deploys, publishes, or writes to the repository: PR code is untrusted by
+# construction (BR-106), so this workflow holds `contents: read` and no secret
+# beyond the GitHub-provided `GITHUB_TOKEN`, and its only trigger is the
+# `pull_request` event below. BR-106 forbids the fork-code-with-a-writable-token
+# trigger variant by name; see `docs/ci.md` for why, since naming it here would
+# trip the spec's own scope greps.
+name: PR
+
+on:
+  pull_request:
+    branches: [main]
+    # `edited` is required by FR-100: `pr-title` gates on the pull request
+    # title, which can change with no push. Without it a PR opened with a
+    # malformed title keeps a red required check no contributor action can
+    # refresh.
+    types: [opened, synchronize, reopened, edited]
+
+# BR-106: explicit, never the runner default.
+permissions:
+  contents: read
+
+# FR-110: a superseded run is cancelled, so only the newest run reports a
+# merge-gating status.
+concurrency:
+  group: pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  # FR-111. The title is read from the event through `env:`, never interpolated
+  # into a `run:` body.
+  pr-title:
+    name: pr-title
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out the pull request merge result
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Activate Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Validate the pull request title against the Conventional Commits grammar
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          cat > "${RUNNER_TEMP}/pr-title.mjs" <<'VALIDATOR'
+          // <type>[(<scope>)][!]: <subject>   (spec 02-ci, Data & Interfaces)
+          const TYPES = [
+            "feat", "fix", "perf", "revert", "chore",
+            "docs", "style", "refactor", "test", "build", "ci",
+          ];
+          const GRAMMAR = new RegExp(
+            "^(" + TYPES.join("|") + ")" + // type
+            "(\\([^)]+\\))?" +             // optional non-empty scope
+            "!?" +                         // optional breaking marker
+            ": " +                         // separator
+            "(?=.*\\S).+$"                 // non-empty subject
+          );
+          const title = process.env.PR_TITLE ?? "";
+          if (GRAMMAR.test(title)) {
+            console.log("Pull request title matches the Conventional Commits grammar:");
+            console.log("  " + title);
+            process.exit(0);
+          }
+          console.error("Pull request title does not match the required grammar.");
+          console.error("");
+          console.error("  got:      " + JSON.stringify(title));
+          console.error("  expected: <type>[(<scope>)][!]: <subject>");
+          console.error("");
+          console.error("Accepted types: " + TYPES.join(", "));
+          console.error("");
+          console.error("The title becomes the squash-merge commit subject, which is the");
+          console.error("input the release pipeline derives the semver bump from:");
+          console.error("  feat -> minor,  fix/perf/revert -> patch,  ! or a");
+          console.error("  BREAKING CHANGE: footer -> major,  everything else -> no release.");
+          console.error("");
+          console.error("Examples: 'fix: boot the worker under Vite',");
+          console.error("          'feat(editor)!: drop the v1 storage key',");
+          console.error("          'chore: bump docs'");
+          console.error("");
+          console.error("Edit the pull request title; the check re-runs on the edit alone,");
+          console.error("with no push needed.");
+          process.exit(1);
+          VALIDATOR
+          node "${RUNNER_TEMP}/pr-title.mjs"
+
+  # FR-102. `tsc --noEmit` is invoked directly: `package.json` has no
+  # `typecheck` script and adding one is an out-of-scope edit to an existing
+  # file. The required check name is this job's name.
+  typecheck:
+    name: typecheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out the pull request merge result
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Activate Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Type check
+        run: npx tsc --noEmit
+
+  # FR-103.
+  unit:
+    name: unit
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out the pull request merge result
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Activate Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Unit tests
+        run: npm run test:unit
+
+  # FR-104. `--project=chromium` is the config's default project, which
+  # `testIgnore`s `matrix.spec.ts`, so the set is exactly what a local
+  # `npx playwright test` runs. The browser matrix (FR-113, BR-105) stays a
+  # local command: two of its eight pinned projects have no launchable engine
+  # on a Linux runner and would report a skip, and a skip is not a pass.
+  e2e-chromium:
+    name: e2e-chromium
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out the pull request merge result
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Activate Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Resolve the Playwright version for the browser cache key
+        id: playwright
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+      - name: Restore the Playwright browser cache
+        id: browsers
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-chromium-${{ steps.playwright.outputs.version }}
+      - name: Install the chromium browser and its system dependencies
+        if: steps.browsers.outputs.cache-hit != 'true'
+        run: npx playwright install --with-deps chromium
+      - name: Install the chromium system dependencies only
+        if: steps.browsers.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium
+      - name: End-to-end suite
+        # The log reports exactly one skip: VC-059's six-minute variant, which
+        # `Scope -> Out` excludes and which no workflow may enable. Keeping the
+        # command unnarrowed preserves FR-104's "same set as a local run"; see
+        # `docs/ci.md` ("The one skipped test") for the recorded deviation from
+        # VC-105's literal zero-skip wording.
+        run: npx playwright test --project=chromium
+      - name: Upload the report and traces
+        # FR-109: diagnostics on a red gate only. `overwrite` keeps one artifact
+        # of this name per run when more than one browser job fails.
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: playwright-report-pr.${{ github.event.pull_request.number }}
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
+          overwrite: true
+
+  # FR-105. VC-051 and VC-071 from spec-01, in both palettes.
+  audit-contrast:
+    name: audit-contrast
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out the pull request merge result
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Activate Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Resolve the Playwright version for the browser cache key
+        id: playwright
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+      - name: Restore the Playwright browser cache
+        id: browsers
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-chromium-${{ steps.playwright.outputs.version }}
+      - name: Install the chromium browser and its system dependencies
+        if: steps.browsers.outputs.cache-hit != 'true'
+        run: npx playwright install --with-deps chromium
+      - name: Install the chromium system dependencies only
+        if: steps.browsers.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium
+      - name: Contrast audit
+        run: npm run audit:contrast
+      - name: Upload the report and traces
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: playwright-report-pr.${{ github.event.pull_request.number }}
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
+          overwrite: true
+
+  # FR-106. VC-053 from spec-01, with its thresholds exactly as spec-01 fixed
+  # them (BR-104). The log is left unfiltered so VC-107's seven measured values
+  # are readable next to their thresholds -- which is also how the first runs
+  # show how much headroom a GitHub-hosted runner actually has.
+  audit-perf:
+    name: audit-perf
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out the pull request merge result
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Activate Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Resolve the Playwright version for the browser cache key
+        id: playwright
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+      - name: Restore the Playwright browser cache
+        id: browsers
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-chromium-${{ steps.playwright.outputs.version }}
+      - name: Install the chromium browser and its system dependencies
+        if: steps.browsers.outputs.cache-hit != 'true'
+        run: npx playwright install --with-deps chromium
+      - name: Install the chromium system dependencies only
+        if: steps.browsers.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium
+      - name: Performance audit
+        run: npm run audit:perf
+      - name: Upload the report and traces
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: playwright-report-pr.${{ github.event.pull_request.number }}
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
+          overwrite: true
+
+  # FR-107, FR-108. `needs:` the five gates of FR-102 - FR-106, so a red gate
+  # leaves this job *skipped* rather than failed and the run's conclusion is the
+  # gate's (VC-121). The artifact is named from `package.json`'s version at the
+  # head commit, the PR number and the 7-char head SHA, which is the SHA a
+  # reviewer can match to the pull request -- `github.sha` on a `pull_request`
+  # event is the ephemeral merge commit, which appears nowhere in the PR's UI.
+  artifact:
+    name: artifact
+    needs: [typecheck, unit, e2e-chromium, audit-contrast, audit-perf]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out the pull request merge result
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Activate Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Compute the artifact name
+        id: name
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          base_version="$(node -p "require('./package.json').version")"
+          short_sha="${HEAD_SHA:0:7}"
+          # pyplay-<base-version>-pr.<pr-number>+<short-sha>: a semver-legal
+          # prerelease + build-metadata string, so it sorts below the release
+          # it precedes.
+          artifact="pyplay-${base_version}-pr.${PR_NUMBER}+${short_sha}"
+          echo "artifact=${artifact}" >> "$GITHUB_OUTPUT"
+          echo "Artifact name: ${artifact}"
+      - name: Build the site
+        run: npm run build
+      - name: Pack the built site
+        env:
+          ARTIFACT: ${{ steps.name.outputs.artifact }}
+        run: |
+          # `-C dist .` so the extraction root is dist/'s *contents*, with no
+          # wrapping directory (spec, "Tarball layout").
+          tar -czf "${RUNNER_TEMP}/${ARTIFACT}.tar.gz" -C dist .
+          ls -l "${RUNNER_TEMP}/${ARTIFACT}.tar.gz"
+      - name: Upload the built site
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ steps.name.outputs.artifact }}
+          path: ${{ runner.temp }}/${{ steps.name.outputs.artifact }}.tar.gz
+          retention-days: 14
+          # A build that produced nothing must fail loudly, not upload silence.
+          if-no-files-found: error
+      - name: Delete the superseded commit's artifact for this pull request
+        # FR-108: exactly one `pyplay-*-pr.<N>+*` per open pull request. The
+        # run's own `contents: read` token is used; BR-106 forbids widening it,
+        # so a token that cannot delete leaves FR-108 satisfied by the 14-day
+        # retention alone and this step reports that rather than failing.
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          KEEP: ${{ steps.name.outputs.artifact }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -u
+          prefix="pyplay-"
+          suffix="-pr.${PR_NUMBER}+"
+          stale=0
+          while IFS=$'\t' read -r id artifact_name; do
+            [ -z "${id}" ] && continue
+            [ "${artifact_name}" = "${KEEP}" ] && continue
+            case "${artifact_name}" in
+              "${prefix}"*"${suffix}"*) ;;
+              *) continue ;;
+            esac
+            echo "Deleting the superseded artifact ${artifact_name} (id ${id})"
+            if gh api --method DELETE \
+                 "repos/${GITHUB_REPOSITORY}/actions/artifacts/${id}" >/dev/null 2>&1; then
+              echo "  deleted"
+            else
+              stale=$((stale + 1))
+              echo "  not deleted: this run's read-only token cannot delete artifacts."
+              echo "  Leaving it to expire; FR-108's single-artifact guarantee then"
+              echo "  rests on the 14-day retention alone (see docs/ci.md)."
+            fi
+          done < <(
+            gh api --paginate \
+              "repos/${GITHUB_REPOSITORY}/actions/artifacts?per_page=100" \
+              --jq '.artifacts[] | select(.expired == false) | [.id, .name] | @tsv' \
+              2>/dev/null || true
+          )
+          echo "Superseded artifacts left in place: ${stale}"
