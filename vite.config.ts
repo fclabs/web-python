@@ -14,7 +14,11 @@ const coiHeaders = {
 
 export default defineConfig({
   plugins: [precachePlugin()],
-  server: { headers: coiHeaders },
+  server: {
+    headers: coiHeaders,
+    // Leading dot allows any subdomain — ngrok URLs change on every tunnel.
+    allowedHosts: ['.ngrok-free.app', '.ngrok.io'],
+  },
   preview: { headers: coiHeaders },
   build: {
     target: 'es2022',

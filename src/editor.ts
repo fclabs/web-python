@@ -1,4 +1,4 @@
-import { EditorState, Prec, type Extension } from '@codemirror/state';
+import { Compartment, EditorState, Prec, type Extension } from '@codemirror/state';
 import {
   EditorView,
   drawSelection,
@@ -42,6 +42,15 @@ const pyHighlight = HighlightStyle.define([
   { tag: t.operator, class: 'tok-operator' },
   { tag: t.punctuation, class: 'tok-punct' },
 ]);
+
+/** Follow the page palette when the OS switches light/dark. */
+const colorScheme = new Compartment();
+
+function colorSchemeExtensions(): Extension[] {
+  return window.matchMedia('(prefers-color-scheme: dark)').matches
+    ? [EditorView.darkTheme.of(true)]
+    : [];
+}
 
 export interface EditorOptions {
   parent: HTMLElement;
@@ -109,12 +118,21 @@ export function createEditor({
       if (update.docChanged) onChange(update.state.doc.toString());
     }),
     EditorView.contentAttributes.of({ 'aria-label': 'Python program editor' }),
+    colorScheme.of(colorSchemeExtensions()),
   ];
 
-  return new EditorView({
+  const view = new EditorView({
     parent,
     state: EditorState.create({ doc: initialDoc, extensions }),
   });
+
+  const media = window.matchMedia('(prefers-color-scheme: dark)');
+  const onSchemeChange = (): void => {
+    view.dispatch({ effects: colorScheme.reconfigure(colorSchemeExtensions()) });
+  };
+  media.addEventListener('change', onSchemeChange);
+
+  return view;
 }
 
 /** Replace the whole document as a single undoable edit. */

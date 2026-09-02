@@ -272,6 +272,12 @@ body {
   background: color-mix(in srgb, var(--fg) 10%, transparent);
 }
 
+/* CodeMirror draws its own caret; keep it on the foreground token in both palettes. */
+.cm-editor .cm-cursor,
+.cm-editor .cm-dropCursor {
+  border-left-color: var(--fg);
+}
+
 /* Syntax tokens */
 .tok-keyword { color: var(--tok-keyword); }
 .tok-string { color: var(--tok-string); }
