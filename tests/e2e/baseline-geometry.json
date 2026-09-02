@@ -1,0 +1,65 @@
+{
+  "commit": "384cb70",
+  "viewports": {
+    "1280x800": {
+      "boxes": {
+        "console": {
+          "top": 82,
+          "right": 1272,
+          "bottom": 317.86,
+          "left": 8
+        },
+        "editor": {
+          "top": 325.86,
+          "right": 1272,
+          "bottom": 680,
+          "left": 8
+        },
+        "stdin": {
+          "top": 688,
+          "right": 1272,
+          "bottom": 733,
+          "left": 8
+        },
+        "diagnostics": {
+          "top": 741,
+          "right": 1272,
+          "bottom": 792,
+          "left": 8
+        }
+      },
+      "diagnosticsMaxHeight": "200px",
+      "appContentWidth": 1280
+    },
+    "375x667": {
+      "boxes": {
+        "console": {
+          "top": 119,
+          "right": 367,
+          "bottom": 289,
+          "left": 8
+        },
+        "editor": {
+          "top": 297,
+          "right": 367,
+          "bottom": 551.84,
+          "left": 8
+        },
+        "stdin": {
+          "top": 559.84,
+          "right": 367,
+          "bottom": 604.84,
+          "left": 8
+        },
+        "diagnostics": {
+          "top": 612.84,
+          "right": 367,
+          "bottom": 659,
+          "left": 8
+        }
+      },
+      "diagnosticsMaxHeight": "166.75px",
+      "appContentWidth": 375
+    }
+  }
+}

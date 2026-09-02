@@ -531,7 +531,12 @@ body {
  * be changed together.
  */
 @media (min-width: 700px) {
-  .app:has(#symbol-pane:not([hidden])) {
+  /* spec-04 BR-404: at 900 px and above `#app[data-layout='horizontal']`
+     redefines this grid with its own two-column split (see below). The
+     `:not()` keeps exactly one of the two definitions live at any width, and
+     matches when the attribute is absent so a JS failure still leaves spec-03
+     rendering as it shipped. */
+  .app:not([data-layout='horizontal']):has(#symbol-pane:not([hidden])) {
     display: grid;
     grid-template-areas:
       "toolbar toolbar"
@@ -569,4 +574,112 @@ body {
     flex-wrap: nowrap;
     flex-direction: column;
   }
+}
+
+/* Horizontal / vertical pane layout (spec-04: FR-407 – FR-409, FR-425) ---- */
+
+/*
+ * `data-layout="vertical"` is the shipped spec-01 rendering: `.app` stays the
+ * flex column defined above, with its flex ratios, minimum heights and the
+ * diagnostics panel's `max-height: 25vh` exactly as they were (FR-407). There
+ * is deliberately no `#app[data-layout='vertical']` rule — the vertical
+ * layout is the absence of the horizontal one, which is what makes VC-408's
+ * ±1 px comparison against the baseline build true by construction.
+ *
+ * FR-411's breakpoint. `LAYOUT_MIN_WIDTH` in `src/layout.ts` is the same 900,
+ * evaluated with `matchMedia('(min-width: 900px)')` on the main thread; the
+ * two must always be changed together. Guarding the two-column rendering by
+ * the same query the resolver uses is what makes it impossible for the CSS to
+ * paint a layout the resolver did not choose.
+ */
+@media (min-width: 900px) {
+  /*
+   * FR-408: four full-width rows above a two-column split — the editor alone
+   * on the inline-start side, spanning the full block height, and the console,
+   * stdin and diagnostics stacked in that order on the inline-end side.
+   *
+   * FR-410 / BR-402: placement only. The document order stays console,
+   * editor, stdin, diagnostics; no element is moved, re-parented or
+   * re-created, so CodeMirror never re-measures from a DOM change and the
+   * sequential focus order is identical in both layouts (BR-407).
+   */
+  #app[data-layout='horizontal'] {
+    display: grid;
+    grid-template-areas:
+      "toolbar toolbar"
+      "banner  banner"
+      "status  status"
+      "notices notices"
+      "editor  console"
+      "editor  stdin"
+      "editor  diag";
+    /*
+     * `LAYOUT_EDITOR_COLUMN` — 58 % of the app content box, inside FR-409's
+     * 50–65 % band. Grid resolves the percentage against the content box, so
+     * the gap comes out of the `1fr` remainder and the editor column is
+     * exactly 58 % at every width. At the 900 px floor that leaves 513 px and
+     * 363 px, both clear of FR-409's 320 px minimum.
+     */
+    grid-template-columns: 58% minmax(0, 1fr);
+    /*
+     * The right column's three rows. The console takes the free space the
+     * stdin row and the diagnostics panel do not, with FR-409's 80 px floor;
+     * `0.66fr` caps the diagnostics row at 0.66/1.66 = 39.8 % of that free
+     * space, which is below 40 % of the whole right column and so satisfies
+     * FR-409's cap at every viewport height without a percentage that would
+     * have to resolve against its own track.
+     */
+    grid-template-rows: auto auto auto auto minmax(80px, 1fr) auto minmax(0, 0.66fr);
+  }
+
+  /*
+   * spec-03 FR-311 / FR-317: the pane keeps its full-height inline-end column
+   * in *both* layouts — never inside the editor column and never inside the
+   * right column (spec-04: Relationship to spec 03). Only the track list and
+   * the area map change; every `grid-area` assignment is the one the 700 px
+   * block above already made.
+   */
+  #app[data-layout='horizontal']:has(#symbol-pane:not([hidden])) {
+    grid-template-areas:
+      "toolbar toolbar toolbar"
+      "banner  banner  banner"
+      "status  status  status"
+      "notices notices notices"
+      "editor  console symbols"
+      "editor  stdin   symbols"
+      "editor  diag    symbols";
+    grid-template-columns: 58% minmax(0, 1fr) 72px;
+  }
+
+  /*
+   * FR-409: in the right column the cap is the 0.66fr track above, not the
+   * `25vh` the vertical layout keeps. The panel still scrolls its own overflow
+   * (`.panel--diagnostics { overflow: auto }`), so at short viewport heights
+   * the entries stay reachable by scrolling inside the right column rather
+   * than by scrolling the page (VC-435).
+   */
+  #app[data-layout='horizontal'] .panel--diagnostics {
+    max-height: none;
+  }
+
+  /* The two panels' flex ratios are the vertical column's; as grid items they
+     are sized by the tracks, and a stale `flex-basis` would only fight the
+     `minmax()` minimums. */
+  #app[data-layout='horizontal'] .panel--console,
+  #app[data-layout='horizontal'] .panel--editor {
+    flex: 1 1 auto;
+  }
+}
+
+/*
+ * FR-425: the switch is painted in one frame. Nothing in either layout may
+ * transition or animate a size or position property, so no panel is ever
+ * mid-flight when the new geometry lands — which is also what lets VC-426
+ * assert that no `transitionrun` or `animationstart` event fires on a
+ * `.panel` at all.
+ */
+.app,
+.panel {
+  transition: none;
+  animation: none;
 }

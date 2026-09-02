@@ -32,6 +32,12 @@ import { STDIN_MAX_LINE } from './protocol';
 import { PyodideRuntime } from './runtime';
 import type { StdinMode } from './stdin-stream';
 import { STARTER_PROGRAM } from './starter';
+import {
+  LAYOUT_MIN_WIDTH,
+  type Layout,
+  loadLayoutPreference,
+  resolveLayout,
+} from './layout';
 import { SymbolPane } from './symbol-pane';
 import { getLocalStorage, loadProgram, saveProgram } from './storage';
 
@@ -47,9 +53,37 @@ function need<T extends HTMLElement>(id: string): T {
   return el as T;
 }
 
+/** FR-411 / FR-412: the query that mirrors `LAYOUT_MIN_WIDTH` in the CSS. */
+const LAYOUT_QUERY = `(min-width: ${LAYOUT_MIN_WIDTH}px)`;
+
 function boot(): void {
   const notices = new Notices(need('notices'));
   const storage = getLocalStorage();
+
+  // --- Layout (FR-411, FR-412, FR-416, FR-417) ---------------------------
+  //
+  // FR-416: this runs before the editor is created and before anything else
+  // in `boot()` touches the DOM. The entry script is `type="module"`, so it is
+  // deferred to after parse but still before the first paint — `#app` already
+  // carries the resolved `data-layout` in the frame the browser paints, and no
+  // frame ever shows the other layout. No inline script is needed for that.
+  const app = need('app');
+  const layoutPref = loadLayoutPreference(storage);
+  const applyLayout = (layout: Layout): void => {
+    // BR-401 / FR-424: the whole switch is this one attribute. It schedules no
+    // autosave, sends the worker no message and issues no request.
+    if (app.dataset.layout !== layout) app.dataset.layout = layout;
+  };
+  applyLayout(resolveLayout(layoutPref, window.innerWidth));
+
+  // FR-412: the 900 px crossing re-resolves synchronously in the `change`
+  // handler — no `resize` listener and no debounce — and writes nothing, so an
+  // unset preference tracks the viewport and stays unset (BR-405). FR-413: a
+  // stored `horizontal` is masked while narrow and restored on widening,
+  // because the stored value is re-read through the resolver, never rewritten.
+  window.matchMedia(LAYOUT_QUERY).addEventListener('change', (event) => {
+    applyLayout(resolveLayout(layoutPref, event.matches ? LAYOUT_MIN_WIDTH : 0));
+  });
 
   // FR-003 / FR-004
   const initialDoc = loadProgram(storage);
