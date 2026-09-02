@@ -25,10 +25,10 @@ and the visitor's source code is never transmitted anywhere — it lives in the
 editor, the Web Worker, and `localStorage` on this origin (`pyplay.program.v1`
 and, when chosen, `pyplay.theme.v1`).
 
-- Specification: [`specs/01-static-python-web.md`](specs/01-static-python-web.md)
-- Implementation plan: [`specs/01-static-python-web-plan.md`](specs/01-static-python-web-plan.md)
-- Special-character pane: [`specs/03-vertical-pane.md`](specs/03-vertical-pane.md)
-- Color mode: [`specs/05-dark-mode.md`](specs/05-dark-mode.md)
+- Specification: [`specs/01-static-python-web-frozen.md`](specs/01-static-python-web-frozen.md)
+- Special-character pane: [`specs/03-vertical-pane-frozen.md`](specs/03-vertical-pane-frozen.md)
+- Layout control: [`specs/04-toogle-pane-aspect-frozen.md`](specs/04-toogle-pane-aspect-frozen.md)
+- Color mode: [`specs/05-dark-mode-frozen.md`](specs/05-dark-mode-frozen.md)
 - Deploying it: [`docs/deployment.md`](docs/deployment.md)
 - How it works inside: [`docs/architecture.md`](docs/architecture.md)
 - Working on it: [`CONTRIBUTING.md`](CONTRIBUTING.md)

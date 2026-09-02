@@ -484,7 +484,7 @@ It sits immediately after `#btn-reset` and *before* `#btn-symbols`. Spec-04's
 DOM contract also called it the toolbar's last child, but spec-03 had already
 shipped `Symbols` in that slot (VC-301); FR-401's own Given/When/Then says
 "immediately after `#btn-reset`", which is what ships. Recorded as an amendment
-in `specs/04-toogle-pane-aspect.md`.
+in `specs/04-toogle-pane-aspect-frozen.md`.
 ## Color mode
 
 The color-mode control of spec-05 (`src/theme.ts`, `#btn-theme`) lets the

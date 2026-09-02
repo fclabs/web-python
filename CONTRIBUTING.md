@@ -123,36 +123,50 @@ false })`, so the environment cannot overwrite the value they are asserting on.
 
 ### Re-recording the pinned baselines
 
-Two criteria compare a build against a named commit, and both read a committed
-fixture rather than re-measuring the baseline on every run:
+Four records pin what a build is compared against:
 
-| Fixture | Criterion | Pinned commit |
+| Record | Criterion | Pinned commit |
 |---|---|---|
-| `tests/e2e/baseline-build.json` | VC-323 / VC-326 (spec-03, ≤ 4 KB) | `8df7fa5` |
-| `tests/e2e/baseline-build-spec04.json` | VC-429 (spec-04, ≤ 2 KB) | `0a4194f` |
+| `tests/e2e/baseline-build.json` | VC-326 (spec-03, build shape) | `8df7fa5` |
+| `tests/e2e/baseline-build-spec04.json` | VC-323 (≤ 4 KB) and VC-429 (≤ 2 KB) | `98ee032` |
+| `tests/e2e/baseline-build-theme.json` | VC-513 (spec-05, ≤ 4 KB) | `0a4194f` |
 | `tests/e2e/baseline-geometry.json` | VC-408 (spec-04, ±1 px) | `384cb70` |
 
 `baseline-geometry.json` records the **stacked** rendering, which is what
 FR-407 protects; the recorder seeds `pyplay.layout.v2` to ask the shipped
 resolver for it.
 
-Regenerate one only when a spec pins a new baseline commit:
+All but the shape record are **environment-dependent**, and comparing across
+environments reports the environment as a regression:
+
+- The panel column's height is a text metric. The same `384cb70` build puts
+  the stacked column's top at 82 px on a GitHub runner, 84 px in the
+  Playwright Linux image and 82 px on darwin-arm64, with the toolbar a pixel
+  taller on linux.
+- `gzipSync` is only as reproducible as the zlib Node was linked against.
+  Node 26 ships stock zlib on darwin and zlib-ng on linux, and even the two
+  linux arches differ by 2 B over this app payload.
+
+So `pr.yml` builds the pinned commits on the runner and records its own before
+each suite, pointing `PYPLAY_BASELINE_GEOMETRY` and `PYPLAY_BASELINE_BUILD` at
+them. The committed records are the fallback for a local run: a geometry
+record names the environment it was made on and the size records are keyed by
+compressor, and a run matching neither **skips** rather than reporting a pass
+it did not earn.
+
+One command records either, from a throwaway worktree it cleans up after:
 
 ```bash
-git worktree add ../baseline <commit>
-(cd ../baseline && npm ci && npm run build)
+node scripts/record-baselines.mjs 384cb70 --geometry tests/e2e/baseline-geometry.json
+node scripts/record-baselines.mjs 98ee032 --build    tests/e2e/baseline-build-spec04.json
+```
 
-# Build shape and compressed size. `gzipSync` is only as reproducible as the
-# zlib Node was linked against, so record it under the same compressor the
-# comparison will run under — the spec-04 record holds one entry per
-# compressor and the test skips, rather than passing, on an unrecorded one.
-(cd ../baseline && node scripts/record-baseline-build.mjs dist out.json <commit>)
+Commit the result only when it is your own environment's record of a commit
+the specs still pin, or when a spec pins a new baseline commit. To measure
+against a record without committing it, point the environment variable at it:
 
-# Rendered geometry. `vite preview` must serve it: without the COOP/COEP
-# headers the COI banner is painted and every panel below it shifts.
-(cd ../baseline && npx vite preview --port 4873 --strictPort &)
-node scripts/record-baseline-geometry.mjs http://localhost:4873 \
-  tests/e2e/baseline-geometry.json <commit>
+```bash
+PYPLAY_BASELINE_GEOMETRY=/tmp/geometry.json npx playwright test --project=chromium
 ```
 
 Service workers are **blocked** by default (`use.serviceWorkers: 'block'`) so a

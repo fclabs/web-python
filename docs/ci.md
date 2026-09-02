@@ -1,6 +1,6 @@
 # Continuous integration, PR artifacts and releases
 
-Spec: [`specs/02-ci.md`](../specs/02-ci.md).
+Spec: [`specs/02-ci-frozen.md`](../specs/02-ci-frozen.md).
 
 Two GitHub Actions workflows carry everything:
 
@@ -57,6 +57,30 @@ except the `version` field. The required check name is the *job* name.
 `artifact` declares `needs: [typecheck, unit, e2e-chromium, audit-contrast,
 audit-perf]` and no `if:`, so a red gate leaves it **skipped** rather than
 failed, and the run's conclusion is the gate's own.
+
+### The baselines the runner records for itself
+
+`e2e-chromium` and `audit-perf` run one step before their suite: they build the
+commits VC-408 and the app-size budgets are pinned to and record the reference
+measurements on the runner, into `RUNNER_TEMP`. The suite then reads them
+through `PYPLAY_BASELINE_GEOMETRY` and `PYPLAY_BASELINE_BUILD`. Both jobs check
+out with `fetch-depth: 0`, because a shallow clone has no baseline commit to
+build. Each pinned commit is read from the committed record it stands in for,
+so the workflow cannot drift from the spec that pins it.
+
+The references have to come from the runner because both are properties of the
+environment as much as of the build: the panel column's height is a text metric
+(the same build measures an 82 px header here and 84 px in the Playwright Linux
+image), and `gzipSync` only reproduces against the zlib Node was linked
+against. A record made on a contributor's laptop reports fonts and compressors
+as regressions — VC-408 was red here for three retries at both viewport sizes
+while the same tree passed locally — and, for the size budgets, a record that
+covers no compressor on the runner makes the budget *skip*, which is how
+VC-429 came to assert nothing on CI. `scripts/record-baselines.mjs` is the same
+command a contributor runs locally; CONTRIBUTING.md ("Re-recording the pinned
+baselines") has the details.
+
+The step costs each job an `npm ci` and a build of the baseline commit.
 
 ### PR titles are Conventional Commits
 

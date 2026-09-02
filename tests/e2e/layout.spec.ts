@@ -278,7 +278,7 @@ for (const viewport of [WIDE, NARROW]) {
      * document order, the flex ratios, the minimum heights and the `25vh`
      * cap. The one number allowed to differ is the header block's height,
      * and it is asserted to be the *only* difference — see the amendment
-     * recorded in `specs/04-toogle-pane-aspect.md`.
+     * recorded in `specs/04-toogle-pane-aspect-frozen.md`.
      */
     const headerGrowth = actual.stack.top - reference.stack.top;
     const toolbarGrowth = actual.stack.toolbarHeight - reference.stack.toolbarHeight;
