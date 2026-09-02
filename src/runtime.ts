@@ -91,7 +91,11 @@ export class PyodideRuntime {
      */
     const url =
       this.spawnCount++ === 0 ? pyodideWorkerUrl : `${pyodideWorkerUrl}?respawn=${this.spawnCount}`;
-    const worker = new Worker(url);
+    // Vite's dev server serves `?worker&url` as a module worker; production
+    // bundles it as a classic IIFE that uses `importScripts` for Pyodide.
+    const worker = import.meta.env.DEV
+      ? new Worker(url, { type: 'module' })
+      : new Worker(url);
     this.worker = worker;
     worker.addEventListener('message', (event: MessageEvent<FromWorker>) => {
       // A message from a worker we have already replaced is never acted on.

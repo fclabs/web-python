@@ -11,6 +11,22 @@ import type { FromWorker, ToWorker } from '../protocol';
 
 declare function importScripts(...urls: string[]): void;
 
+/** Load the self-hosted Pyodide bootstrap script in classic or module workers. */
+async function loadPyodideLoader(scriptUrl: string): Promise<void> {
+  if (typeof importScripts !== 'function') {
+    await import(/* @vite-ignore */ scriptUrl);
+    return;
+  }
+  try {
+    importScripts(scriptUrl);
+  } catch (error) {
+    // Vite's dev server serves this worker as a module; importScripts exists but
+    // throws there, so fall back to dynamic import.
+    if (!(error instanceof TypeError)) throw error;
+    await import(/* @vite-ignore */ scriptUrl);
+  }
+}
+
 interface PyodideAPI {
   version: string;
   runPython(code: string): unknown;
@@ -259,7 +275,7 @@ function streamOptions(type: 'stdout' | 'stderr'): StreamOptions {
 
 async function boot(): Promise<void> {
   try {
-    importScripts(`${PYODIDE_BASE}pyodide.js`);
+    await loadPyodideLoader(`${PYODIDE_BASE}pyodide.js`);
     const pyodide = await loadPyodide({ indexURL: PYODIDE_BASE });
     pyodide.setStdout(streamOptions('stdout'));
     pyodide.setStderr(streamOptions('stderr'));
