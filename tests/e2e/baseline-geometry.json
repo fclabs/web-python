@@ -28,8 +28,47 @@
           "left": 8
         }
       },
+      "flex": {
+        "console": {
+          "grow": "1",
+          "shrink": "1",
+          "basis": "30%",
+          "minHeight": "0px",
+          "maxHeight": "none"
+        },
+        "editor": {
+          "grow": "2",
+          "shrink": "1",
+          "basis": "45%",
+          "minHeight": "0px",
+          "maxHeight": "none"
+        },
+        "stdin": {
+          "grow": "0",
+          "shrink": "0",
+          "basis": "auto",
+          "minHeight": "0px",
+          "maxHeight": "none"
+        },
+        "diagnostics": {
+          "grow": "0",
+          "shrink": "1",
+          "basis": "auto",
+          "minHeight": "0px",
+          "maxHeight": "200px"
+        }
+      },
       "diagnosticsMaxHeight": "200px",
-      "appContentWidth": 1280
+      "appContentWidth": 1264,
+      "stack": {
+        "top": 82,
+        "bottom": 792,
+        "height": 710,
+        "contentTop": 8,
+        "contentBottom": 792,
+        "gap": 8,
+        "toolbarHeight": 31
+      }
     },
     "375x667": {
       "boxes": {
@@ -58,8 +97,47 @@
           "left": 8
         }
       },
+      "flex": {
+        "console": {
+          "grow": "1",
+          "shrink": "1",
+          "basis": "30%",
+          "minHeight": "0px",
+          "maxHeight": "none"
+        },
+        "editor": {
+          "grow": "2",
+          "shrink": "1",
+          "basis": "45%",
+          "minHeight": "0px",
+          "maxHeight": "none"
+        },
+        "stdin": {
+          "grow": "0",
+          "shrink": "0",
+          "basis": "auto",
+          "minHeight": "0px",
+          "maxHeight": "none"
+        },
+        "diagnostics": {
+          "grow": "0",
+          "shrink": "1",
+          "basis": "auto",
+          "minHeight": "0px",
+          "maxHeight": "166.75px"
+        }
+      },
       "diagnosticsMaxHeight": "166.75px",
-      "appContentWidth": 375
+      "appContentWidth": 359,
+      "stack": {
+        "top": 119,
+        "bottom": 659,
+        "height": 540,
+        "contentTop": 8,
+        "contentBottom": 659,
+        "gap": 8,
+        "toolbarHeight": 68
+      }
     }
   }
 }

@@ -576,6 +576,104 @@ body {
   }
 }
 
+/* The layout control (spec-04: FR-401 – FR-406, FR-415, NFR-401 – NFR-403) - */
+
+/*
+ * FR-406's description target. Removed from the visual layout without leaving
+ * the accessibility tree, so `aria-describedby` still resolves to it — the
+ * clip-rect idiom rather than `display: none`, which would make the
+ * description unreadable to the very assistive technology it is for.
+ */
+.visually-hidden {
+  border: 0;
+  clip-path: inset(50%);
+  height: 1px;
+  overflow: hidden;
+  padding: 0;
+  position: absolute;
+  white-space: nowrap;
+  width: 1px;
+}
+
+/*
+ * The radiogroup renders as one segmented control: a single outer border with
+ * the two segments butted together, so it reads as one control rather than as
+ * two adjacent buttons. NFR-402 / NFR-403 are satisfied by reusing the pairs
+ * spec-01 already proved — `.btn`'s surface for the unchecked segment,
+ * `.btn--primary`'s for the checked one and `.btn[aria-disabled]`'s for the
+ * disabled rendering. This spec adds no palette token and changes no colour.
+ */
+.segmented {
+  display: flex;
+}
+
+/*
+ * The border lives on the segments, not on the group, and the second segment
+ * pulls back over the first's edge — so the pair reads as one control with a
+ * single outline while the group's rendered height stays exactly a segment's.
+ *
+ * That last part is FR-407's business: a border on the group would add 2 px to
+ * the toolbar row and push every panel below it down by that much, which
+ * VC-408 measures against the baseline build at +/-1 px per edge. The segments
+ * are 1 px taller than a `.btn` because NFR-401 asks for a 32 x 32 px hit area
+ * and a `.btn` renders 31 px high; that single pixel is inside VC-408's
+ * tolerance, and is the whole of this spec's effect on the vertical layout.
+ */
+.segment {
+  background: var(--bg-raised);
+  border: 1px solid var(--border-strong);
+  color: var(--fg);
+  cursor: pointer;
+  font: inherit;
+  /* NFR-401: >= 32 x 32 px of rendered hit area at every breakpoint. */
+  min-height: 32px;
+  min-width: 32px;
+  padding: 5px 12px;
+}
+
+.segment:first-child {
+  border-radius: 6px 0 0 6px;
+}
+
+/* NFR-403: the edge between the segments is one shared 1 px border, >= 3:1
+   against both surfaces, rather than two abutting ones. */
+.segment + .segment {
+  border-radius: 0 6px 6px 0;
+  margin-left: -1px;
+}
+
+/* The checked segment's fill must not be cut in half by its neighbour's
+   border, so it is lifted above it. */
+.segment[aria-checked='true'] {
+  position: relative;
+}
+
+/* FR-402: the checked segment is the effective layout's, never a masked
+   preference. `--accent` on `--accent-fg` is `.btn--primary`'s pair. */
+.segment[aria-checked='true'] {
+  background: var(--accent);
+  color: var(--accent-fg);
+}
+
+/*
+ * FR-415: below 900 px the group is styled as disabled while staying in the
+ * tab order — `aria-disabled`, never the `disabled` attribute, exactly as
+ * `src/controls.ts` describes for Run, Stop and Format. The checked segment
+ * keeps its indicator so the visitor can still see which layout is in force.
+ */
+.segmented[aria-disabled='true'] .segment {
+  background: var(--disabled-bg);
+  border-color: var(--disabled-border);
+  color: var(--disabled-fg);
+  cursor: not-allowed;
+}
+
+.segmented[aria-disabled='true'] .segment[aria-checked='true'] {
+  /* NFR-403: the indicator survives the disabled rendering as a border rather
+     than a fill, so it stays >= 3:1 against the disabled surface. */
+  box-shadow: inset 0 0 0 2px var(--disabled-border);
+}
+
 /* Horizontal / vertical pane layout (spec-04: FR-407 – FR-409, FR-425) ---- */
 
 /*

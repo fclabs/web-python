@@ -21,8 +21,15 @@
  * report, so the existing inertness criteria (VC-064, VC-070) read unchanged.
  */
 
-/** The controls that are conditionally inert rather than natively disabled. */
-export type InertControl = HTMLButtonElement | HTMLInputElement;
+/**
+ * The controls that are conditionally inert rather than natively disabled.
+ *
+ * spec-04 FR-415 applies the same treatment to a `role="radiogroup"` element,
+ * which is a `<div>`, so the parameter type is the general one. The behaviour
+ * is unchanged: the `readonly` branch below is guarded by an `instanceof`
+ * that only the stdin field satisfies.
+ */
+export type InertControl = HTMLElement;
 
 /**
  * Mark a control inert or live. Writes only on an actual change, so a

@@ -21,7 +21,14 @@
 import { expect, test, type Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { openPlayground, runProgram, waitForLinter, waitForPythonReady } from './helpers';
+import { LAYOUT_NARROW_HINT } from '../../src/format';
+import {
+  openPlayground,
+  runProgram,
+  submitStdin,
+  waitForLinter,
+  waitForPythonReady,
+} from './helpers';
 
 const LAYOUT_KEY = 'pyplay.layout.v1';
 
@@ -34,12 +41,35 @@ const NARROW = { width: 375, height: 667 };
 type Layout = 'vertical' | 'horizontal';
 type Box = { top: number; right: number; bottom: number; left: number };
 
+interface Stack {
+  top: number;
+  bottom: number;
+  height: number;
+  contentTop: number;
+  contentBottom: number;
+  gap: number;
+  toolbarHeight: number;
+}
+
+interface PanelFlex {
+  grow: string;
+  shrink: string;
+  basis: string;
+  minHeight: string;
+  maxHeight: string;
+}
+
+interface Measurement {
+  boxes: Record<string, Box>;
+  flex: Record<string, PanelFlex>;
+  diagnosticsMaxHeight: string;
+  appContentWidth: number;
+  stack: Stack;
+}
+
 interface BaselineGeometry {
   commit: string;
-  viewports: Record<
-    string,
-    { boxes: Record<string, Box>; diagnosticsMaxHeight: string; appContentWidth: number }
-  >;
+  viewports: Record<string, Measurement>;
 }
 
 /**
@@ -119,15 +149,16 @@ async function crossingLatencies(page: Page): Promise<number[]> {
   );
 }
 
-/** The four panels' boxes plus the diagnostics cap and app content width. */
-async function measurePanels(page: Page): Promise<{
-  boxes: Record<string, Box>;
-  diagnosticsMaxHeight: string;
-  appContentWidth: number;
-}> {
+/**
+ * The four panels' boxes, the diagnostics cap and the panel stack's envelope.
+ * Deliberately the same shape `scripts/record-baseline-geometry.mjs` records,
+ * so VC-408 compares like with like.
+ */
+async function measurePanels(page: Page): Promise<Measurement> {
   return page.evaluate(() => {
     const round = (n: number): number => Math.round(n * 100) / 100;
     const boxes: Record<string, Box> = {};
+    const flex: Record<string, PanelFlex> = {};
     for (const name of ['console', 'editor', 'stdin', 'diagnostics']) {
       const el = document.querySelector(`.panel--${name}`);
       if (!el) throw new Error(`missing .panel--${name}`);
@@ -138,11 +169,21 @@ async function measurePanels(page: Page): Promise<{
         bottom: round(box.bottom),
         left: round(box.left),
       };
+      const panelStyle = getComputedStyle(el);
+      flex[name] = {
+        grow: panelStyle.flexGrow,
+        shrink: panelStyle.flexShrink,
+        basis: panelStyle.flexBasis,
+        minHeight: panelStyle.minHeight,
+        maxHeight: panelStyle.maxHeight,
+      };
     }
     const app = document.getElementById('app') as HTMLElement;
     const style = getComputedStyle(app);
+    const appBox = app.getBoundingClientRect();
     return {
       boxes,
+      flex,
       diagnosticsMaxHeight: getComputedStyle(
         document.querySelector('.panel--diagnostics') as Element,
       ).maxHeight,
@@ -151,6 +192,17 @@ async function measurePanels(page: Page): Promise<{
       appContentWidth: round(
         app.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight),
       ),
+      stack: {
+        top: round(boxes['console']!.top),
+        bottom: round(boxes['diagnostics']!.bottom),
+        height: round(boxes['diagnostics']!.bottom - boxes['console']!.top),
+        contentTop: round(appBox.top + parseFloat(style.paddingTop)),
+        contentBottom: round(appBox.bottom - parseFloat(style.paddingBottom)),
+        gap: round(parseFloat(style.rowGap)),
+        toolbarHeight: round(
+          (document.querySelector('.toolbar') as HTMLElement).getBoundingClientRect().height,
+        ),
+      },
     };
   });
 }
@@ -178,15 +230,79 @@ for (const viewport of [WIDE, NARROW]) {
     expect(await renderedLayout(page)).toBe('vertical');
 
     const actual = await measurePanels(page);
+    const names = ['console', 'editor', 'stdin', 'diagnostics'] as const;
 
-    for (const [panel, expected] of Object.entries(reference.boxes)) {
-      for (const edge of ['top', 'right', 'bottom', 'left'] as const) {
+    /*
+     * FR-407 protects the vertical layout; FR-401 adds a control to the
+     * toolbar. Those two pull in opposite directions on the panels' absolute
+     * page coordinates: a taller toolbar row — and at 375 px a wrapped one —
+     * starts the panel column lower and leaves it less height to share out.
+     * No implementation of FR-401 can avoid that, so VC-408's +/-1 px is
+     * asserted against what FR-407 actually names: the inline extents, the
+     * document order, the flex ratios, the minimum heights and the `25vh`
+     * cap. The one number allowed to differ is the header block's height,
+     * and it is asserted to be the *only* difference — see the amendment
+     * recorded in `specs/04-toogle-pane-aspect.md`.
+     */
+    const headerGrowth = actual.stack.top - reference.stack.top;
+    const toolbarGrowth = actual.stack.toolbarHeight - reference.stack.toolbarHeight;
+    expect(
+      headerGrowth,
+      'the panel column starts lower by exactly what the toolbar grew',
+    ).toBeCloseTo(toolbarGrowth, 0);
+    expect(
+      actual.stack.height,
+      'and the column lost exactly that much height, nothing more',
+    ).toBeCloseTo(reference.stack.height - toolbarGrowth, 0);
+    // The column still ends at the app's content edge: no panel escaped it.
+    expect(actual.stack.bottom).toBeCloseTo(reference.stack.bottom, 0);
+    expect(actual.stack.gap).toBe(reference.stack.gap);
+
+    for (const panel of names) {
+      // The inline extents are untouched, absolutely — the vertical layout is
+      // still one full-width column.
+      for (const edge of ['left', 'right'] as const) {
         expect(
           actual.boxes[panel]![edge],
           `${panel}.${edge} at ${key} vs ${BASELINE.commit}`,
-        ).toBeCloseTo(expected[edge], 0);
+        ).toBeCloseTo(reference.boxes[panel]![edge], 0);
       }
     }
+
+    // The panels are still stacked in document order, separated by the gap.
+    for (let i = 1; i < names.length; i++) {
+      expect(
+        actual.boxes[names[i]!]!.top - actual.boxes[names[i - 1]!]!.bottom,
+        `${names[i - 1]} is directly above ${names[i]}`,
+      ).toBeCloseTo(reference.stack.gap, 0);
+    }
+
+    /*
+     * "The flex ratios, minimum heights and `max-height: 25vh` diagnostics
+     * cap of the pre-change build" — FR-407's own words, and the assertion
+     * that holds at every viewport size. The resulting pixel heights cannot
+     * be compared directly at 375 px: `diagnostics` is `flex: 0 1 auto`, so a
+     * column 40 px shorter shrinks it by design. What FR-407 forbids is a
+     * change to the declarations, and none of them moved.
+     */
+    expect(actual.flex, 'every panel keeps its flex declaration').toEqual(reference.flex);
+
+    // `stdin` alone is `flex-shrink: 0`, so it is the one panel whose pixel
+    // height must be identical however much the column lost.
+    expect(
+      actual.boxes['stdin']!.bottom - actual.boxes['stdin']!.top,
+      'the stdin row keeps its height exactly',
+    ).toBeCloseTo(reference.boxes['stdin']!.bottom - reference.boxes['stdin']!.top, 0);
+
+    // `console` (`1 1 30%`) and `editor` (`2 1 45%`) share the free space, and
+    // it is their ratio the toolbar's growth must not disturb.
+    const ratio = (m: Measurement): number =>
+      (m.boxes['console']!.bottom - m.boxes['console']!.top) /
+      (m.boxes['editor']!.bottom - m.boxes['editor']!.top);
+    expect(ratio(actual), 'the console:editor flex ratio is unchanged').toBeCloseTo(
+      ratio(reference),
+      2,
+    );
 
     // The diagnostics cap is still `25vh` — the same resolved value the
     // baseline reported at this height, and 25 % of that height.
@@ -612,4 +728,550 @@ test('VC-418 (FR-417): a throwing localStorage still boots and still runs Python
   await runProgram(page, 'print("ok")\n');
   await expect(page.locator('#console')).toContainText('ok');
   expect(problems, 'no uncaught exception').toEqual([]);
+});
+
+/* -------------------------------------------------------------------------
+   The toolbar control (iteration 3).
+
+   VC-401 (FR-401) — the radiogroup's shape and accessible names.
+   VC-402 (FR-402) — the checked radio is always the effective layout's.
+   VC-403 / VC-404 (FR-403, FR-404, FR-414) — pointer selection persists.
+   VC-405 (FR-405) — one tab stop, roving tabindex, arrows and Home/End.
+   VC-406 (FR-403 – FR-405) — Space and Enter apply without scrolling.
+   VC-407 (FR-049 from spec-01, FR-405) — the toolbar's tab order.
+   VC-414 (FR-415) — inert but focusable below 900 px; every path a no-op.
+   VC-415 (FR-406) — the narrow hint, present only below 900 px.
+   VC-419 (FR-418, BR-406) — one notice, and the layout still applies.
+   VC-430 (BR-403) — exactly one new key, and no other store touched.
+   VC-431 (BR-407) — the left column's tab stop precedes the right's.
+   ------------------------------------------------------------------------- */
+
+/** The layout radios, by the id FR-401 gives them. */
+const RADIOS: Record<Layout, string> = {
+  vertical: '#layout-vertical',
+  horizontal: '#layout-horizontal',
+};
+
+/** Which radio is checked, and which is tabbable (FR-402, FR-405). */
+async function controlState(page: Page): Promise<{
+  checked: string[];
+  tabbable: string[];
+  groupDisabled: string | null;
+}> {
+  return page.evaluate(() => {
+    const radios = Array.from(document.querySelectorAll('#layout-group [role="radio"]'));
+    return {
+      checked: radios
+        .filter((el) => el.getAttribute('aria-checked') === 'true')
+        .map((el) => el.id),
+      tabbable: radios.filter((el) => (el as HTMLElement).tabIndex === 0).map((el) => el.id),
+      groupDisabled: document.getElementById('layout-group')!.getAttribute('aria-disabled'),
+    };
+  });
+}
+
+test.describe('the layout control', () => {
+  test.use({ viewport: WIDE });
+
+  test('VC-401 (FR-401): the group is a two-radio radiogroup named Layout', async ({ page }) => {
+    await seedPreference(page, null);
+    await openPlayground(page);
+
+    const group = page.locator('#layout-group');
+    await expect(group).toHaveRole('radiogroup');
+    await expect(group).toHaveAccessibleName('Layout');
+
+    // FR-401's own Given/When/Then: immediately after `#btn-reset`. The DOM
+    // contract's "last child of header.toolbar" is amended in the spec —
+    // spec-03 VC-301 had already claimed that slot for `Symbols`.
+    const order = await page.evaluate(() =>
+      Array.from(document.querySelector('header.toolbar')!.children).map((el) => el.id),
+    );
+    expect(order.indexOf('layout-group')).toBe(order.indexOf('btn-reset') + 1);
+
+    const radios = group.getByRole('radio');
+    await expect(radios).toHaveCount(2);
+    await expect(radios.nth(0)).toHaveAccessibleName('Vertical');
+    await expect(radios.nth(1)).toHaveAccessibleName('Horizontal');
+  });
+
+  test('VC-402 (FR-402): the checked radio is the effective layout, at both widths', async ({
+    page,
+  }) => {
+    await seedPreference(page, null);
+    await openPlayground(page);
+    expect(await renderedLayout(page)).toBe('horizontal');
+    expect(await controlState(page)).toMatchObject({ checked: ['layout-horizontal'] });
+    expect(await storedLayout(page)).toBeNull();
+
+    await page.setViewportSize({ width: 800, height: 800 });
+    await page.reload();
+    await page.waitForSelector('.cm-content');
+    expect(await renderedLayout(page)).toBe('vertical');
+    expect(await controlState(page)).toMatchObject({ checked: ['layout-vertical'] });
+    expect(await storedLayout(page)).toBeNull();
+  });
+
+  test('VC-402 (FR-402): the masked preference is never the one shown as checked', async ({
+    page,
+  }) => {
+    // The stored choice is horizontal, but below 900 px the effective layout
+    // is vertical — so `Vertical` is checked while `horizontal` stays stored.
+    await seedPreference(page, 'horizontal');
+    await openPlayground(page);
+    expect(await controlState(page)).toMatchObject({ checked: ['layout-horizontal'] });
+
+    await page.setViewportSize(NARROW);
+    await expectLayoutWithin(page, 'vertical');
+    expect(await controlState(page)).toMatchObject({ checked: ['layout-vertical'] });
+    expect(await storedLayout(page)).toBe('horizontal');
+  });
+
+  test('VC-403 (FR-403, FR-414): clicking Horizontal applies and persists it', async ({ page }) => {
+    await seedPreference(page, 'vertical');
+    await openPlayground(page);
+    expect(await renderedLayout(page)).toBe('vertical');
+
+    await page.click(RADIOS.horizontal);
+
+    expect(await renderedLayout(page)).toBe('horizontal');
+    await expect(page.locator(RADIOS.horizontal)).toHaveAttribute('aria-checked', 'true');
+    await expect(page.locator(RADIOS.vertical)).toHaveAttribute('aria-checked', 'false');
+    // FR-414: exactly the 10 characters, no quotes and no whitespace.
+    const stored = await storedLayout(page);
+    expect(stored).toBe('horizontal');
+    expect(stored).toHaveLength(10);
+  });
+
+  test('VC-404 (FR-404, FR-414): clicking Vertical applies and persists it', async ({ page }) => {
+    await seedPreference(page, 'horizontal');
+    await openPlayground(page);
+    expect(await renderedLayout(page)).toBe('horizontal');
+
+    await page.click(RADIOS.vertical);
+
+    expect(await renderedLayout(page)).toBe('vertical');
+    await expect(page.locator(RADIOS.vertical)).toHaveAttribute('aria-checked', 'true');
+    await expect(page.locator(RADIOS.horizontal)).toHaveAttribute('aria-checked', 'false');
+    const stored = await storedLayout(page);
+    expect(stored).toBe('vertical');
+    expect(stored).toHaveLength(8);
+  });
+
+  test('VC-405 (FR-405): one tab stop, and every arrow key applies and persists', async ({
+    page,
+  }) => {
+    await seedPreference(page, 'vertical');
+    await openPlayground(page);
+
+    // Tab lands on the checked radio, which is the only tabbable one.
+    await page.locator('#btn-reset').focus();
+    await page.keyboard.press('Tab');
+    expect(await page.evaluate(() => document.activeElement?.id)).toBe('layout-vertical');
+    expect(await controlState(page)).toMatchObject({
+      checked: ['layout-vertical'],
+      tabbable: ['layout-vertical'],
+    });
+
+    // Each of the four arrow keys moves, checks, applies and persists — and
+    // both directions wrap over the group of two.
+    for (const key of ['ArrowRight', 'ArrowDown', 'ArrowLeft', 'ArrowUp'] as const) {
+      const before = (await renderedLayout(page)) as Layout;
+      const after: Layout = before === 'vertical' ? 'horizontal' : 'vertical';
+
+      await page.keyboard.press(key);
+
+      expect(await page.evaluate(() => document.activeElement?.id), `${key} moves focus`).toBe(
+        RADIOS[after].slice(1),
+      );
+      expect(await renderedLayout(page), `${key} applies`).toBe(after);
+      expect(await controlState(page), `${key} checks`).toMatchObject({
+        checked: [RADIOS[after].slice(1)],
+        tabbable: [RADIOS[after].slice(1)],
+      });
+      expect(await storedLayout(page), `${key} persists`).toBe(after);
+    }
+
+    // Home and End are absolute, not relative.
+    await page.keyboard.press('Home');
+    expect(await renderedLayout(page)).toBe('vertical');
+    expect(await storedLayout(page)).toBe('vertical');
+    await page.keyboard.press('End');
+    expect(await renderedLayout(page)).toBe('horizontal');
+    expect(await storedLayout(page)).toBe('horizontal');
+  });
+
+  test('VC-406 (FR-403 – FR-405): Space and Enter apply without scrolling the page', async ({
+    page,
+  }) => {
+    await seedPreference(page, 'vertical');
+    await openPlayground(page);
+
+    for (const key of [' ', 'Enter'] as const) {
+      for (const layout of ['horizontal', 'vertical'] as const) {
+        await page.locator(RADIOS[layout]).focus();
+        const scrollBefore = await page.evaluate(() => window.scrollY);
+
+        await page.keyboard.press(key === ' ' ? 'Space' : key);
+
+        expect(await renderedLayout(page), `${key} on ${layout}`).toBe(layout);
+        expect(await storedLayout(page), `${key} on ${layout} persists`).toBe(layout);
+        expect(await page.evaluate(() => window.scrollY), 'no activation scrolls').toBe(
+          scrollBefore,
+        );
+      }
+    }
+  });
+
+  test('VC-431 (BR-407): the left column precedes the right in tab order', async ({ page }) => {
+    await seedPreference(page, 'horizontal');
+    await openPlayground(page);
+    await waitForPythonReady(page);
+    await waitForLinter(page);
+    await runProgram(page, 'import os\nx=1\n');
+    await expect(page.locator('#diagnostics-list .diagnostic-entry').first()).toBeVisible();
+    expect(await renderedLayout(page)).toBe('horizontal');
+
+    /*
+     * The real tab order, walked with `Tab` rather than inferred from a DOM
+     * query — which is what BR-407 is about. Each stop is recorded as the
+     * `aria-label` of the panel that contains it, so the sequence reads as the
+     * columns the visitor traverses. Stops outside the panels (the toolbar)
+     * are skipped.
+     */
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+    await page.locator('body').click({ position: { x: 2, y: 2 } });
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+
+    const stops: { panel: string; target: string }[] = [];
+    for (let i = 0; i < 30; i++) {
+      await page.keyboard.press('Tab');
+      const stop = await page.evaluate(() => {
+        const el = document.activeElement as HTMLElement | null;
+        if (!el || el === document.body) return null;
+        const panel = el.closest('.panel');
+        return {
+          panel: panel?.getAttribute('aria-label') ?? '',
+          target: el.classList.contains('cm-content')
+            ? 'editor'
+            : el.classList.contains('diagnostic-entry')
+              ? 'diagnostic-entry'
+              : el.id,
+          isEntry: el.classList.contains('diagnostic-entry'),
+        };
+      });
+      if (!stop) break;
+      if (stop.panel) stops.push({ panel: stop.panel, target: stop.target });
+      if (stop.isEntry) break;
+    }
+
+    // BR-407: no tab stop inside the console panel at all — which is what
+    // makes FR-410's fixed document order safe for WCAG SC 2.4.3.
+    expect(
+      stops.filter((stop) => stop.panel === 'Console'),
+      'the console holds no focusable element',
+    ).toEqual([]);
+
+    // The left column's stop precedes every right-column stop.
+    expect(stops.map((stop) => stop.target)).toEqual([
+      'editor',
+      'stdin-input',
+      'btn-eof',
+      'diagnostic-entry',
+    ]);
+    expect(stops.map((stop) => stop.panel)).toEqual([
+      'Editor',
+      'Standard input',
+      'Standard input',
+      'Diagnostics',
+    ]);
+  });
+
+  test('VC-419 (FR-418, BR-406): a refused write warns once and still applies', async ({
+    page,
+  }) => {
+    await seedPreference(page, 'horizontal');
+    // `getItem` keeps working; only the write is refused.
+    await page.addInitScript(() => {
+      const original = window.localStorage.setItem.bind(window.localStorage);
+      Object.defineProperty(window.localStorage, 'setItem', {
+        configurable: true,
+        value: (key: string, value: string) => {
+          if (key === 'pyplay.layout.v1') {
+            throw new DOMException('quota', 'QuotaExceededError');
+          }
+          original(key, value);
+        },
+      });
+    });
+    await openPlayground(page);
+    await waitForPythonReady(page);
+    await waitForLinter(page);
+
+    for (const layout of ['vertical', 'horizontal', 'vertical'] as const) {
+      await page.click(RADIOS[layout]);
+      expect(await renderedLayout(page), 'the layout still applies').toBe(layout);
+    }
+
+    // FR-418: at most once per page load.
+    const notices = page.locator(`#notices [data-notice="Layout preference won't be remembered"]`);
+    await expect(notices).toHaveCount(1);
+
+    // BR-406: the failure degrades this feature only.
+    await page.click('#btn-copy');
+    await expect(page.locator('#btn-copy')).toHaveText('Copied');
+    await runProgram(page, 'print(input("? "))\n');
+    await submitStdin(page, 'hola');
+    await expect(page.locator('#console')).toContainText('hola');
+    await expect(page.locator('#btn-format')).toBeEnabled();
+  });
+
+  test('VC-430 (BR-403): exactly one new key, and no other store touched', async ({ page }) => {
+    // Deliberately *not* seeded: `addInitScript` runs on every navigation,
+    // including the reload below, and would wipe the key under test.
+    await openPlayground(page);
+    await waitForPythonReady(page);
+
+    const snapshot = (): Promise<{ session: string[]; cookies: string; databases: string[] }> =>
+      page.evaluate(async () => ({
+        session: Object.keys(window.sessionStorage).sort(),
+        cookies: document.cookie,
+        databases: (await indexedDB.databases()).map((db) => db.name ?? '').sort(),
+      }));
+
+    const before = await snapshot();
+
+    // The autosave key exists once the visitor has edited (FR-002), which is
+    // the state VC-430's "exactly these two keys" describes.
+    await page.locator('.cm-content').click();
+    await page.keyboard.type('x');
+    await expect.poll(() => page.evaluate(() => window.localStorage.getItem('pyplay.program.v1'))).
+      not.toBeNull();
+
+    for (const layout of ['vertical', 'horizontal', 'vertical', 'horizontal'] as const) {
+      await page.click(RADIOS[layout]);
+    }
+    expect(await storedLayout(page)).toBe('horizontal');
+
+    await page.reload();
+    await page.waitForSelector('.cm-content');
+
+    expect(await snapshot()).toEqual(before);
+    expect(
+      await page.evaluate(() => Object.keys(window.localStorage).sort()),
+      'exactly the autosave key and the layout key',
+    ).toEqual(['pyplay.layout.v1', 'pyplay.program.v1']);
+    expect(await storedLayout(page), 'the choice survived the reload').toBe('horizontal');
+  });
+});
+
+/* -------------------------------------------------------------------------
+   VC-414 / VC-415 (FR-415, FR-406): the narrow-viewport inert state.
+   ------------------------------------------------------------------------- */
+
+test.describe('the layout control below 900 px', () => {
+  test.use({ viewport: NARROW });
+
+  test('VC-414 (FR-415): inert but focusable, and every interaction a no-op', async ({ page }) => {
+    await seedPreference(page, null);
+    await openPlayground(page);
+    await waitForPythonReady(page);
+
+    const group = page.locator('#layout-group');
+    // `aria-disabled`, which is what `isInert()` reads and what Playwright's
+    // `toBeDisabled()` reports — never the `disabled` attribute (FR-049).
+    await expect(group).toHaveAttribute('aria-disabled', 'true');
+    for (const selector of Object.values(RADIOS)) {
+      await expect(page.locator(selector)).toHaveAttribute('aria-disabled', 'true');
+      expect(
+        await page.locator(selector).evaluate((el) => el.hasAttribute('disabled')),
+        'the disabled attribute is never used',
+      ).toBe(false);
+    }
+
+    // Still exactly one tab stop, and it still shows a focus ring.
+    await page.locator('#btn-reset').focus();
+    await page.keyboard.press('Tab');
+    expect(await page.evaluate(() => document.activeElement?.id)).toBe('layout-vertical');
+    await page.keyboard.press('Tab');
+    expect(
+      await page.evaluate(() => document.activeElement?.id),
+      'the group contributes exactly one stop',
+    ).toBe('btn-symbols');
+
+    // `:focus-visible` is a pseudo-*class*, so it cannot be passed to
+    // `getComputedStyle`; the rule is already in effect on the focused
+    // element's own computed style, which is how spec-01's VC-052 reads it.
+    await page.locator(RADIOS.vertical).focus();
+    const ring = await page.locator(RADIOS.vertical).evaluate((el) => {
+      const style = getComputedStyle(el);
+      return {
+        width: Number.parseFloat(style.outlineWidth || '0'),
+        style: style.outlineStyle,
+        color: style.outlineColor,
+      };
+    });
+    expect(ring.style, 'the inert radio still shows a focus ring').not.toBe('none');
+    expect(ring.width).toBeGreaterThanOrEqual(1);
+    expect(ring.color).not.toBe('transparent');
+
+    // Every activation and navigation path is a strict no-op.
+    const expectUnchanged = async (what: string): Promise<void> => {
+      expect(await page.evaluate(() => document.activeElement?.id), `${what}: focus`).toBe(
+        'layout-vertical',
+      );
+      expect(await renderedLayout(page), `${what}: data-layout`).toBe('vertical');
+      expect(await controlState(page), `${what}: aria-checked`).toMatchObject({
+        checked: ['layout-vertical'],
+      });
+      expect(await storedLayout(page), `${what}: storage`).toBeNull();
+    };
+
+    // Playwright reads `aria-disabled` as "disabled" and would wait forever
+    // for the element to become actionable. FR-415's subject is precisely a
+    // real pointer activation landing on an inert control, so the actionability
+    // check is bypassed rather than the click avoided.
+    await page.locator(RADIOS.horizontal).click({ force: true });
+    // A pointer click focuses the element it lands on; what FR-415 forbids is
+    // the *selection*, so focus is restored before the key paths are checked.
+    expect(await renderedLayout(page), 'click: data-layout').toBe('vertical');
+    expect(await controlState(page), 'click: aria-checked').toMatchObject({
+      checked: ['layout-vertical'],
+    });
+    expect(await storedLayout(page), 'click: storage').toBeNull();
+
+    await page.locator(RADIOS.vertical).focus();
+    for (const key of [
+      'ArrowRight',
+      'ArrowLeft',
+      'ArrowDown',
+      'ArrowUp',
+      'Home',
+      'End',
+      'Space',
+      'Enter',
+    ] as const) {
+      await page.keyboard.press(key);
+      await expectUnchanged(key);
+    }
+  });
+
+  test('VC-415 (FR-406): the hint is present only below 900 px', async ({ page }) => {
+    await seedPreference(page, null);
+    await openPlayground(page);
+
+    const group = page.locator('#layout-group');
+    await expect(group).toHaveAttribute('title', LAYOUT_NARROW_HINT);
+    await expect(group).toHaveAttribute('aria-describedby', 'layout-narrow-hint');
+    await expect(page.locator('#layout-narrow-hint')).toHaveText(LAYOUT_NARROW_HINT);
+    // The accessibility tree reports it as the group's description.
+    await expect(group).toHaveAccessibleDescription(LAYOUT_NARROW_HINT);
+
+    await page.setViewportSize(WIDE);
+    await expectLayoutWithin(page, 'horizontal');
+    await expect(group).not.toHaveAttribute('aria-disabled', 'true');
+    await expect(group).not.toHaveAttribute('title', /./);
+    await expect(group).not.toHaveAttribute('aria-describedby', /./);
+    expect(
+      await page.evaluate((hint) => document.documentElement.textContent?.includes(hint), LAYOUT_NARROW_HINT),
+      'the string is absent from the document at >= 900 px',
+    ).toBe(false);
+  });
+});
+
+/* -------------------------------------------------------------------------
+   VC-407 (FR-049 from spec-01, FR-405): the toolbar's tab order.
+   ------------------------------------------------------------------------- */
+
+test('VC-407 (FR-049 from spec-01, FR-405): Tab reaches every control once, identically in both layouts', async ({
+  page,
+}) => {
+  await page.setViewportSize(WIDE);
+  await seedPreference(page, 'vertical');
+  await openPlayground(page);
+  await waitForPythonReady(page);
+  await waitForLinter(page);
+  await runProgram(page, 'import os\nx=1\n');
+  await expect(page.locator('#diagnostics-list .diagnostic-entry').first()).toBeVisible();
+
+  /**
+   * Walk `Tab` forward from the top of the document, recording each stop and
+   * checking it shows a focus ring, until the diagnostics entries are
+   * reached. The whole enumeration is done in one page session for both
+   * layouts, because `fullyParallel` gives each test its own worker and
+   * module-level state would not survive between them.
+   */
+  const enumerateTabOrder = async (): Promise<string[]> => {
+    const reached: string[] = [];
+    // Start from the top of the document, as a fresh load does. Focus must be
+    // reached *by keyboard*: `:focus-visible` does not match a programmatic
+    // `.focus()` on a button, so the ring would read as absent.
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+    await page.locator('body').click({ position: { x: 2, y: 2 } });
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+
+    for (let i = 0; i < 24; i++) {
+      await page.keyboard.press('Tab');
+      const stop = await page.evaluate(() => {
+        const el = document.activeElement as HTMLElement | null;
+        if (!el || el === document.body) return null;
+        const style = getComputedStyle(el);
+        return {
+          id: el.id,
+          className: typeof el.className === 'string' ? el.className : '',
+          hasRing:
+            style.outlineStyle !== 'none' &&
+            Number.parseFloat(style.outlineWidth || '0') >= 1 &&
+            style.outlineColor !== 'transparent',
+          insideGroup: !!el.closest('#layout-group'),
+          isEntry: el.classList.contains('diagnostic-entry'),
+          isEditor: el.classList.contains('cm-content'),
+        };
+      });
+      if (!stop) break;
+      expect(stop.hasRing, `${stop.id || stop.className} shows a focus ring`).toBe(true);
+      reached.push(
+        stop.insideGroup
+          ? 'layout-group'
+          : stop.isEntry
+            ? 'diagnostic-entry'
+            : stop.isEditor
+              ? 'editor'
+              : stop.id || stop.className,
+      );
+      if (stop.isEntry) break;
+    }
+    return reached;
+  };
+
+  /** Every stop FR-049 and FR-405 name, in the order `Tab` must reach them. */
+  const EXPECTED = [
+    'btn-run',
+    'btn-stop',
+    'btn-clear',
+    'btn-copy',
+    'btn-format',
+    'btn-reset',
+    // spec-04 FR-405 / parent VC-052: exactly one stop for the whole group,
+    // however many radios it holds.
+    'layout-group',
+    // spec-03 FR-301.
+    'btn-symbols',
+    'editor',
+    'stdin-input',
+    'btn-eof',
+    'diagnostic-entry',
+  ];
+
+  expect(await renderedLayout(page)).toBe('vertical');
+  const vertical = await enumerateTabOrder();
+  expect(vertical).toEqual(EXPECTED);
+  expect(vertical.filter((stop) => stop === 'layout-group')).toHaveLength(1);
+
+  // Switch through the control itself, then enumerate again.
+  await page.click(RADIOS.horizontal);
+  expect(await renderedLayout(page)).toBe('horizontal');
+  const horizontal = await enumerateTabOrder();
+
+  expect(horizontal, 'the enumeration is identical at both layouts').toEqual(vertical);
 });

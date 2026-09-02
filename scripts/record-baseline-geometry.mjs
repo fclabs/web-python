@@ -73,6 +73,7 @@ function measure() {
   const round = (n) => Math.round(n * 100) / 100;
   const panels = ['console', 'editor', 'stdin', 'diagnostics'];
   const boxes = {};
+  const flex = {};
   for (const name of panels) {
     const el = document.querySelector(`.panel--${name}`);
     if (!el) throw new Error(`missing .panel--${name}`);
@@ -83,13 +84,54 @@ function measure() {
       bottom: round(box.bottom),
       left: round(box.left),
     };
+    /*
+     * FR-407 names "the flex ratios, minimum heights and `max-height: 25vh`
+     * diagnostics cap of the pre-change build" as the thing to preserve. Those
+     * are the declarations, and unlike the resulting pixels they do not move
+     * when the toolbar above the column grows — so they are what VC-408 can
+     * compare exactly at every viewport size.
+     */
+    const panelStyle = getComputedStyle(el);
+    flex[name] = {
+      grow: panelStyle.flexGrow,
+      shrink: panelStyle.flexShrink,
+      basis: panelStyle.flexBasis,
+      minHeight: panelStyle.minHeight,
+      maxHeight: panelStyle.maxHeight,
+    };
   }
   const diagnostics = document.querySelector('.panel--diagnostics');
+  const app = document.getElementById('app');
+  const style = getComputedStyle(app);
+  const appBox = app.getBoundingClientRect();
   return {
     boxes,
+    flex,
     // VC-408's second half: the cap is still `25vh`, not a resolved pixel
     // value that happens to match at these two heights.
     diagnosticsMaxHeight: getComputedStyle(diagnostics).maxHeight,
-    appContentWidth: round(document.getElementById('app').clientWidth),
+    appContentWidth: round(
+      app.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight),
+    ),
+    /*
+     * The block the panels are stacked below. FR-401 adds a toolbar control,
+     * which makes this row taller — and at 375 px wide it makes it wrap — so
+     * every panel below it starts lower and the column has less height to
+     * share out. That is an effect of FR-401, not a change to the vertical
+     * layout FR-407 protects, so VC-408 compares the panels against the space
+     * this block leaves rather than against absolute page coordinates.
+     */
+    stack: {
+      /* Where the panel column starts and ends. */
+      top: round(boxes.console.top),
+      bottom: round(boxes.diagnostics.bottom),
+      /* The height the four panels and their gaps share out. */
+      height: round(boxes.diagnostics.bottom - boxes.console.top),
+      /* The app's content box, so the header block's height is derivable. */
+      contentTop: round(appBox.top + parseFloat(style.paddingTop)),
+      contentBottom: round(appBox.bottom - parseFloat(style.paddingBottom)),
+      gap: round(parseFloat(style.rowGap)),
+      toolbarHeight: round(document.querySelector('.toolbar').getBoundingClientRect().height),
+    },
   };
 }
