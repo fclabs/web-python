@@ -73,10 +73,12 @@ function boot(): void {
   const app = need('app');
   const layoutGroup = need('layout-group');
   const layoutHint = need('layout-narrow-hint');
-  // FR-401's two radios, in the order `ArrowRight` walks them.
+  // FR-401's two radios, in the order `ArrowRight` walks them and `Home` /
+  // `End` address them. Both names describe the orientation of the divider
+  // between the panels — see the contract in `src/layout.ts`.
   const layoutRadios: { layout: Layout; radio: HTMLButtonElement }[] = [
-    { layout: 'vertical', radio: need<HTMLButtonElement>('layout-vertical') },
     { layout: 'horizontal', radio: need<HTMLButtonElement>('layout-horizontal') },
+    { layout: 'vertical', radio: need<HTMLButtonElement>('layout-vertical') },
   ];
 
   const wide = window.matchMedia(LAYOUT_QUERY);
@@ -199,7 +201,7 @@ function boot(): void {
   // FR-412: the 900 px crossing re-resolves synchronously in the `change`
   // handler — no `resize` listener and no debounce — and writes nothing, so an
   // unset preference tracks the viewport and stays unset (BR-405). FR-413: a
-  // stored `horizontal` is masked while narrow and restored on widening,
+  // stored `vertical` is masked while narrow and restored on widening,
   // because `layoutPref` is re-resolved, never rewritten.
   wide.addEventListener('change', renderLayout);
 

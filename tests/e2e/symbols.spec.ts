@@ -1134,12 +1134,12 @@ test('VC-320 (FR-312, BR-304): opening and copying persists nothing, and a reloa
   /*
    * The keys that may legitimately be present: FR-002's autosave, and — under
    * a spec-04 VC-433 run, which loads the parent suites with the layout
-   * preference pre-seeded — spec-04's `pyplay.layout.v1`. Neither is the
+   * preference pre-seeded — spec-04's `pyplay.layout.v2`. Neither is the
    * pane's; what VC-320 asserts is that *the pane* writes nothing, which is
    * the unchanged-snapshot comparisons below, plus the absence of any key
    * outside this set.
    */
-  const ALLOWED_KEYS = ['pyplay.layout.v1', 'pyplay.program.v1'];
+  const ALLOWED_KEYS = ['pyplay.layout.v2', 'pyplay.program.v1'];
   const unexpectedKeys = (snapshot: { local: Record<string, string> }): string[] =>
     Object.keys(snapshot.local).filter((key) => !ALLOWED_KEYS.includes(key));
 

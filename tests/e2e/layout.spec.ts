@@ -1,13 +1,20 @@
 /**
  * spec-04 — the horizontal / vertical pane layout.
  *
+ * Both names describe the orientation of the divider between the panels, as
+ * `vim`'s `:split` / `:vsplit` do: `horizontal` stacks them in one column
+ * (spec-01's rendering, and the only layout below 900 px), `vertical` puts the
+ * editor beside the console. `src/layout.ts` is normative for the two words;
+ * the comments below say "stacked" and "two-column" where the geometry is what
+ * matters, and use the token only when naming the attribute value.
+ *
  * Iteration 2's criteria: the two renderings and the resolution rule. The
  * toolbar control that drives them arrives in iteration 3, so these tests
  * reach the layout the way the shipped code does — through the stored
  * preference and the viewport width — never by writing `data-layout` by hand
  * except where a criterion explicitly renders a given attribute value.
  *
- * VC-408 (FR-407) — the vertical layout is the baseline build, +/-1 px.
+ * VC-408 (FR-407) — the stacked layout is the baseline build, +/-1 px.
  * VC-409 (FR-408, BR-407) — editor column inline-start of the other three.
  * VC-410 (FR-409) — 58 % split, 320 px floors, no h-scroll, 40 % cap.
  * VC-411 (FR-410, BR-402) — identical document order; no `childList` churn.
@@ -32,7 +39,7 @@ import {
   waitForStdinPrompt,
 } from './helpers';
 
-const LAYOUT_KEY = 'pyplay.layout.v1';
+const LAYOUT_KEY = 'pyplay.layout.v2';
 
 /** FR-411 / BR-404's breakpoint, and `LAYOUT_MIN_WIDTH` in `src/layout.ts`. */
 const LAYOUT_MIN_WIDTH = 900;
@@ -40,7 +47,7 @@ const LAYOUT_MIN_WIDTH = 900;
 const WIDE = { width: 1280, height: 800 };
 const NARROW = { width: 375, height: 667 };
 
-type Layout = 'vertical' | 'horizontal';
+type Layout = 'horizontal' | 'vertical';
 type Box = { top: number; right: number; bottom: number; left: number };
 
 interface Stack {
@@ -87,15 +94,15 @@ const BASELINE = JSON.parse(
 async function seedPreference(page: Page, value: string | null): Promise<void> {
   await page.addInitScript((seed) => {
     try {
-      if (seed === null) window.localStorage.removeItem('pyplay.layout.v1');
-      else window.localStorage.setItem('pyplay.layout.v1', seed);
+      if (seed === null) window.localStorage.removeItem('pyplay.layout.v2');
+      else window.localStorage.setItem('pyplay.layout.v2', seed);
     } catch {
       /* Storage denial is VC-418's subject, not this helper's. */
     }
   }, value);
 }
 
-/** The value under `pyplay.layout.v1`, byte for byte, or null. */
+/** The value under `pyplay.layout.v2`, byte for byte, or null. */
 async function storedLayout(page: Page): Promise<string | null> {
   return page.evaluate((key) => window.localStorage.getItem(key), LAYOUT_KEY);
 }
@@ -210,13 +217,13 @@ async function measurePanels(page: Page): Promise<Measurement> {
 }
 
 /* -------------------------------------------------------------------------
-   VC-408 (FR-407): the vertical layout is the shipped one, to the pixel.
+   VC-408 (FR-407): the stacked layout is the shipped one, to the pixel.
    ------------------------------------------------------------------------- */
 
 for (const viewport of [WIDE, NARROW]) {
   const key = `${viewport.width}x${viewport.height}`;
 
-  test(`VC-408 (FR-407): the vertical layout matches the ${BASELINE.commit} build at ${key}`, async ({
+  test(`VC-408 (FR-407): the stacked layout matches the ${BASELINE.commit} build at ${key}`, async ({
     page,
   }) => {
     test.skip(BASELINE.viewports[key] === undefined, `no baseline recorded for ${key}`);
@@ -225,17 +232,17 @@ for (const viewport of [WIDE, NARROW]) {
     await page.setViewportSize(viewport);
     // The preference is how the shipped resolver is asked for vertical at a
     // width where an unset preference would resolve to horizontal (FR-411).
-    await seedPreference(page, 'vertical');
+    await seedPreference(page, 'horizontal');
     await openPlayground(page, { seedLayout: false });
     await waitForPythonReady(page);
     await waitForLinter(page);
-    expect(await renderedLayout(page)).toBe('vertical');
+    expect(await renderedLayout(page)).toBe('horizontal');
 
     const actual = await measurePanels(page);
     const names = ['console', 'editor', 'stdin', 'diagnostics'] as const;
 
     /*
-     * FR-407 protects the vertical layout; FR-401 adds a control to the
+     * FR-407 protects the stacked layout; FR-401 adds a control to the
      * toolbar. Those two pull in opposite directions on the panels' absolute
      * page coordinates: a taller toolbar row — and at 375 px a wrapped one —
      * starts the panel column lower and leaves it less height to share out.
@@ -261,7 +268,7 @@ for (const viewport of [WIDE, NARROW]) {
     expect(actual.stack.gap).toBe(reference.stack.gap);
 
     for (const panel of names) {
-      // The inline extents are untouched, absolutely — the vertical layout is
+      // The inline extents are untouched, absolutely — the stacked layout is
       // still one full-width column.
       for (const edge of ['left', 'right'] as const) {
         expect(
@@ -314,20 +321,20 @@ for (const viewport of [WIDE, NARROW]) {
 }
 
 /* -------------------------------------------------------------------------
-   VC-409 (FR-408, BR-407) and VC-410 (FR-409): the horizontal geometry.
+   VC-409 (FR-408, BR-407) and VC-410 (FR-409): the two-column geometry.
    ------------------------------------------------------------------------- */
 
-test.describe('the horizontal layout', () => {
+test.describe('the two-column layout', () => {
   test.use({ viewport: WIDE });
 
   test('VC-409 (FR-408, BR-407): the editor column sits inline-start of the other three', async ({
     page,
   }) => {
-    await seedPreference(page, 'horizontal');
+    await seedPreference(page, 'vertical');
     await openPlayground(page, { seedLayout: false });
     await waitForPythonReady(page);
     await waitForLinter(page);
-    expect(await renderedLayout(page)).toBe('horizontal');
+    expect(await renderedLayout(page)).toBe('vertical');
 
     const { boxes, appContentWidth } = await measurePanels(page);
     const { editor, console: consolePanel, stdin, diagnostics } = boxes as Record<string, Box>;
@@ -397,11 +404,11 @@ test.describe('the horizontal layout', () => {
       page,
     }) => {
       await page.setViewportSize({ width, height: 800 });
-      await seedPreference(page, 'horizontal');
+      await seedPreference(page, 'vertical');
       await openPlayground(page, { seedLayout: false });
       await waitForPythonReady(page);
       await waitForLinter(page);
-      expect(await renderedLayout(page)).toBe('horizontal');
+      expect(await renderedLayout(page)).toBe('vertical');
 
       const { boxes, appContentWidth } = await measurePanels(page);
       const editor = boxes['editor']!;
@@ -433,7 +440,7 @@ test.describe('the horizontal layout', () => {
   }
 
   test('VC-411 (FR-410, BR-402): both layouts render the same document order', async ({ page }) => {
-    await seedPreference(page, 'vertical');
+    await seedPreference(page, 'horizontal');
     await openPlayground(page, { seedLayout: false });
     await waitForPythonReady(page);
 
@@ -444,8 +451,8 @@ test.describe('the horizontal layout', () => {
           .map((el) => el.getAttribute('aria-label') ?? el.className),
       );
 
-    const vertical = await readOrder();
-    expect(vertical).toEqual(['Special characters', 'Console', 'Editor', 'Standard input', 'Diagnostics']);
+    const stacked = await readOrder();
+    expect(stacked).toEqual(['Special characters', 'Console', 'Editor', 'Standard input', 'Diagnostics']);
 
     // Watch for re-parenting across the switch (BR-402), then switch by the
     // only means that exists in this iteration.
@@ -463,13 +470,13 @@ test.describe('the horizontal layout', () => {
     });
 
     await page.evaluate(() => {
-      document.getElementById('app')!.dataset.layout = 'horizontal';
+      document.getElementById('app')!.dataset.layout = 'vertical';
     });
     await expect
       .poll(() => renderedLayout(page))
-      .toBe('horizontal');
+      .toBe('vertical');
 
-    expect(await readOrder(), 'the horizontal layout reads the same order').toEqual(vertical);
+    expect(await readOrder(), 'the two-column layout reads the same order').toEqual(stacked);
     expect(
       await page.evaluate(
         () => (window as unknown as { __panelMutations: string[] }).__panelMutations,
@@ -491,7 +498,7 @@ for (const viewport of [
     page,
   }) => {
     await page.setViewportSize(viewport);
-    await seedPreference(page, 'horizontal');
+    await seedPreference(page, 'vertical');
     await openPlayground(page, { seedLayout: false });
     await waitForPythonReady(page);
     await waitForLinter(page);
@@ -499,7 +506,7 @@ for (const viewport of [
     await runProgram(page, 'import os\nx=1\n');
     await expect(page.locator('#diagnostics-list .diagnostic-entry').first()).toBeVisible();
 
-    expect(await renderedLayout(page)).toBe('horizontal');
+    expect(await renderedLayout(page)).toBe('vertical');
 
     const { boxes } = await measurePanels(page);
     expect(
@@ -545,13 +552,13 @@ test('VC-402 (FR-402, FR-411): an unset preference resolves from the width and s
   await page.setViewportSize(WIDE);
   await seedPreference(page, null);
   await openPlayground(page, { seedLayout: false });
-  expect(await renderedLayout(page)).toBe('horizontal');
+  expect(await renderedLayout(page)).toBe('vertical');
   expect(await storedLayout(page), 'resolving writes nothing').toBeNull();
 
   await page.setViewportSize({ width: 800, height: 800 });
   await page.reload();
   await page.waitForSelector('.cm-content');
-  expect(await renderedLayout(page)).toBe('vertical');
+  expect(await renderedLayout(page)).toBe('horizontal');
   expect(await storedLayout(page), 'resolving writes nothing').toBeNull();
 });
 
@@ -561,15 +568,15 @@ test('VC-412 (FR-411, FR-412, BR-405): crossing 900 px re-resolves within 100 ms
   await page.setViewportSize(WIDE);
   await seedPreference(page, null);
   await openPlayground(page, { seedLayout: false });
-  expect(await renderedLayout(page)).toBe('horizontal');
+  expect(await renderedLayout(page)).toBe('vertical');
 
   await recordCrossingLatency(page);
 
   await page.setViewportSize({ width: 899, height: 800 });
-  await expectLayoutWithin(page, 'vertical');
+  await expectLayoutWithin(page, 'horizontal');
 
   await page.setViewportSize({ width: LAYOUT_MIN_WIDTH, height: 800 });
-  await expectLayoutWithin(page, 'horizontal');
+  await expectLayoutWithin(page, 'vertical');
 
   // Both crossings re-resolved within FR-412's 100 ms of the event that fired
   // them, and there were exactly two of them — no debounce, no extra pass.
@@ -586,33 +593,33 @@ test('VC-413 (FR-413, BR-404, BR-405): the narrow override never overwrites the 
   page,
 }) => {
   await page.setViewportSize(WIDE);
-  await seedPreference(page, 'horizontal');
+  await seedPreference(page, 'vertical');
   await openPlayground(page, { seedLayout: false });
-  expect(await renderedLayout(page)).toBe('horizontal');
+  expect(await renderedLayout(page)).toBe('vertical');
 
   await page.setViewportSize(NARROW);
-  await expectLayoutWithin(page, 'vertical');
-  expect(await storedLayout(page), 'the stored choice is untouched').toBe('horizontal');
+  await expectLayoutWithin(page, 'horizontal');
+  expect(await storedLayout(page), 'the stored choice is untouched').toBe('vertical');
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
     NARROW.width,
   );
 
   // Widening restores it with no interaction at all.
   await page.setViewportSize(WIDE);
-  await expectLayoutWithin(page, 'horizontal');
+  await expectLayoutWithin(page, 'vertical');
 
   await page.setViewportSize(NARROW);
   await page.reload();
   await page.waitForSelector('.cm-content');
-  expect(await renderedLayout(page)).toBe('vertical');
-  expect(await storedLayout(page)).toBe('horizontal');
+  expect(await renderedLayout(page)).toBe('horizontal');
+  expect(await storedLayout(page)).toBe('vertical');
 });
 
 /* -------------------------------------------------------------------------
    VC-416 (FR-416): resolved in the first painted frame.
    ------------------------------------------------------------------------- */
 
-for (const preference of ['horizontal', 'vertical'] as const) {
+for (const preference of ['vertical', 'horizontal'] as const) {
   test(`VC-416 (FR-416): the first painted frame already reads ${preference}`, async ({ page }) => {
     await page.setViewportSize(WIDE);
     await seedPreference(page, preference);
@@ -670,8 +677,8 @@ const MALFORMED = [
   ['an empty string', ''],
   ['a leading space', ' vertical'],
   ['the wrong case', 'Horizontal'],
-  ['a JSON string', '"horizontal"'],
-  ['a JSON document', '{"layout":"horizontal"}'],
+  ['a JSON string', '"vertical"'],
+  ['a JSON document', '{"layout":"vertical"}'],
   ['an unknown layout', 'diagonal'],
   ['a 1 MB string', 'x'.repeat(1024 * 1024)],
 ] as const;
@@ -689,7 +696,7 @@ for (const [label, value] of MALFORMED) {
     await openPlayground(page, { seedLayout: false });
     await waitForPythonReady(page);
 
-    expect(await renderedLayout(page), 'falls back to the unset default').toBe('horizontal');
+    expect(await renderedLayout(page), 'falls back to the unset default').toBe('vertical');
     expect(await storedLayout(page), 'the malformed bytes are not rewritten').toBe(value);
     expect(
       await page.locator('#notices [data-notice]').count(),
@@ -703,7 +710,7 @@ test('VC-417 (FR-417): a malformed preference still narrows below 900 px', async
   await page.setViewportSize({ width: 800, height: 800 });
   await seedPreference(page, 'diagonal');
   await openPlayground(page, { seedLayout: false });
-  expect(await renderedLayout(page)).toBe('vertical');
+  expect(await renderedLayout(page)).toBe('horizontal');
 });
 
 test('VC-418 (FR-417): a throwing localStorage still boots and still runs Python', async ({
@@ -725,7 +732,7 @@ test('VC-418 (FR-417): a throwing localStorage still boots and still runs Python
   await openPlayground(page, { seedLayout: false });
   await waitForPythonReady(page);
 
-  expect(await renderedLayout(page)).toBe('horizontal');
+  expect(await renderedLayout(page)).toBe('vertical');
 
   await runProgram(page, 'print("ok")\n');
   await expect(page.locator('#console')).toContainText('ok');
@@ -793,8 +800,10 @@ test.describe('the layout control', () => {
 
     const radios = group.getByRole('radio');
     await expect(radios).toHaveCount(2);
-    await expect(radios.nth(0)).toHaveAccessibleName('Vertical');
-    await expect(radios.nth(1)).toHaveAccessibleName('Horizontal');
+    // FR-401's order. `Horizontal` is first: it is spec-01's rendering and
+    // the only layout below 900 px (BR-404), so it is the one `Home` reaches.
+    await expect(radios.nth(0)).toHaveAccessibleName('Horizontal');
+    await expect(radios.nth(1)).toHaveAccessibleName('Vertical');
   });
 
   test('VC-402 (FR-402): the checked radio is the effective layout, at both widths', async ({
@@ -802,15 +811,15 @@ test.describe('the layout control', () => {
   }) => {
     await seedPreference(page, null);
     await openPlayground(page, { seedLayout: false });
-    expect(await renderedLayout(page)).toBe('horizontal');
-    expect(await controlState(page)).toMatchObject({ checked: ['layout-horizontal'] });
+    expect(await renderedLayout(page)).toBe('vertical');
+    expect(await controlState(page)).toMatchObject({ checked: ['layout-vertical'] });
     expect(await storedLayout(page)).toBeNull();
 
     await page.setViewportSize({ width: 800, height: 800 });
     await page.reload();
     await page.waitForSelector('.cm-content');
-    expect(await renderedLayout(page)).toBe('vertical');
-    expect(await controlState(page)).toMatchObject({ checked: ['layout-vertical'] });
+    expect(await renderedLayout(page)).toBe('horizontal');
+    expect(await controlState(page)).toMatchObject({ checked: ['layout-horizontal'] });
     expect(await storedLayout(page)).toBeNull();
   });
 
@@ -819,33 +828,17 @@ test.describe('the layout control', () => {
   }) => {
     // The stored choice is horizontal, but below 900 px the effective layout
     // is vertical — so `Vertical` is checked while `horizontal` stays stored.
-    await seedPreference(page, 'horizontal');
-    await openPlayground(page, { seedLayout: false });
-    expect(await controlState(page)).toMatchObject({ checked: ['layout-horizontal'] });
-
-    await page.setViewportSize(NARROW);
-    await expectLayoutWithin(page, 'vertical');
-    expect(await controlState(page)).toMatchObject({ checked: ['layout-vertical'] });
-    expect(await storedLayout(page)).toBe('horizontal');
-  });
-
-  test('VC-403 (FR-403, FR-414): clicking Horizontal applies and persists it', async ({ page }) => {
     await seedPreference(page, 'vertical');
     await openPlayground(page, { seedLayout: false });
-    expect(await renderedLayout(page)).toBe('vertical');
+    expect(await controlState(page)).toMatchObject({ checked: ['layout-vertical'] });
 
-    await page.click(RADIOS.horizontal);
-
-    expect(await renderedLayout(page)).toBe('horizontal');
-    await expect(page.locator(RADIOS.horizontal)).toHaveAttribute('aria-checked', 'true');
-    await expect(page.locator(RADIOS.vertical)).toHaveAttribute('aria-checked', 'false');
-    // FR-414: exactly the 10 characters, no quotes and no whitespace.
-    const stored = await storedLayout(page);
-    expect(stored).toBe('horizontal');
-    expect(stored).toHaveLength(10);
+    await page.setViewportSize(NARROW);
+    await expectLayoutWithin(page, 'horizontal');
+    expect(await controlState(page)).toMatchObject({ checked: ['layout-horizontal'] });
+    expect(await storedLayout(page)).toBe('vertical');
   });
 
-  test('VC-404 (FR-404, FR-414): clicking Vertical applies and persists it', async ({ page }) => {
+  test('VC-403 (FR-403, FR-414): clicking Vertical applies and persists it', async ({ page }) => {
     await seedPreference(page, 'horizontal');
     await openPlayground(page, { seedLayout: false });
     expect(await renderedLayout(page)).toBe('horizontal');
@@ -855,31 +848,47 @@ test.describe('the layout control', () => {
     expect(await renderedLayout(page)).toBe('vertical');
     await expect(page.locator(RADIOS.vertical)).toHaveAttribute('aria-checked', 'true');
     await expect(page.locator(RADIOS.horizontal)).toHaveAttribute('aria-checked', 'false');
+    // FR-414: exactly the 8 characters, no quotes and no whitespace.
     const stored = await storedLayout(page);
     expect(stored).toBe('vertical');
     expect(stored).toHaveLength(8);
   });
 
+  test('VC-404 (FR-404, FR-414): clicking Horizontal applies and persists it', async ({ page }) => {
+    await seedPreference(page, 'vertical');
+    await openPlayground(page, { seedLayout: false });
+    expect(await renderedLayout(page)).toBe('vertical');
+
+    await page.click(RADIOS.horizontal);
+
+    expect(await renderedLayout(page)).toBe('horizontal');
+    await expect(page.locator(RADIOS.horizontal)).toHaveAttribute('aria-checked', 'true');
+    await expect(page.locator(RADIOS.vertical)).toHaveAttribute('aria-checked', 'false');
+    const stored = await storedLayout(page);
+    expect(stored).toBe('horizontal');
+    expect(stored).toHaveLength(10);
+  });
+
   test('VC-405 (FR-405): one tab stop, and every arrow key applies and persists', async ({
     page,
   }) => {
-    await seedPreference(page, 'vertical');
+    await seedPreference(page, 'horizontal');
     await openPlayground(page, { seedLayout: false });
 
     // Tab lands on the checked radio, which is the only tabbable one.
     await page.locator('#btn-reset').focus();
     await page.keyboard.press('Tab');
-    expect(await page.evaluate(() => document.activeElement?.id)).toBe('layout-vertical');
+    expect(await page.evaluate(() => document.activeElement?.id)).toBe('layout-horizontal');
     expect(await controlState(page)).toMatchObject({
-      checked: ['layout-vertical'],
-      tabbable: ['layout-vertical'],
+      checked: ['layout-horizontal'],
+      tabbable: ['layout-horizontal'],
     });
 
     // Each of the four arrow keys moves, checks, applies and persists — and
     // both directions wrap over the group of two.
     for (const key of ['ArrowRight', 'ArrowDown', 'ArrowLeft', 'ArrowUp'] as const) {
       const before = (await renderedLayout(page)) as Layout;
-      const after: Layout = before === 'vertical' ? 'horizontal' : 'vertical';
+      const after: Layout = before === 'horizontal' ? 'vertical' : 'horizontal';
 
       await page.keyboard.press(key);
 
@@ -896,21 +905,21 @@ test.describe('the layout control', () => {
 
     // Home and End are absolute, not relative.
     await page.keyboard.press('Home');
-    expect(await renderedLayout(page)).toBe('vertical');
-    expect(await storedLayout(page)).toBe('vertical');
-    await page.keyboard.press('End');
     expect(await renderedLayout(page)).toBe('horizontal');
     expect(await storedLayout(page)).toBe('horizontal');
+    await page.keyboard.press('End');
+    expect(await renderedLayout(page)).toBe('vertical');
+    expect(await storedLayout(page)).toBe('vertical');
   });
 
   test('VC-406 (FR-403 – FR-405): Space and Enter apply without scrolling the page', async ({
     page,
   }) => {
-    await seedPreference(page, 'vertical');
+    await seedPreference(page, 'horizontal');
     await openPlayground(page, { seedLayout: false });
 
     for (const key of [' ', 'Enter'] as const) {
-      for (const layout of ['horizontal', 'vertical'] as const) {
+      for (const layout of ['vertical', 'horizontal'] as const) {
         await page.locator(RADIOS[layout]).focus();
         const scrollBefore = await page.evaluate(() => window.scrollY);
 
@@ -926,13 +935,13 @@ test.describe('the layout control', () => {
   });
 
   test('VC-431 (BR-407): the left column precedes the right in tab order', async ({ page }) => {
-    await seedPreference(page, 'horizontal');
+    await seedPreference(page, 'vertical');
     await openPlayground(page, { seedLayout: false });
     await waitForPythonReady(page);
     await waitForLinter(page);
     await runProgram(page, 'import os\nx=1\n');
     await expect(page.locator('#diagnostics-list .diagnostic-entry').first()).toBeVisible();
-    expect(await renderedLayout(page)).toBe('horizontal');
+    expect(await renderedLayout(page)).toBe('vertical');
 
     /*
      * The real tab order, walked with `Tab` rather than inferred from a DOM
@@ -992,14 +1001,14 @@ test.describe('the layout control', () => {
   test('VC-419 (FR-418, BR-406): a refused write warns once and still applies', async ({
     page,
   }) => {
-    await seedPreference(page, 'horizontal');
+    await seedPreference(page, 'vertical');
     // `getItem` keeps working; only the write is refused.
     await page.addInitScript(() => {
       const original = window.localStorage.setItem.bind(window.localStorage);
       Object.defineProperty(window.localStorage, 'setItem', {
         configurable: true,
         value: (key: string, value: string) => {
-          if (key === 'pyplay.layout.v1') {
+          if (key === 'pyplay.layout.v2') {
             throw new DOMException('quota', 'QuotaExceededError');
           }
           original(key, value);
@@ -1010,7 +1019,7 @@ test.describe('the layout control', () => {
     await waitForPythonReady(page);
     await waitForLinter(page);
 
-    for (const layout of ['vertical', 'horizontal', 'vertical'] as const) {
+    for (const layout of ['horizontal', 'vertical', 'horizontal'] as const) {
       await page.click(RADIOS[layout]);
       expect(await renderedLayout(page), 'the layout still applies').toBe(layout);
     }
@@ -1050,10 +1059,10 @@ test.describe('the layout control', () => {
     await expect.poll(() => page.evaluate(() => window.localStorage.getItem('pyplay.program.v1'))).
       not.toBeNull();
 
-    for (const layout of ['vertical', 'horizontal', 'vertical', 'horizontal'] as const) {
+    for (const layout of ['horizontal', 'vertical', 'horizontal', 'vertical'] as const) {
       await page.click(RADIOS[layout]);
     }
-    expect(await storedLayout(page)).toBe('horizontal');
+    expect(await storedLayout(page)).toBe('vertical');
 
     await page.reload();
     await page.waitForSelector('.cm-content');
@@ -1062,8 +1071,8 @@ test.describe('the layout control', () => {
     expect(
       await page.evaluate(() => Object.keys(window.localStorage).sort()),
       'exactly the autosave key and the layout key',
-    ).toEqual(['pyplay.layout.v1', 'pyplay.program.v1']);
-    expect(await storedLayout(page), 'the choice survived the reload').toBe('horizontal');
+    ).toEqual(['pyplay.layout.v2', 'pyplay.program.v1']);
+    expect(await storedLayout(page), 'the choice survived the reload').toBe('vertical');
   });
 });
 
@@ -1094,7 +1103,7 @@ test.describe('the layout control below 900 px', () => {
     // Still exactly one tab stop, and it still shows a focus ring.
     await page.locator('#btn-reset').focus();
     await page.keyboard.press('Tab');
-    expect(await page.evaluate(() => document.activeElement?.id)).toBe('layout-vertical');
+    expect(await page.evaluate(() => document.activeElement?.id)).toBe('layout-horizontal');
     await page.keyboard.press('Tab');
     expect(
       await page.evaluate(() => document.activeElement?.id),
@@ -1104,8 +1113,8 @@ test.describe('the layout control below 900 px', () => {
     // `:focus-visible` is a pseudo-*class*, so it cannot be passed to
     // `getComputedStyle`; the rule is already in effect on the focused
     // element's own computed style, which is how spec-01's VC-052 reads it.
-    await page.locator(RADIOS.vertical).focus();
-    const ring = await page.locator(RADIOS.vertical).evaluate((el) => {
+    await page.locator(RADIOS.horizontal).focus();
+    const ring = await page.locator(RADIOS.horizontal).evaluate((el) => {
       const style = getComputedStyle(el);
       return {
         width: Number.parseFloat(style.outlineWidth || '0'),
@@ -1120,11 +1129,11 @@ test.describe('the layout control below 900 px', () => {
     // Every activation and navigation path is a strict no-op.
     const expectUnchanged = async (what: string): Promise<void> => {
       expect(await page.evaluate(() => document.activeElement?.id), `${what}: focus`).toBe(
-        'layout-vertical',
+        'layout-horizontal',
       );
-      expect(await renderedLayout(page), `${what}: data-layout`).toBe('vertical');
+      expect(await renderedLayout(page), `${what}: data-layout`).toBe('horizontal');
       expect(await controlState(page), `${what}: aria-checked`).toMatchObject({
-        checked: ['layout-vertical'],
+        checked: ['layout-horizontal'],
       });
       expect(await storedLayout(page), `${what}: storage`).toBeNull();
     };
@@ -1133,16 +1142,16 @@ test.describe('the layout control below 900 px', () => {
     // for the element to become actionable. FR-415's subject is precisely a
     // real pointer activation landing on an inert control, so the actionability
     // check is bypassed rather than the click avoided.
-    await page.locator(RADIOS.horizontal).click({ force: true });
+    await page.locator(RADIOS.vertical).click({ force: true });
     // A pointer click focuses the element it lands on; what FR-415 forbids is
     // the *selection*, so focus is restored before the key paths are checked.
-    expect(await renderedLayout(page), 'click: data-layout').toBe('vertical');
+    expect(await renderedLayout(page), 'click: data-layout').toBe('horizontal');
     expect(await controlState(page), 'click: aria-checked').toMatchObject({
-      checked: ['layout-vertical'],
+      checked: ['layout-horizontal'],
     });
     expect(await storedLayout(page), 'click: storage').toBeNull();
 
-    await page.locator(RADIOS.vertical).focus();
+    await page.locator(RADIOS.horizontal).focus();
     for (const key of [
       'ArrowRight',
       'ArrowLeft',
@@ -1170,7 +1179,7 @@ test.describe('the layout control below 900 px', () => {
     await expect(group).toHaveAccessibleDescription(LAYOUT_NARROW_HINT);
 
     await page.setViewportSize(WIDE);
-    await expectLayoutWithin(page, 'horizontal');
+    await expectLayoutWithin(page, 'vertical');
     await expect(group).not.toHaveAttribute('aria-disabled', 'true');
     await expect(group).not.toHaveAttribute('title', /./);
     await expect(group).not.toHaveAttribute('aria-describedby', /./);
@@ -1189,7 +1198,7 @@ test('VC-407 (FR-049 from spec-01, FR-405): Tab reaches every control once, iden
   page,
 }) => {
   await page.setViewportSize(WIDE);
-  await seedPreference(page, 'vertical');
+  await seedPreference(page, 'horizontal');
   await openPlayground(page, { seedLayout: false });
   await waitForPythonReady(page);
   await waitForLinter(page);
@@ -1265,14 +1274,14 @@ test('VC-407 (FR-049 from spec-01, FR-405): Tab reaches every control once, iden
     'diagnostic-entry',
   ];
 
-  expect(await renderedLayout(page)).toBe('vertical');
+  expect(await renderedLayout(page)).toBe('horizontal');
   const vertical = await enumerateTabOrder();
   expect(vertical).toEqual(EXPECTED);
   expect(vertical.filter((stop) => stop === 'layout-group')).toHaveLength(1);
 
   // Switch through the control itself, then enumerate again.
-  await page.click(RADIOS.horizontal);
-  expect(await renderedLayout(page)).toBe('horizontal');
+  await page.click(RADIOS.vertical);
+  expect(await renderedLayout(page)).toBe('vertical');
   const horizontal = await enumerateTabOrder();
 
   expect(horizontal, 'the enumeration is identical at both layouts').toEqual(vertical);
@@ -1283,7 +1292,7 @@ test('VC-407 (FR-049 from spec-01, FR-405): Tab reaches every control once, iden
    preference states. Also parent VC-050's amendment.
    ------------------------------------------------------------------------- */
 
-for (const preference of [null, 'vertical', 'horizontal'] as const) {
+for (const preference of [null, 'horizontal', 'vertical'] as const) {
   const label = preference ?? 'unset';
 
   test(`VC-427 (NFR-401, FR-047 from spec-01): 375 px works with the preference ${label}`, async ({
@@ -1296,7 +1305,7 @@ for (const preference of [null, 'vertical', 'horizontal'] as const) {
     await waitForLinter(page);
 
     // BR-404: vertical is the only layout here, whatever is stored.
-    expect(await renderedLayout(page)).toBe('vertical');
+    expect(await renderedLayout(page)).toBe('horizontal');
 
     /** Nothing is clipped and the page never scrolls sideways. */
     const check = async (stage: string): Promise<void> => {
@@ -1310,8 +1319,8 @@ for (const preference of [null, 'vertical', 'horizontal'] as const) {
           '#btn-eof',
           '.panel--diagnostics',
           '#layout-group',
-          '#layout-vertical',
           '#layout-horizontal',
+          '#layout-vertical',
         ];
         const clipped: string[] = [];
         const radios: { id: string; width: number; height: number }[] = [];
@@ -1407,7 +1416,7 @@ for (const scheme of ['light', 'dark'] as const) {
   test.describe(`VC-428 — ${scheme} palette`, () => {
     test.use({ colorScheme: scheme });
 
-    for (const layout of ['vertical', 'horizontal'] as const) {
+    for (const layout of ['horizontal', 'vertical'] as const) {
       test(`VC-428 (NFR-402, NFR-403): the control clears contrast at 1280 px — ${layout}, ${scheme}`, async ({
         page,
       }) => {
@@ -1423,10 +1432,10 @@ for (const scheme of ['light', 'dark'] as const) {
 
         const nonText = await measureContrast(page, [
           ...LAYOUT_NON_TEXT_SAMPLES,
-          // NFR-403's "edge between the two columns in the horizontal
-          // layout": the panels' own borders are what draws it, so they are
-          // sampled in the rendering that actually has two columns.
-          ...(layout === 'horizontal'
+          // NFR-403's "edge between the two columns": the panels' own
+          // borders are what draws it, so they are sampled in the rendering
+          // that actually has two columns.
+          ...(layout === 'vertical'
             ? ([
                 {
                   label: 'horizontal column edge (editor)',
@@ -1495,7 +1504,7 @@ for (const scheme of ['light', 'dark'] as const) {
    belongs here.
    ------------------------------------------------------------------------- */
 
-for (const layout of ['vertical', 'horizontal'] as const) {
+for (const layout of ['horizontal', 'vertical'] as const) {
   test(`VC-409 / VC-410 (spec-03 FR-311, FR-317): the pane keeps its inline-end column — ${layout}`, async ({
     page,
   }) => {
@@ -1549,7 +1558,7 @@ for (const layout of ['vertical', 'horizontal'] as const) {
     );
 
     // spec-04 FR-408's split still holds inside the remaining space.
-    if (layout === 'horizontal') {
+    if (layout === 'vertical') {
       expect(boxes.editor.right, 'the editor is still inline-start').toBeLessThanOrEqual(
         boxes.console.left,
       );

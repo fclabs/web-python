@@ -17,7 +17,7 @@ src/                       application code (TypeScript, no framework)
   offline.ts               service-worker registration and status wiring
   symbols.ts               the 29-row special-character set (spec-03)
   symbol-pane.ts           the special-character pane: layout, keys, feedback
-  layout.ts                the horizontal/vertical layout resolver (spec-04)
+  layout.ts                the layout resolver, and what the two names mean (spec-04)
 scripts/                   build-time and test-time tooling
   precache.mjs             manifest + service-worker generation (shared)
   sw-template.js           the single service worker's source
@@ -103,15 +103,17 @@ amends — all of which already run with the pane open in the first
 configuration.
 
 spec-04's **VC-433** does the same for the layout: the parent suites run three
-times, with the preference unset, `vertical` and `horizontal`, because the
+times, with the preference unset, `horizontal` (stacked) and `vertical` (two
+columns) — both words name the orientation of the divider, see
+`src/layout.ts` — because the
 layout is presentation only (BR-401) and every criterion must hold in both
 renderings. `PYPLAY_LAYOUT_PREF` selects the run, and `openPlayground()` is
 again the only place that reads it:
 
 ```bash
 npx playwright test                                   # unset: FR-411 resolves from the width
-PYPLAY_LAYOUT_PREF=vertical   npx playwright test
-PYPLAY_LAYOUT_PREF=horizontal npx playwright test
+PYPLAY_LAYOUT_PREF=horizontal npx playwright test     # stacked
+PYPLAY_LAYOUT_PREF=vertical   npx playwright test     # two columns
 ```
 
 spec-04's own suites (`layout.spec.ts`, `layout-state.spec.ts`) seed the
@@ -128,6 +130,10 @@ fixture rather than re-measuring the baseline on every run:
 | `tests/e2e/baseline-build.json` | VC-323 / VC-326 (spec-03, ≤ 4 KB) | `8df7fa5` |
 | `tests/e2e/baseline-build-spec04.json` | VC-429 (spec-04, ≤ 2 KB) | `0a4194f` |
 | `tests/e2e/baseline-geometry.json` | VC-408 (spec-04, ±1 px) | `384cb70` |
+
+`baseline-geometry.json` records the **stacked** rendering, which is what
+FR-407 protects; the recorder seeds `pyplay.layout.v2` to ask the shipped
+resolver for it.
 
 Regenerate one only when a spec pins a new baseline commit:
 

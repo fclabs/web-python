@@ -25,22 +25,31 @@
              `#btn-reset`", which is what ships — see the amendment recorded
              in `specs/04-toogle-pane-aspect.md`. -->
         <div id="layout-group" class="segmented" role="radiogroup" aria-label="Layout">
-          <button
-            id="layout-vertical"
-            class="segment"
-            type="button"
-            role="radio"
-            aria-checked="true"
-            tabindex="0"
-          >Vertical</button>
+          <!-- Both labels name the orientation of the **divider** between the
+               panels, as `vim`'s `:split` / `:vsplit` do: `Horizontal` stacks
+               them in one column, `Vertical` puts the editor beside the
+               console. `src/layout.ts` is normative for the two words.
+
+               `Horizontal` is first because it is the layout that is always
+               available — it is spec-01's rendering and the only one below
+               900 px (BR-404) — so `Home` reaches it and `End` reaches the
+               one the narrow override can take away. -->
           <button
             id="layout-horizontal"
             class="segment"
             type="button"
             role="radio"
+            aria-checked="true"
+            tabindex="0"
+          >Horizontal</button>
+          <button
+            id="layout-vertical"
+            class="segment"
+            type="button"
+            role="radio"
             aria-checked="false"
             tabindex="-1"
-          >Horizontal</button>
+          >Vertical</button>
         </div>
         <!-- FR-406's description target. Deliberately empty: VC-415 requires
              the hint string to be absent from the document at >= 900 px, so

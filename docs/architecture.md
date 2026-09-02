@@ -373,15 +373,40 @@ why. `VC-325` greps the compiled set for exactly those code points.
 ## Horizontal / vertical layout
 
 Spec-04 adds one switch and nothing else: **`#app[data-layout]`**, set to
-`vertical` or `horizontal`. Everything the visitor sees follows from that one
+`horizontal` or `vertical`. Everything the visitor sees follows from that one
 attribute and the CSS keyed off it. No class is toggled, no element is moved,
 and the worker is never told the layout exists (BR-401).
 
+### What the two names mean
+
+**Both name the orientation of the divider between the panels**, which is the
+convention `vim`'s `:split` / `:vsplit` uses:
+
+| Value | Rendering |
+|---|---|
+| `horizontal` | panels separated by *horizontal* rules, stacked top to bottom in one column — spec-01's shipped layout, and the only one below 900 px |
+| `vertical` | panels separated by a *vertical* rule — editor in a full-height inline-start column, console / stdin / diagnostics stacked inline-end |
+
+The opposite convention is equally common: `tmux`'s `split-window -h` produces
+side-by-side panes, naming the axis the panes run *along* rather than the
+divider. Either choice reads backwards to half of everyone, so the point is not
+that this one is right — it is that it is **fixed and written down**.
+`src/layout.ts` is normative, and the doc comment on `Layout` says so. Changing
+the interpretation of either word means changing the type, the labels in
+`index.html`, the CSS selectors in `styles.css` and the storage key together.
+
+That storage key is why this is more than a cosmetic decision. `v1` shipped
+with the *other* convention, so a `v1` value read under `v2`'s meaning would
+silently hand the visitor the layout they did not choose. The key is therefore
+superseded, not migrated — exactly the case BR-403 anticipated when it said a
+two-value enum "will only ever be superseded, never migrated". A stale
+`pyplay.layout.v1` is simply never read again.
+
 `src/layout.ts` holds the whole decision as three pure functions, so FR-411's
 rule and FR-417's tolerance for junk in storage are unit-testable without a
-DOM. The rule itself is one line: **`vertical` below 900 px, otherwise the
-stored preference, otherwise `horizontal`.** Nothing else may set
-`data-layout`.
+DOM. The rule itself is one line: **stacked (`horizontal`) below 900 px,
+otherwise the stored preference, otherwise two columns (`vertical`).** Nothing
+else may set `data-layout`.
 
 ### The breakpoint lives twice, and must be changed twice
 
@@ -419,16 +444,17 @@ only (FR-410, BR-402). Two separate things depend on this:
 
 The grid is shared with spec-03's pane, not competing with it. `.app` has two
 grid definitions, kept mutually exclusive by selector: spec-03's
-`.app:not([data-layout='horizontal']):has(#symbol-pane:not([hidden])))` and
-spec-04's `#app[data-layout='horizontal']`. The pane keeps its full-height
+`.app:not([data-layout='vertical']):has(#symbol-pane:not([hidden])))` and
+spec-04's `#app[data-layout='vertical']`. The pane keeps its full-height
 inline-end column in *both* layouts. The `:not()` also matches when the
 attribute is absent, so a JavaScript failure leaves spec-03 rendering exactly
 as it shipped.
 
 ### The diagnostics cap is a track, not a percentage
 
-In the vertical layout the diagnostics panel keeps its `max-height: 25vh`. In
-the right column FR-409 caps it at 40 % *of the right column*, which no
+In the stacked layout the diagnostics panel keeps its `max-height: 25vh`. In
+the two-column layout's inline-end column FR-409 caps it at 40 % *of that
+column*, which no
 percentage can express: a percentage `max-height` on a grid item resolves
 against its own track, which is circular. So the cap is the track —
 `minmax(0, 0.66fr)` gives the row 0.66/1.66 = 39.8 % of the free space the
@@ -449,6 +475,9 @@ Below 900 px the group is inert via `setInert()` — `aria-disabled`, never the
 above) — and every activation and navigation path returns early, making FR-415
 a strict no-op rather than a series of guarded special cases.
 
+`Horizontal` is the **first** radio, so `Home` reaches the layout that is
+always available and `End` the one the narrow override can take away.
+
 It sits immediately after `#btn-reset` and *before* `#btn-symbols`. Spec-04's
 DOM contract also called it the toolbar's last child, but spec-03 had already
 shipped `Symbols` in that slot (VC-301); FR-401's own Given/When/Then says
@@ -465,7 +494,7 @@ IndexedDB, no `sessionStorage`:
 | Store | Key | Contents |
 |---|---|---|
 | `localStorage` | `pyplay.program.v1` | the exact editor contents, UTF-8, no wrapper |
-| `localStorage` | `pyplay.layout.v1` | exactly `vertical` or `horizontal` — a bare string from a two-value enum, no JSON, no wrapper, no whitespace |
+| `localStorage` | `pyplay.layout.v2` | exactly `horizontal` (stacked) or `vertical` (two columns) — a bare string from a two-value enum, no JSON, no wrapper, no whitespace |
 | Cache Storage | `pyplay-assets-v<build>` | the precached static assets; older buckets are deleted on activation |
 
 Autosave is debounced 500 ms and additionally flushed **synchronously** on
@@ -473,12 +502,13 @@ Autosave is debounced 500 ms and additionally flushed **synchronously** on
 never persist a half-typed prefix. A rejected write (quota, private browsing,
 storage disabled) shows one notice per page load and changes nothing else.
 
-`pyplay.layout.v1` is written **synchronously on selection** — there is nothing
+`pyplay.layout.v2` is written **synchronously on selection** — there is nothing
 to debounce, and a layout choice that survived only if the visitor waited half
-a second would be a bug. Because it is a two-value enum it needs no schema, so
-`v1` will only ever be superseded, never migrated: anything that is not exactly
-one of the two literals is treated as absent and **left in place**, never
-rewritten (FR-417). A rejected write shows one notice per page load and still
+a second would be a bug. Because it is a two-value enum it needs no schema, so it is superseded rather
+than migrated — `v2` is that supersession, and it is why a `v1` value is never
+read (see *What the two names mean* above). Anything that is not exactly one of
+the two literals is treated as absent and **left in place**, never rewritten
+(FR-417). A rejected write shows one notice per page load and still
 applies the layout for the session (FR-418, BR-406).
 
 ---

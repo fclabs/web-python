@@ -32,7 +32,7 @@ import {
   waitForStdinPrompt,
 } from './helpers';
 
-type Layout = 'vertical' | 'horizontal';
+type Layout = 'horizontal' | 'vertical';
 
 const WIDE = { width: 1280, height: 800 };
 
@@ -47,7 +47,7 @@ test.use({ viewport: WIDE });
 async function openAtLayout(page: Page, layout: Layout): Promise<void> {
   await page.addInitScript((seed) => {
     try {
-      window.localStorage.setItem('pyplay.layout.v1', seed);
+      window.localStorage.setItem('pyplay.layout.v2', seed);
     } catch {
       /* not this suite's subject */
     }
@@ -160,7 +160,7 @@ async function undoSteps(page: Page, limit = 20): Promise<number> {
 }
 
 test('VC-420 (FR-419, BR-401): the editor survives a switch each way intact', async ({ page }) => {
-  await openAtLayout(page, 'vertical');
+  await openAtLayout(page, 'horizontal');
   await waitForPythonReady(page);
   await waitForLinter(page);
 
@@ -206,7 +206,7 @@ test('VC-420 (FR-419, BR-401): the editor survives a switch each way intact', as
   expect(before.selection.to - before.selection.from, 'a 20-character selection').toBe(20);
   expect(before.markers, 'lint produced at least one marker').not.toHaveLength(0);
 
-  for (const layout of ['horizontal', 'vertical'] as const) {
+  for (const layout of ['vertical', 'horizontal'] as const) {
     await switchTo(page, layout);
     const after = await observeEditor(page);
     expect(after.doc, `${layout}: the document text`).toBe(before.doc);
@@ -227,7 +227,7 @@ test('VC-420 (FR-419, BR-401): the editor survives a switch each way intact', as
 });
 
 test('VC-420 (FR-419): the undo depth is unchanged by a switch', async ({ page }) => {
-  await openAtLayout(page, 'vertical');
+  await openAtLayout(page, 'horizontal');
   await waitForPythonReady(page);
 
   /** Type three separately-undoable edits and report the resulting depth. */
@@ -255,8 +255,8 @@ test('VC-420 (FR-419): the undo depth is unchanged by a switch', async ({ page }
   const { doc: withSwitch } = await buildHistory();
   expect(withSwitch, 'the same document either way').toBe(withoutSwitch);
 
-  await switchTo(page, 'horizontal');
   await switchTo(page, 'vertical');
+  await switchTo(page, 'horizontal');
   expect(await editorDoc(page), 'the switches changed nothing').toBe(withSwitch);
 
   expect(await undoSteps(page), 'the switches cost no history').toBe(baseline);
@@ -284,7 +284,7 @@ async function consoleScroll(
 test('VC-421 (FR-420): a bottom-pinned console stays pinned and keeps following', async ({
   page,
 }) => {
-  await openAtLayout(page, 'vertical');
+  await openAtLayout(page, 'horizontal');
   await waitForPythonReady(page);
 
   await runProgram(page, 'for i in range(6000):\n    print(i)\n');
@@ -293,7 +293,7 @@ test('VC-421 (FR-420): a bottom-pinned console stays pinned and keeps following'
   const before = await consoleText(page);
   expect(await consoleScroll(page)).toMatchObject({ pinned: true });
 
-  await switchTo(page, 'horizontal');
+  await switchTo(page, 'vertical');
 
   expect(await consoleText(page), 'the buffer is byte-identical').toBe(before);
   expect((await consoleScroll(page)).pinned, 'still pinned to the bottom').toBe(true);
@@ -305,7 +305,7 @@ test('VC-421 (FR-420): a bottom-pinned console stays pinned and keeps following'
 });
 
 test('VC-421 (FR-420): a scrolled-up console keeps its first visible line', async ({ page }) => {
-  await openAtLayout(page, 'vertical');
+  await openAtLayout(page, 'horizontal');
   await waitForPythonReady(page);
 
   await runProgram(page, 'for i in range(6000):\n    print(i)\n');
@@ -326,7 +326,7 @@ test('VC-421 (FR-420): a scrolled-up console keeps its first visible line', asyn
   const scrollBefore = await consoleScroll(page);
   expect(scrollBefore.pinned, 'the console is scrolled up').toBe(false);
 
-  await switchTo(page, 'horizontal');
+  await switchTo(page, 'vertical');
 
   expect(await consoleText(page), 'the buffer is byte-identical').toBe(before);
   const afterScroll = await consoleScroll(page);
@@ -352,7 +352,7 @@ test('VC-421 (FR-420): a scrolled-up console keeps its first visible line', asyn
 test('VC-422 (FR-421, BR-401): a run continues across two switches on the same worker', async ({
   page,
 }) => {
-  await openAtLayout(page, 'vertical');
+  await openAtLayout(page, 'horizontal');
   await waitForPythonReady(page);
 
   const readyLines = (): Promise<number> =>
@@ -370,10 +370,10 @@ test('VC-422 (FR-421, BR-401): a run continues across two switches on the same w
     }));
   expect(await buttons()).toEqual({ run: 'true', stop: 'false' });
 
-  await switchTo(page, 'horizontal');
+  await switchTo(page, 'vertical');
   expect(await buttons(), 'mid-run, after the first switch').toEqual({ run: 'true', stop: 'false' });
   await page.waitForTimeout(400);
-  await switchTo(page, 'vertical');
+  await switchTo(page, 'horizontal');
   expect(await buttons(), 'mid-run, after the second switch').toEqual({
     run: 'true',
     stop: 'false',
@@ -400,7 +400,7 @@ test('VC-422 (FR-421, BR-401): a run continues across two switches on the same w
    ------------------------------------------------------------------------- */
 
 test('VC-423 (FR-422): a pending read and its unsubmitted text survive', async ({ page }) => {
-  await openAtLayout(page, 'vertical');
+  await openAtLayout(page, 'horizontal');
   await waitForPythonReady(page);
 
   await runProgram(page, 'import sys\na = input("? ")\nb = sys.stdin.readline()\nprint(a, b.strip())\n');
@@ -411,7 +411,7 @@ test('VC-423 (FR-422): a pending read and its unsubmitted text survive', async (
   await field.click();
   await page.keyboard.type('hola');
 
-  for (const layout of ['horizontal', 'vertical'] as const) {
+  for (const layout of ['vertical', 'horizontal'] as const) {
     await switchTo(page, layout);
     await expect(field, `${layout}: still enabled`).toBeEnabled();
     await expect(field, `${layout}: still holds the text`).toHaveValue('hola');
@@ -426,7 +426,7 @@ test('VC-423 (FR-422): a pending read and its unsubmitted text survive', async (
   await field.press('Enter');
   // The second read is pending; switch again before answering it.
   await waitForStdinPrompt(page);
-  await switchTo(page, 'horizontal');
+  await switchTo(page, 'vertical');
   await submitStdin(page, 'chau');
 
   await expect(page.locator('#console')).toContainText('hola chau');
@@ -439,7 +439,7 @@ test('VC-423 (FR-422): a pending read and its unsubmitted text survive', async (
 test('VC-424 (FR-423): the diagnostics list is untouched and no lint is scheduled', async ({
   page,
 }) => {
-  await openAtLayout(page, 'vertical');
+  await openAtLayout(page, 'horizontal');
   await waitForPythonReady(page);
   await waitForLinter(page);
 
@@ -470,8 +470,8 @@ test('VC-424 (FR-423): the diagnostics list is untouched and no lint is schedule
     );
   });
 
-  await switchTo(page, 'horizontal');
   await switchTo(page, 'vertical');
+  await switchTo(page, 'horizontal');
   await page.waitForTimeout(700);
 
   expect(await diagnosticEntries(page), 'the entries and their order').toEqual(before);
@@ -522,7 +522,7 @@ test('VC-425 (FR-424, BR-401): no autosave reset, no worker message, no request'
   const requests: string[] = [];
   page.on('request', (request) => requests.push(request.url()));
 
-  await openAtLayout(page, 'vertical');
+  await openAtLayout(page, 'horizontal');
   await waitForPythonReady(page);
 
   // Baselines taken after boot, so the runtime's own traffic is excluded.
@@ -539,8 +539,8 @@ test('VC-425 (FR-424, BR-401): no autosave reset, no worker message, no request'
   const keystrokeAt = await page.evaluate(() => performance.now());
   await page.keyboard.type('#');
   await page.waitForTimeout(100);
-  await switchTo(page, 'horizontal');
   await switchTo(page, 'vertical');
+  await switchTo(page, 'horizontal');
 
   // Wait past the debounce so the autosave write has certainly landed.
   await page.waitForTimeout(900);
@@ -552,7 +552,7 @@ test('VC-425 (FR-424, BR-401): no autosave reset, no worker message, no request'
   );
 
   // Only the layout key and the program key were written.
-  const layoutWrites = costs.writes.filter((w) => w.key === 'pyplay.layout.v1');
+  const layoutWrites = costs.writes.filter((w) => w.key === 'pyplay.layout.v2');
   const programWrites = costs.writes.filter((w) => w.key === 'pyplay.program.v1');
   expect(costs.writes.map((w) => w.key).filter((k) => !k.startsWith('pyplay.'))).toEqual([]);
   expect(layoutWrites.length, 'one write per switch').toBe(2);
@@ -578,7 +578,7 @@ test('VC-426 (FR-425, NFR-404): each switch paints in under 100 ms, with no tran
   const requests: string[] = [];
   page.on('request', (request) => requests.push(request.url()));
 
-  await openAtLayout(page, 'vertical');
+  await openAtLayout(page, 'horizontal');
   await waitForPythonReady(page);
   await waitForLinter(page);
 
@@ -649,8 +649,8 @@ test('VC-426 (FR-425, NFR-404): each switch paints in under 100 ms, with no tran
 
   requests.length = 0;
 
-  await switchTo(page, 'horizontal');
   await switchTo(page, 'vertical');
+  await switchTo(page, 'horizontal');
 
   const cost = await page.evaluate(
     () =>
@@ -679,7 +679,7 @@ test('VC-426 (FR-425, NFR-404): each switch paints in under 100 ms, with no tran
 test('VC-434 (FR-426): the editor keeps its document position, not its offset', async ({
   page,
 }) => {
-  await openAtLayout(page, 'vertical');
+  await openAtLayout(page, 'horizontal');
   await waitForPythonReady(page);
 
   // 200 lines, five of them long enough to wrap at both column widths.
@@ -782,7 +782,7 @@ test('VC-434 (FR-426): the editor keeps its document position, not its offset', 
   expect(await topLine(), 'line 120 is the first visible line').toBe(120);
   expect(await fullyVisible(120), 'and it is fully visible').toBe(true);
 
-  for (const layout of ['horizontal', 'vertical'] as const) {
+  for (const layout of ['vertical', 'horizontal'] as const) {
     await switchTo(page, layout);
     // FR-426: the *document position* is preserved. The column width changed,
     // so `scrollTop` necessarily did too — that is not what is being kept.

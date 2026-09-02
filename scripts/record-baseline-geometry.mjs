@@ -40,21 +40,25 @@ const viewports = {};
 
 for (const viewport of GEOMETRY_VIEWPORTS) {
   const page = await browser.newPage({ viewport });
-  // VC-408 measures `data-layout="vertical"` specifically, and at 1280 px an
-  // unset preference resolves to horizontal (FR-411). Seeding the preference
-  // is how the *shipped* code path is asked for the vertical rendering; on the
-  // baseline build the key does not exist yet and is simply ignored, so the
-  // same recorder produces comparable numbers from both builds.
+  /*
+   * VC-408 measures the *stacked* layout — `data-layout="horizontal"`, which
+   * names the orientation of the divider (see `src/layout.ts`) and is the
+   * rendering spec-01 shipped. At 1280 px an unset preference resolves to the
+   * two-column `vertical` layout instead (FR-411), so the preference is
+   * seeded: that asks the *shipped* code path for the stacked rendering. On
+   * the baseline build the key does not exist yet and is simply ignored, so
+   * the same recorder produces comparable numbers from both builds.
+   */
   await page.addInitScript(() => {
     try {
-      window.localStorage.setItem('pyplay.layout.v1', 'vertical');
+      window.localStorage.setItem('pyplay.layout.v2', 'horizontal');
     } catch {
       /* VC-418: an unwritable store is not this recorder's concern. */
     }
   });
   await page.goto(baseUrl);
   await page.waitForFunction(
-    () => document.getElementById('app')?.dataset.layout !== 'horizontal',
+    () => document.getElementById('app')?.dataset.layout !== 'vertical',
   );
   await page.waitForSelector('.cm-content');
   viewports[`${viewport.width}x${viewport.height}`] = await page.evaluate(measure);

@@ -305,7 +305,7 @@ test('VC-432 (NFR-406): the layout control on this browser', async ({ page }, in
   const layoutOf = (): Promise<string | undefined> =>
     page.evaluate(() => document.getElementById('app')?.dataset.layout);
   const storedLayout = (): Promise<string | null> =>
-    page.evaluate(() => window.localStorage.getItem('pyplay.layout.v1'));
+    page.evaluate(() => window.localStorage.getItem('pyplay.layout.v2'));
   const checkedRadio = (): Promise<string | undefined> =>
     page.evaluate(
       () =>
@@ -320,7 +320,7 @@ test('VC-432 (NFR-406): the layout control on this browser', async ({ page }, in
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.addInitScript(() => {
     try {
-      window.localStorage.setItem('pyplay.layout.v1', 'vertical');
+      window.localStorage.setItem('pyplay.layout.v2', 'horizontal');
     } catch {
       /* VC-418's subject, not this one's */
     }
@@ -343,13 +343,13 @@ test('VC-432 (NFR-406): the layout control on this browser', async ({ page }, in
       () => (window as unknown as { __firstFrame: { firstFrame: string | null } }).__firstFrame.firstFrame,
     ),
     'VC-416: the first painted frame already carries the resolved layout',
-  ).toBe('vertical');
+  ).toBe('horizontal');
 
   // --- VC-403 (FR-403, FR-414): selecting applies and persists ------------
-  await page.locator('#layout-horizontal').click();
-  expect(await layoutOf(), 'VC-403: applied').toBe('horizontal');
-  expect(await checkedRadio(), 'VC-403: checked').toBe('layout-horizontal');
-  expect(await storedLayout(), 'VC-403: persisted as a bare string').toBe('horizontal');
+  await page.locator('#layout-vertical').click();
+  expect(await layoutOf(), 'VC-403: applied').toBe('vertical');
+  expect(await checkedRadio(), 'VC-403: checked').toBe('layout-vertical');
+  expect(await storedLayout(), 'VC-403: persisted as a bare string').toBe('vertical');
 
   // --- VC-409 (FR-408, BR-407): the two-column geometry -------------------
   const columns = await page.evaluate(() => {
@@ -417,10 +417,10 @@ test('VC-432 (NFR-406): the layout control on this browser', async ({ page }, in
     };
   });
 
-  await page.locator('#layout-vertical').click();
-  expect(await layoutOf()).toBe('vertical');
   await page.locator('#layout-horizontal').click();
   expect(await layoutOf()).toBe('horizontal');
+  await page.locator('#layout-vertical').click();
+  expect(await layoutOf()).toBe('vertical');
 
   const editorAfter = await page.evaluate(() => {
     const content = document.querySelector('.cm-content') as
@@ -445,8 +445,8 @@ test('VC-432 (NFR-406): the layout control on this browser', async ({ page }, in
 
   // --- VC-413 (FR-413, BR-404): the narrow override, non-destructively ----
   await page.setViewportSize({ width: 375, height: 667 });
-  await expect.poll(layoutOf, { timeout: 2_000 }).toBe('vertical');
-  expect(await storedLayout(), 'VC-413: the stored choice is untouched').toBe('horizontal');
+  await expect.poll(layoutOf, { timeout: 2_000 }).toBe('horizontal');
+  expect(await storedLayout(), 'VC-413: the stored choice is untouched').toBe('vertical');
   expect(
     await page.evaluate(() => document.documentElement.scrollWidth),
     'VC-413: no horizontal scroll at 375 px',
@@ -455,23 +455,23 @@ test('VC-432 (NFR-406): the layout control on this browser', async ({ page }, in
   // --- VC-414 (FR-415): inert but focusable, every interaction a no-op ----
   await expect(page.locator('#layout-group')).toHaveAttribute('aria-disabled', 'true');
   expect(
-    await page.locator('#layout-horizontal').evaluate((el) => el.hasAttribute('disabled')),
+    await page.locator('#layout-vertical').evaluate((el) => el.hasAttribute('disabled')),
     'VC-414: `aria-disabled`, never the `disabled` attribute',
   ).toBe(false);
-  await page.locator('#layout-vertical').focus();
+  await page.locator('#layout-horizontal').focus();
   for (const key of ['ArrowRight', 'ArrowDown', 'Home', 'End', 'Space', 'Enter'] as const) {
     await page.keyboard.press(key);
-    expect(await layoutOf(), `VC-414: ${key} did not apply`).toBe('vertical');
-    expect(await checkedRadio(), `VC-414: ${key} did not check`).toBe('layout-vertical');
-    expect(await storedLayout(), `VC-414: ${key} did not write`).toBe('horizontal');
+    expect(await layoutOf(), `VC-414: ${key} did not apply`).toBe('horizontal');
+    expect(await checkedRadio(), `VC-414: ${key} did not check`).toBe('layout-horizontal');
+    expect(await storedLayout(), `VC-414: ${key} did not write`).toBe('vertical');
   }
-  await page.locator('#layout-horizontal').click({ force: true });
-  expect(await layoutOf(), 'VC-414: a pointer click did not apply').toBe('vertical');
-  expect(await storedLayout(), 'VC-414: a pointer click did not write').toBe('horizontal');
+  await page.locator('#layout-vertical').click({ force: true });
+  expect(await layoutOf(), 'VC-414: a pointer click did not apply').toBe('horizontal');
+  expect(await storedLayout(), 'VC-414: a pointer click did not write').toBe('vertical');
 
   // --- VC-427 (NFR-401): 375 px is usable and the radios are big enough ---
   const narrow = await page.evaluate(() => {
-    const boxes = ['#layout-vertical', '#layout-horizontal'].map((selector) => {
+    const boxes = ['#layout-horizontal', '#layout-vertical'].map((selector) => {
       const box = (document.querySelector(selector) as HTMLElement).getBoundingClientRect();
       return Math.min(box.width, box.height);
     });
@@ -495,7 +495,7 @@ test('VC-432 (NFR-406): the layout control on this browser', async ({ page }, in
 
   // --- VC-413's last clause: widening restores it with no interaction -----
   await page.setViewportSize({ width: 1280, height: 800 });
-  await expect.poll(layoutOf, { timeout: 2_000 }).toBe('horizontal');
+  await expect.poll(layoutOf, { timeout: 2_000 }).toBe('vertical');
 
   info.annotations.push({ type: 'browser', description: `${info.project.name}` });
 });

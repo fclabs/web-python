@@ -531,12 +531,12 @@ body {
  * be changed together.
  */
 @media (min-width: 700px) {
-  /* spec-04 BR-404: at 900 px and above `#app[data-layout='horizontal']`
+  /* spec-04 BR-404: at 900 px and above `#app[data-layout='vertical']`
      redefines this grid with its own two-column split (see below). The
      `:not()` keeps exactly one of the two definitions live at any width, and
      matches when the attribute is absent so a JS failure still leaves spec-03
      rendering as it shipped. */
-  .app:not([data-layout='horizontal']):has(#symbol-pane:not([hidden])) {
+  .app:not([data-layout='vertical']):has(#symbol-pane:not([hidden])) {
     display: grid;
     grid-template-areas:
       "toolbar toolbar"
@@ -686,11 +686,16 @@ body {
 /* Horizontal / vertical pane layout (spec-04: FR-407 – FR-409, FR-425) ---- */
 
 /*
- * `data-layout="vertical"` is the shipped spec-01 rendering: `.app` stays the
- * flex column defined above, with its flex ratios, minimum heights and the
+ * Both layout names describe the orientation of the **divider** between the
+ * panels, as `vim`'s `:split` / `:vsplit` do — see the contract in
+ * `src/layout.ts`, which is normative for these two words.
+ *
+ * `data-layout="horizontal"` — panels separated by horizontal rules, stacked
+ * in one column — is the shipped spec-01 rendering: `.app` stays the flex
+ * column defined above, with its flex ratios, minimum heights and the
  * diagnostics panel's `max-height: 25vh` exactly as they were (FR-407). There
- * is deliberately no `#app[data-layout='vertical']` rule — the vertical
- * layout is the absence of the horizontal one, which is what makes VC-408's
+ * is deliberately no `#app[data-layout='horizontal']` rule — the stacked
+ * layout is the absence of the two-column one, which is what makes VC-408's
  * ±1 px comparison against the baseline build true by construction.
  *
  * FR-411's breakpoint. `LAYOUT_MIN_WIDTH` in `src/layout.ts` is the same 900,
@@ -710,7 +715,7 @@ body {
    * re-created, so CodeMirror never re-measures from a DOM change and the
    * sequential focus order is identical in both layouts (BR-407).
    */
-  #app[data-layout='horizontal'] {
+  #app[data-layout='vertical'] {
     display: grid;
     grid-template-areas:
       "toolbar toolbar"
@@ -746,7 +751,7 @@ body {
    * the area map change; every `grid-area` assignment is the one the 700 px
    * block above already made.
    */
-  #app[data-layout='horizontal']:has(#symbol-pane:not([hidden])) {
+  #app[data-layout='vertical']:has(#symbol-pane:not([hidden])) {
     grid-template-areas:
       "toolbar toolbar toolbar"
       "banner  banner  banner"
@@ -759,21 +764,21 @@ body {
   }
 
   /*
-   * FR-409: in the right column the cap is the 0.66fr track above, not the
-   * `25vh` the vertical layout keeps. The panel still scrolls its own overflow
+   * FR-409: in the inline-end column the cap is the 0.66fr track above, not
+   * the `25vh` the stacked layout keeps. The panel still scrolls its own overflow
    * (`.panel--diagnostics { overflow: auto }`), so at short viewport heights
    * the entries stay reachable by scrolling inside the right column rather
    * than by scrolling the page (VC-435).
    */
-  #app[data-layout='horizontal'] .panel--diagnostics {
+  #app[data-layout='vertical'] .panel--diagnostics {
     max-height: none;
   }
 
-  /* The two panels' flex ratios are the vertical column's; as grid items they
+  /* The two panels' flex ratios are the stacked column's; as grid items they
      are sized by the tracks, and a stale `flex-basis` would only fight the
      `minmax()` minimums. */
-  #app[data-layout='horizontal'] .panel--console,
-  #app[data-layout='horizontal'] .panel--editor {
+  #app[data-layout='vertical'] .panel--console,
+  #app[data-layout='vertical'] .panel--editor {
     flex: 1 1 auto;
   }
 }

@@ -74,8 +74,8 @@ export const LAYOUT_LABEL = 'Layout';
 export const LAYOUT_VERTICAL = 'Vertical';
 export const LAYOUT_HORIZONTAL = 'Horizontal';
 
-/** FR-406: why the horizontal layout is unavailable below 900 px. */
-export const LAYOUT_NARROW_HINT = 'Horizontal layout needs a window at least 900 px wide';
+/** FR-406: why the two-column `vertical` layout is unavailable below 900 px. */
+export const LAYOUT_NARROW_HINT = 'Vertical layout needs a window at least 900 px wide';
 
 /** FR-418: the preference write was rejected. */
 export const LAYOUT_SAVE_FAILED = "Layout preference won't be remembered";

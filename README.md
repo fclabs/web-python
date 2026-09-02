@@ -104,8 +104,8 @@ which is how the child specs verify that they changed nothing:
 
 ```bash
 PANE_OPEN=1                   npx playwright test   # spec-03 VC-327
-PYPLAY_LAYOUT_PREF=vertical   npx playwright test   # spec-04 VC-433
-PYPLAY_LAYOUT_PREF=horizontal npx playwright test   # spec-04 VC-433
+PYPLAY_LAYOUT_PREF=horizontal npx playwright test   # spec-04 VC-433, stacked
+PYPLAY_LAYOUT_PREF=vertical   npx playwright test   # spec-04 VC-433, two columns
 ```
 
 ## Continuous integration
@@ -179,18 +179,25 @@ repository settings that live outside this repository:
 | `Ctrl` + `D` in the input field | Send EOF |
 | `Tab` | Move to the next control — including Run, Stop, Clear console, Copy code, Format, Reset, the layout control, Symbols, the editor, the input field, Send EOF and the diagnostics entries |
 | `←` `→` `↑` `↓` in the layout control | Select the other layout — and apply it |
-| `Home` / `End` in the layout control | Select `Vertical` / `Horizontal` |
+| `Home` / `End` in the layout control | Select `Horizontal` / `Vertical` |
 
 `Tab` is deliberately **not** bound to indentation inside the editor: that
 would trap the tab sequence and break keyboard traversal of the page.
 
-The **layout control** is one tab stop, not two: `Tab` lands on whichever of
-`Vertical` / `Horizontal` is currently selected, and the arrow keys move
-between them — the same model the Symbols pane uses. Your choice is remembered
-on this browser.
+The **layout control** picks how the panels are divided, and both names
+describe **the divider**, the way `vim`'s `:split` and `:vsplit` do:
 
-Below a **900 px** window width the vertical layout is the only layout, and the
+| | |
+|---|---|
+| `Horizontal` | the panels are stacked top to bottom, separated by horizontal rules |
+| `Vertical` | the editor sits beside the console, separated by a vertical rule |
+
+It is one tab stop, not two: `Tab` lands on whichever option is currently
+selected and the arrow keys move between them — the same model the Symbols pane
+uses. Your choice is remembered on this browser.
+
+Below a **900 px** window width `Horizontal` is the only layout, and the
 control is shown disabled with the reason attached — two columns at phone width
 leave neither one wide enough to read code or a traceback in. Your choice is
-not discarded: widen the window and the horizontal layout comes back without
-you re-selecting it.
+not discarded: widen the window and `Vertical` comes back without you
+re-selecting it.

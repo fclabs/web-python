@@ -48,8 +48,11 @@ export async function openPlayground(page: Page, options: OpenOptions = {}): Pro
   }
 }
 
-/** spec-04's `localStorage` key (spec-04: Constants). */
-export const LAYOUT_KEY = 'pyplay.layout.v1';
+/**
+ * spec-04's `localStorage` key (spec-04: Constants). `v2` — `v1` held the same
+ * two strings with their meanings swapped; see `src/layout.ts`.
+ */
+export const LAYOUT_KEY = 'pyplay.layout.v2';
 
 /**
  * spec-04 VC-433 runs the spec-01 and spec-03 suites three times — with the

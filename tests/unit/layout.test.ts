@@ -41,7 +41,7 @@ function recordingStorage(initial: Record<string, string> = {}): Recorder {
 
 describe('Constants (Data & Interfaces / Constants)', () => {
   it('pins the key, breakpoint, column share and height floor the spec names', () => {
-    expect(LAYOUT_KEY).toBe('pyplay.layout.v1');
+    expect(LAYOUT_KEY).toBe('pyplay.layout.v2');
     expect(LAYOUT_MIN_WIDTH).toBe(900);
     expect(LAYOUT_EDITOR_COLUMN).toBe('58%');
     expect(LAYOUT_MIN_HEIGHT).toBe(520);
@@ -53,7 +53,7 @@ describe('User-visible strings (Data & Interfaces / User-visible strings)', () =
     expect(LAYOUT_LABEL).toBe('Layout');
     expect(LAYOUT_VERTICAL).toBe('Vertical');
     expect(LAYOUT_HORIZONTAL).toBe('Horizontal');
-    expect(LAYOUT_NARROW_HINT).toBe('Horizontal layout needs a window at least 900 px wide');
+    expect(LAYOUT_NARROW_HINT).toBe('Vertical layout needs a window at least 900 px wide');
     expect(LAYOUT_SAVE_FAILED).toBe("Layout preference won't be remembered");
   });
 });
@@ -61,25 +61,31 @@ describe('User-visible strings (Data & Interfaces / User-visible strings)', () =
 describe('VC-411: resolveLayout (FR-411)', () => {
   const preferences: (Layout | null)[] = ['vertical', 'horizontal', null];
 
+  /*
+   * Both names describe the orientation of the divider between the panels
+   * (see `src/layout.ts`): `horizontal` stacks them in one column and is the
+   * only layout below `LAYOUT_MIN_WIDTH`; `vertical` is the two-column split
+   * and is the default at or above it.
+   */
   for (const width of [0, 374, 375, 899]) {
     for (const pref of preferences) {
-      it(`resolves vertical at ${width} px with preference ${String(pref)}`, () => {
-        expect(resolveLayout(pref, width)).toBe('vertical');
+      it(`resolves the stacked layout at ${width} px with preference ${String(pref)}`, () => {
+        expect(resolveLayout(pref, width)).toBe('horizontal');
       });
     }
   }
 
   for (const width of [LAYOUT_MIN_WIDTH, 1280]) {
-    it(`honours a stored vertical preference at ${width} px`, () => {
-      expect(resolveLayout('vertical', width)).toBe('vertical');
-    });
-
     it(`honours a stored horizontal preference at ${width} px`, () => {
       expect(resolveLayout('horizontal', width)).toBe('horizontal');
     });
 
-    it(`defaults to horizontal at ${width} px with no preference`, () => {
-      expect(resolveLayout(null, width)).toBe('horizontal');
+    it(`honours a stored vertical preference at ${width} px`, () => {
+      expect(resolveLayout('vertical', width)).toBe('vertical');
+    });
+
+    it(`defaults to the two-column layout at ${width} px with no preference`, () => {
+      expect(resolveLayout(null, width)).toBe('vertical');
     });
   }
 });
@@ -149,7 +155,7 @@ describe('VC-417: loadLayoutPreference (FR-417)', () => {
 
 describe('VC-414: saveLayoutPreference (FR-414, FR-418)', () => {
   for (const layout of ['vertical', 'horizontal'] as const) {
-    it(`writes the bare string ${layout} once under pyplay.layout.v1`, () => {
+    it(`writes the bare string ${layout} once under pyplay.layout.v2`, () => {
       const store = recordingStorage();
       expect(saveLayoutPreference(store, layout)).toBe(true);
       expect(store.writes).toEqual([[LAYOUT_KEY, layout]]);
