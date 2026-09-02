@@ -44,12 +44,15 @@
           id="btn-symbols"
           class="btn"
           type="button"
+          tabindex="0"
           aria-expanded="false"
           aria-controls="symbol-pane"
         >Symbols</button>
         <!-- FR-501: last toolbar control. Glyph / title / aria-label filled by
-             src/theme.ts. Never routed through `setInert()`. -->
-        <button id="btn-theme" class="btn btn--theme" type="button"></button>
+             src/theme.ts. Never routed through `setInert()`. Explicit
+             `tabindex="0"` matches Run/Stop/Format so WebKit keeps the control
+             in the sequential focus navigation order (FR-513 / VC-511). -->
+        <button id="btn-theme" class="btn btn--theme" type="button" tabindex="0"></button>
       </header>
 
       <p id="coi-banner" class="banner" role="status" hidden></p>

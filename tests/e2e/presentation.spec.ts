@@ -5,6 +5,8 @@
  * VC-051 (FR-048, NFR-010) — text contrast >= 4.5:1 in both palettes.
  * VC-071 (NFR-013) — non-text contrast >= 3:1 in both palettes.
  * VC-052 (FR-049) — every control reachable by `Tab`, with a visible ring.
+ * VC-514 (NFR-502, NFR-503) — forced Light/Dark against the opposite OS.
+ * VC-515 (NFR-504) — `#btn-theme` hit area at 375 × 667.
  */
 import { expect, test, type Page } from '@playwright/test';
 import { failures, measureContrast, type Sample } from './contrast';
@@ -212,6 +214,8 @@ const TEXT_SAMPLES: Sample[] = [
   { label: 'symbol group heading', selector: '#symbol-pane .symbol-group-title', prop: 'color' },
   { label: 'symbol copy feedback', selector: '#symbol-status', prop: 'color' },
   { label: 'copied-state glyph', selector: '#symbol-pane .symbol[data-state="copied"]', prop: 'color' },
+  // spec-05 NFR-502: the color-mode control's glyph against the toolbar.
+  { label: 'theme glyph', selector: '#btn-theme', prop: 'color' },
 ];
 
 /** Every non-text component NFR-013 lists. */
@@ -260,6 +264,13 @@ const NON_TEXT_SAMPLES: Sample[] = [
   {
     label: 'focus ring (symbol button)',
     selector: '#symbol-pane .symbol:not([data-state])',
+    prop: 'outlineColor',
+    focus: true,
+  },
+  // spec-05 NFR-503: the color-mode control's focus ring.
+  {
+    label: 'focus ring (theme)',
+    selector: '#btn-theme',
     prop: 'outlineColor',
     focus: true,
   },
@@ -338,6 +349,122 @@ for (const scheme of ['light', 'dark'] as const) {
     });
   });
 }
+
+/* -------------------------------------------------------------------------
+   VC-514 (NFR-502, NFR-503) — forced Light / Dark against the opposite OS
+   ------------------------------------------------------------------------- */
+
+const THEME_KEY = 'pyplay.theme.v1';
+
+async function seedTheme(page: Page, value: 'light' | 'dark'): Promise<void> {
+  await page.addInitScript(
+    ({ key, value }) => {
+      window.localStorage.setItem(key, value);
+    },
+    { key: THEME_KEY, value },
+  );
+}
+
+/**
+ * Forced preference under the opposite OS scheme — the parent VC-051 / VC-071
+ * amendment that VC-514 discharges. Same sample sets as System-driven runs,
+ * including the theme glyph and its focus ring.
+ */
+for (const forced of [
+  { preference: 'light' as const, os: 'dark' as const, bodyBg: 'rgb(255, 255, 255)' },
+  { preference: 'dark' as const, os: 'light' as const, bodyBg: 'rgb(20, 22, 26)' },
+]) {
+  test.describe(`VC-514 forced ${forced.preference} under OS ${forced.os}`, () => {
+    test.use({ colorScheme: forced.os });
+
+    test(`VC-514 (NFR-502): text contrast under forced ${forced.preference}`, async ({ page }) => {
+      await seedTheme(page, forced.preference);
+      await paintEverySurface(page);
+
+      const measured = await measureContrast(page, TEXT_SAMPLES);
+      await paintNotice(page);
+      measured.push(...(await measureContrast(page, [NOTICE_SAMPLES[0]!])));
+
+      const bodyBg = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
+      expect(bodyBg).toBe(forced.bodyBg);
+      expect(await page.evaluate(() => document.documentElement.dataset.theme)).toBe(
+        forced.preference,
+      );
+
+      expect(measured).toHaveLength(TEXT_SAMPLES.length + 1);
+      expect(failures(measured, 4.5)).toEqual([]);
+    });
+
+    test(`VC-514 (NFR-503): non-text contrast under forced ${forced.preference}`, async ({
+      page,
+    }) => {
+      await seedTheme(page, forced.preference);
+      await paintEverySurface(page);
+
+      const measured = await measureContrast(page, NON_TEXT_SAMPLES);
+      await paintNotice(page);
+      measured.push(...(await measureContrast(page, [NOTICE_SAMPLES[1]!])));
+
+      await page.evaluate(() =>
+        document.getElementById('btn-format')!.setAttribute('aria-disabled', 'true'),
+      );
+      measured.push(
+        ...(await measureContrast(page, [
+          {
+            label: 'disabled affordance (Format border)',
+            selector: '#btn-format',
+            prop: 'borderTopColor',
+          },
+          {
+            label: 'copied-state highlight',
+            selector: '#symbol-pane .symbol[data-state="copied"]',
+            prop: 'backgroundColor',
+          },
+        ])),
+      );
+
+      expect(measured).toHaveLength(NON_TEXT_SAMPLES.length + 3);
+      expect(failures(measured, 3)).toEqual([]);
+    });
+  });
+}
+
+/* -------------------------------------------------------------------------
+   VC-515 (NFR-504) — `#btn-theme` at 375 × 667
+   ------------------------------------------------------------------------- */
+
+test.describe('VC-515 theme control at 375 px', () => {
+  test.use({ viewport: NARROW });
+
+  test('VC-515 (NFR-504): #btn-theme is unclipped with a >= 32 × 32 hit box', async ({
+    page,
+  }) => {
+    await openPlayground(page);
+    await waitForPythonReady(page);
+
+    const layout = await page.evaluate(() => {
+      const btn = document.getElementById('btn-theme')!;
+      const box = btn.getBoundingClientRect();
+      return {
+        scrollWidth: document.documentElement.scrollWidth,
+        width: box.width,
+        height: box.height,
+        left: box.left,
+        right: box.right,
+        top: box.top,
+        bottom: box.bottom,
+      };
+    });
+
+    expect(layout.scrollWidth).toBeLessThanOrEqual(NARROW.width);
+    expect(layout.width).toBeGreaterThanOrEqual(32);
+    expect(layout.height).toBeGreaterThanOrEqual(32);
+    expect(layout.left).toBeGreaterThanOrEqual(0);
+    expect(layout.right).toBeLessThanOrEqual(NARROW.width + 1);
+    expect(layout.top).toBeGreaterThanOrEqual(0);
+    expect(layout.bottom).toBeLessThanOrEqual(NARROW.height + 1);
+  });
+});
 
 /* -------------------------------------------------------------------------
    VC-052 (FR-049)
