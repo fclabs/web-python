@@ -265,6 +265,16 @@ for (const viewport of [WIDE, NARROW]) {
     await waitForLinter(page);
     expect(await renderedLayout(page)).toBe('horizontal');
 
+    // The files pane (undocumented by spec-04, predating none of this) opens
+    // by default at >= 700 px and shifts every panel it doesn't appear in
+    // this frozen `384cb70` baseline. Close it so FR-407's pixel-for-pixel
+    // comparison is against the layout that baseline actually describes.
+    const filePane = page.locator('#file-pane');
+    if (!(await filePane.isHidden())) {
+      await page.locator('#btn-files').click();
+      await expect(filePane).toBeHidden();
+    }
+
     const actual = await measurePanels(page);
     const names = ['console', 'editor', 'stdin', 'diagnostics'] as const;
 
