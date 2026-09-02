@@ -54,12 +54,15 @@ function usage(message) {
   process.exit(2);
 }
 
-/** Run to completion in `cwd`, inheriting stdio; a non-zero exit is fatal. */
+/**
+ * Run to completion in `cwd`, inheriting stdio. A failure *throws* rather than
+ * exiting: `process.exit` would skip the cleanup below and leave both a git
+ * worktree and a listening preview server behind.
+ */
 function run(command, args, cwd) {
   const result = spawnSync(command, args, { cwd, stdio: 'inherit', shell: false });
   if (result.status !== 0) {
-    console.error(`record-baselines.mjs: ${command} ${args.join(' ')} exited ${result.status}`);
-    process.exit(1);
+    throw new Error(`${command} ${args.join(' ')} exited ${result.status}`);
   }
 }
 
@@ -97,11 +100,25 @@ try {
      * own 4173-4175 block so a recording cannot serve, or be served by, the
      * build under test.
      */
-    preview = spawn('npx', ['vite', 'preview', '--port', options.port, '--strictPort'], {
-      cwd: worktree,
-      stdio: ['ignore', 'inherit', 'inherit'],
-    });
-    const baseUrl = `http://localhost:${options.port}`;
+    preview = spawn(
+      'npx',
+      ['vite', 'preview', '--host', '127.0.0.1', '--port', options.port, '--strictPort'],
+      {
+        cwd: worktree,
+        stdio: ['ignore', 'inherit', 'inherit'],
+        // Its own process group, so killing it below takes the `vite` child
+        // npx spawns with it rather than orphaning a listening server.
+        detached: true,
+      },
+    );
+    /*
+     * Both ends are pinned to `127.0.0.1` because the two halves of
+     * "localhost" disagree by platform: an unqualified `vite preview` binds
+     * v4 only in the Playwright Linux image and v6 only on darwin, while
+     * Node's `fetch` picks the other one first and reports the refused
+     * connection as a bare "fetch failed".
+     */
+    const baseUrl = `http://127.0.0.1:${options.port}`;
     await waitForServer(baseUrl);
     run(
       'node',
@@ -114,13 +131,31 @@ try {
       worktree,
     );
   }
+} catch (error) {
+  console.error(`record-baselines.mjs: ${error instanceof Error ? error.message : error}`);
+  process.exitCode = 1;
 } finally {
-  preview?.kill();
+  killPreview();
   if (!options.keep) {
-    run('git', ['worktree', 'remove', '--force', worktree], repoRoot);
+    // Cleanup must not mask the failure that brought us here.
+    try {
+      run('git', ['worktree', 'remove', '--force', worktree], repoRoot);
+    } catch (error) {
+      console.error(`record-baselines.mjs: could not remove ${worktree}: ${error.message}`);
+    }
     rmSync(scratch, { force: true, recursive: true });
   } else {
     console.log(`record-baselines.mjs: worktree kept at ${worktree}`);
+  }
+}
+
+/** Stop the preview server and the process group it leads. */
+function killPreview() {
+  if (preview?.pid === undefined || preview.exitCode !== null) return;
+  try {
+    process.kill(-preview.pid);
+  } catch {
+    preview.kill();
   }
 }
 
@@ -128,16 +163,18 @@ try {
 async function waitForServer(baseUrl, timeoutMs = 60_000) {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
+    // A server that exited — `--strictPort` on a taken port, say — will never
+    // answer, and its own output has already said why.
+    if (preview && preview.exitCode !== null) {
+      throw new Error('the preview server exited before it served anything');
+    }
     try {
-      const response = await fetch(baseUrl);
+      const response = await fetch(baseUrl, { signal: AbortSignal.timeout(2_000) });
       if (response.ok) return;
     } catch {
       /* Not listening yet. */
     }
-    if (Date.now() > deadline) {
-      console.error(`record-baselines.mjs: ${baseUrl} never answered within ${timeoutMs} ms`);
-      process.exit(1);
-    }
+    if (Date.now() > deadline) throw new Error(`${baseUrl} never answered within ${timeoutMs} ms`);
     await new Promise((r) => setTimeout(r, 250));
   }
 }

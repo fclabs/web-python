@@ -247,25 +247,24 @@ const BUILD_RECORD =
 
 const branchPoint = JSON.parse(readFileSync(BUILD_RECORD, 'utf8')) as BaselineBuild;
 
-/**
- * The branch point's app payload as *this* run compresses it, or `undefined`
- * when no record covers this compressor. A live record from the wrong
- * compressor is a broken wiring rather than an uncovered one: it would compare
- * two engines' output and call the difference a budget overrun, so it stops
- * the suite instead of being quietly ignored.
+/** The branch point's app payload as *this* run compresses it, if recorded. */
+const branchPointApp =
+  branchPoint.gzippedAppBy?.[compressor] ??
+  (branchPoint.gzippedBy === compressor ? branchPoint.gzippedApp : undefined);
+
+/*
+ * A record CI pointed at is a different matter from an uncovered compressor: it
+ * was made by this run's own runner moments ago, so failing to cover it is a
+ * broken wiring, and skipping would take a merge-gating budget quietly out of
+ * the run. It stops the suite instead.
  */
-const branchPointApp = ((): number | undefined => {
-  if (branchPoint.gzippedApp !== undefined) {
-    if (branchPoint.gzippedBy !== compressor) {
-      throw new Error(
-        `${BUILD_RECORD} was gzipped by "${branchPoint.gzippedBy}" but this run gzips by ` +
-          `"${compressor}" — re-record it here with scripts/record-baselines.mjs.`,
-      );
-    }
-    return branchPoint.gzippedApp;
-  }
-  return branchPoint.gzippedAppBy?.[compressor];
-})();
+if (process.env.PYPLAY_BASELINE_BUILD !== undefined && branchPointApp === undefined) {
+  throw new Error(
+    `${BUILD_RECORD} records no app size for "${compressor}" (it was gzipped by ` +
+      `"${branchPoint.gzippedBy}") — the run that recorded it is not the run comparing ` +
+      `against it. See the baseline step in .github/workflows/pr.yml.`,
+  );
+}
 
 /** The reason a size budget cannot be measured here, if there is one. */
 const uncoveredCompressor =
