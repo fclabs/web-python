@@ -34,6 +34,8 @@ const CONTROLS = [
   '#btn-copy',
   '#btn-format',
   '#btn-reset',
+  // spec-03 FR-301: the pane's toggle is a toolbar control like any other.
+  '#btn-symbols',
   '.cm-content',
   '#stdin-input',
   '#btn-eof',
@@ -42,12 +44,20 @@ const CONTROLS = [
 test.describe('375 px viewport', () => {
   test.use({ viewport: NARROW });
 
-  test('VC-050 (FR-047, FR-065): nothing is clipped and the page never scrolls sideways', async ({
+  // spec-03 amendment: the same assertions hold with the special-character
+  // pane open, which is the state VC-319 constrains.
+  for (const pane of ['closed', 'open'] as const) {
+  test(`VC-050 (FR-047, FR-065): nothing is clipped and the page never scrolls sideways — pane ${pane}`, async ({
     page,
   }) => {
     await openPlayground(page);
     await waitForPythonReady(page);
     await waitForLinter(page);
+
+    if (pane === 'open') {
+      await page.getByRole('button', { name: 'Symbols' }).click();
+      await expect(page.locator('#symbol-pane')).toBeVisible();
+    }
 
     // A long line in the editor and a long line in the console: the two places
     // horizontal overflow can originate.
@@ -110,6 +120,7 @@ test.describe('375 px viewport', () => {
     expect(geometry.pointerEvents).toBe('none');
     expect(geometry.tabIndex).toBeLessThan(0);
   });
+  }
 });
 
 /* -------------------------------------------------------------------------
@@ -152,6 +163,21 @@ async function paintEverySurface(page: Page): Promise<void> {
   await expect(page.locator('.cm-diagnostic-mark.cm-diagnostic-warning')).not.toHaveCount(0);
   await expect(page.locator('.cm-diagnostic-gutter-error')).not.toHaveCount(0);
   await expect(page.locator('.cm-diagnostic-gutter-warning')).not.toHaveCount(0);
+
+  // spec-03 VC-322: the pane's own surfaces are only measurable with the pane
+  // open, so every sampling run paints it too. Opened from the keyboard, not
+  // by pointer: a click would switch the browser's focus-visible heuristic to
+  // pointer modality and suppress the focus rings VC-071 goes on to sample.
+  await page.locator('#btn-symbols').focus();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#symbol-pane')).toBeVisible();
+
+  // VC-322 samples *inside* FR-307's 2 000 ms window, so the feedback text and
+  // the `data-state="copied"` highlight are both genuinely on screen. `Enter`
+  // on the focused button keeps the run in keyboard modality, which is what
+  // makes the focus rings VC-071 samples visible.
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#symbol-status')).toHaveText('Copied "');
 }
 
 /** Every text surface NFR-010 lists, plus the syntax colours around them. */
@@ -178,6 +204,12 @@ const TEXT_SAMPLES: Sample[] = [
   { label: 'syntax: string', selector: '.tok-string', prop: 'color' },
   { label: 'syntax: definition', selector: '.tok-def', prop: 'color' },
   { label: 'syntax: operator', selector: '.tok-operator', prop: 'color' },
+  // spec-03 NFR-302: the pane's text — glyphs and group headings. The FR-307
+  // feedback text is sampled separately, once a copy has actually happened.
+  { label: 'symbol glyph', selector: '#symbol-pane .symbol', prop: 'color' },
+  { label: 'symbol group heading', selector: '#symbol-pane .symbol-group-title', prop: 'color' },
+  { label: 'symbol copy feedback', selector: '#symbol-status', prop: 'color' },
+  { label: 'copied-state glyph', selector: '#symbol-pane .symbol[data-state="copied"]', prop: 'color' },
 ];
 
 /** Every non-text component NFR-013 lists. */
@@ -211,6 +243,21 @@ const NON_TEXT_SAMPLES: Sample[] = [
   {
     label: 'focus ring (diagnostics entry)',
     selector: '.diagnostic-entry',
+    prop: 'outlineColor',
+    focus: true,
+  },
+  // spec-03 NFR-303: the pane's non-text components.
+  // A button in its resting state: the copied one is a filled highlight,
+  // measured separately below.
+  {
+    label: 'symbol button border',
+    selector: '#symbol-pane .symbol:not([data-state])',
+    prop: 'borderTopColor',
+  },
+  { label: 'symbol pane edge', selector: '#symbol-pane', prop: 'borderTopColor' },
+  {
+    label: 'focus ring (symbol button)',
+    selector: '#symbol-pane .symbol:not([data-state])',
     prop: 'outlineColor',
     focus: true,
   },
@@ -271,7 +318,20 @@ for (const scheme of ['light', 'dark'] as const) {
         ])),
       );
 
-      expect(measured).toHaveLength(NON_TEXT_SAMPLES.length + 2);
+      // spec-03 FR-307: the copied highlight is a fill on the activated
+      // button, measured against the pane behind it (NFR-303), in the state a
+      // real copy put it in.
+      measured.push(
+        ...(await measureContrast(page, [
+          {
+            label: 'copied-state highlight',
+            selector: '#symbol-pane .symbol[data-state="copied"]',
+            prop: 'backgroundColor',
+          },
+        ])),
+      );
+
+      expect(measured).toHaveLength(NON_TEXT_SAMPLES.length + 3);
       expect(failures(measured, 3)).toEqual([]);
     });
   });
@@ -281,7 +341,7 @@ for (const scheme of ['light', 'dark'] as const) {
    VC-052 (FR-049)
    ------------------------------------------------------------------------- */
 
-test('VC-052 (FR-049): Tab reaches all nine targets, each with a visible ring', async ({ page }) => {
+test('VC-052 (FR-049): Tab reaches every target, each with a visible ring', async ({ page }) => {
   await openPlayground(page);
   await waitForPythonReady(page);
   await waitForLinter(page);
@@ -290,6 +350,11 @@ test('VC-052 (FR-049): Tab reaches all nine targets, each with a visible ring', 
   // among the targets, so the traversal is measured with one present.
   await setProgram(page, 'import os\nprint(undefined_name)\n');
   await expect.poll(() => diagnosticEntries(page)).not.toHaveLength(0);
+
+  // spec-03 amendment: the enumeration is taken with the pane **open**, which
+  // is the state in which it could add tab stops (BR-305, VC-315).
+  await page.getByRole('button', { name: 'Symbols' }).click();
+  await expect(page.locator('#symbol-pane')).toBeVisible();
 
   // Start from the very top of the document, as a fresh page load does.
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
@@ -305,7 +370,9 @@ test('VC-052 (FR-049): Tab reaches all nine targets, each with a visible ring', 
       const width = Number.parseFloat(style.outlineWidth || '0');
       const ring =
         style.outlineStyle !== 'none' && width >= 1 && style.outlineColor !== 'transparent';
-      const id = el.id
+      const id = el.classList.contains('symbol')
+        ? '.symbol'
+        : el.id
         ? `#${el.id}`
         : el.classList.contains('cm-content')
           ? '.cm-content'
@@ -316,24 +383,44 @@ test('VC-052 (FR-049): Tab reaches all nine targets, each with a visible ring', 
     });
 
   const seen = new Map<string, boolean>();
+  const sequence: string[] = [];
   for (let i = 0; i < 40; i++) {
     await page.keyboard.press('Tab');
     const { id, ring } = await focused();
+    if (id) sequence.push(id);
     if (id && !seen.has(id)) seen.set(id, ring);
   }
 
-  // FR-049's nine targets, in the order the document presents them.
+  // FR-049's targets, in the order the document presents them, as amended by
+  // spec-03: `Symbols` after `Reset`, then the pane as a single stop.
   const targets = [
     '#btn-run',
     '#btn-stop',
     '#btn-clear',
     '#btn-copy',
     '#btn-format',
+    '#btn-reset',
+    '#btn-symbols',
+    '.symbol',
     '.cm-content',
     '#stdin-input',
     '#btn-eof',
     '.diagnostic-entry',
   ];
+
+  // BR-305 / VC-315: 29 buttons, exactly one tab stop. Counted over one full
+  // cycle — the first pass over the document, before Tab wraps around.
+  const firstCycle = sequence.slice(0, sequence.indexOf('#btn-run', 1) + 1 || sequence.length);
+  expect(
+    firstCycle.filter((id) => id === '.symbol'),
+    `the pane contributed ${firstCycle.filter((id) => id === '.symbol').length} tab stops`,
+  ).toHaveLength(1);
+
+  // ...and in the amended order: `Symbols`, then the pane, then the editor.
+  const order = targets.map((t) => firstCycle.indexOf(t));
+  expect(order, `observed order: ${firstCycle.join(' -> ')}`).toEqual(
+    [...order].sort((a, b) => a - b),
+  );
 
   const unreachable = targets.filter((t) => !seen.has(t));
   expect(unreachable, `unreachable by Tab: ${unreachable.join(', ')}`).toEqual([]);

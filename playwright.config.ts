@@ -1,21 +1,29 @@
 import { existsSync } from 'node:fs';
 import { chromium, defineConfig, devices, firefox, webkit } from '@playwright/test';
 
-const PORT = 4173;
+/**
+ * The three servers occupy consecutive ports. `PW_PORT_BASE` shifts the whole
+ * block, so two checkouts of this repo — a git worktree and its main clone —
+ * can run the suite at the same time without one silently serving the other's
+ * build. Unset, the ports are the documented 4173 / 4174 / 4175.
+ */
+const PORT_BASE = Number(process.env.PW_PORT_BASE ?? 4173);
+
+const PORT = PORT_BASE;
 export const BASE_URL = `http://localhost:${PORT}`;
 
 /**
  * A second origin serving the same build without COOP/COEP, so VC-015 can
  * exercise FR-015's non-isolated state.
  */
-const PLAIN_PORT = 4174;
+const PLAIN_PORT = PORT_BASE + 1;
 export const PLAIN_BASE_URL = `http://localhost:${PLAIN_PORT}`;
 
 /**
  * A private copy of the same build, over which VC-063 can publish a second
  * deployment without disturbing the build the rest of the suite runs against.
  */
-const DEPLOY_PORT = 4175;
+const DEPLOY_PORT = PORT_BASE + 2;
 export const DEPLOY_BASE_URL = `http://localhost:${DEPLOY_PORT}`;
 
 /**

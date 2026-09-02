@@ -15,6 +15,7 @@ import {
   STATUS_OFFLINE_READY,
   STATUS_PYTHON_UNAVAILABLE,
   UPDATE_AVAILABLE,
+  COPIED_MS,
   formatFinished,
   formatLoading,
   formatReady,
@@ -31,6 +32,7 @@ import { STDIN_MAX_LINE } from './protocol';
 import { PyodideRuntime } from './runtime';
 import type { StdinMode } from './stdin-stream';
 import { STARTER_PROGRAM } from './starter';
+import { SymbolPane } from './symbol-pane';
 import { getLocalStorage, loadProgram, saveProgram } from './storage';
 
 const AUTOSAVE_UNAVAILABLE = 'Autosave unavailable — your code will not survive a reload';
@@ -38,7 +40,6 @@ const COPY_FAILED = "Couldn't copy — select the code and press Ctrl/Cmd+C";
 const RESET_CONFIRM = 'Discard your code?';
 /** FR-066 */
 const STDIN_TOO_LONG = `Input line too long (max ${STDIN_MAX_LINE} characters)`;
-const COPIED_MS = 2000;
 
 function need<T extends HTMLElement>(id: string): T {
   const el = document.getElementById(id);
@@ -98,6 +99,16 @@ function boot(): void {
         selectAll(view);
       }
     })();
+  });
+
+  // FR-301 – FR-318: the special-character pane. It is constructed here and
+  // never consulted again — nothing else in the playground depends on it, and
+  // it depends on nothing but its own three elements (BR-301).
+  new SymbolPane({
+    toggle: need<HTMLButtonElement>('btn-symbols'),
+    pane: need('symbol-pane'),
+    status: need('symbol-status'),
+    notices,
   });
 
   // FR-010: Reset.
