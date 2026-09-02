@@ -149,7 +149,7 @@ site has no server, no shared state and no operator.
 | **NFR-302** | Contrast of pane **text** — character glyphs, group headings, the FR-307 feedback text — in both light and dark palettes. Extends NFR-010 from spec-01. | ≥ 4.5:1 against its background (WCAG 2.1 SC 1.4.3, AA). |
 | **NFR-303** | Contrast of pane **non-text components** — button borders, the focus indicator of FR-309, the `data-state="copied"` highlight of FR-307, the pane's edge against the editor panel — in both palettes. Extends NFR-013 from spec-01. | ≥ 3:1 against adjacent colours (WCAG 2.1 SC 1.4.11, AA). |
 | **NFR-304** | Latency from activating `Symbols` to the pane being painted, and from activating a character button to `Copied V` being painted. | ≤ 100 ms each; no main-thread task longer than 100 ms is introduced (consistent with NFR-009 from spec-01). |
-| **NFR-305** | Bytes and requests this feature adds to a cold load, measured against the **baseline build of commit `8df7fa5`** (`npm run build`, same Node and Vite versions, gzip). | ≤ 4 KB gzipped added to the baseline total; **zero** additional network requests; **zero** new runtime assets. NFR-004's 15 MB budget from spec-01 is unchanged. |
+| **NFR-305** | Bytes and requests this feature adds to a cold load, measured against the **baseline build of commit `8df7fa5`** (`npm run build`, same Node and Vite versions, gzip). Bytes are counted over the app's own output — the shell, the JS/CSS chunks, the worker chunk, `sw.js`, `precache-manifest.json`; the vendored Pyodide and Ruff blobs are held to byte-identity by digest instead (VC-326), because they are 9 MB of the 9.2 MB cold load and gzip them ~152 KB apart on stock zlib and on zlib-ng, which would swamp a 4 KB budget with compressor noise. | ≤ 4 KB gzipped added to the baseline's app payload; **zero** additional network requests; **zero** new runtime assets. NFR-004's 15 MB budget from spec-01 is unchanged. |
 | **NFR-306** | Browser support, on the baseline pinned by NFR-011 from spec-01 (Chrome 141/140, Edge 141/140, Firefox 145/144, Safari 26.1/26.0). | Every Must-priority FR in this spec passes on each of the 8 versions. |
 
 ---
@@ -403,8 +403,12 @@ Implementation notes worth carrying forward:
 - **Firefox.** `.symbol` sets `user-select: text`: Firefox refuses to select
   content inside a `<button>` otherwise, which would have left FR-308's
   fallback advising an action the visitor could not perform. Found by VC-324.
-- **NFR-305.** The measured delta against `8df7fa5` is **2.16 KiB gzipped**,
-  against a 4 KiB budget, with no added or removed asset file.
+- **NFR-305.** The measured app-payload delta against `8df7fa5` is **2.18 KiB
+  gzipped** (1.08 KiB where Node links stock zlib rather than CI's zlib-ng),
+  against a 4 KiB budget, with no added or removed asset file. The vendored
+  megabytes are excluded from the delta and pinned by digest instead: the two
+  zlib flavours compress them 152 KB apart for byte-identical input, which is
+  noise 37× the budget.
 - **VC-324 on Chromium.** `clipboard-write` is granted per-context in the
   matrix spec; the pinned Chromium projects do not carry the default project's
   permissions, and that is Playwright's model rather than the app's.

@@ -203,15 +203,33 @@ interface BaselineBuild {
   manifestUrlCount: number;
   cacheNameScheme: string;
   vendored: Record<string, string>;
-  gzippedTotal: number;
+  gzippedApp: number;
+  gzippedVendored: number;
+  gzippedBy: string;
 }
 
 const baseline = JSON.parse(
   readFileSync(join(repoRoot, 'tests', 'e2e', 'baseline-build.json'), 'utf8'),
 ) as BaselineBuild;
 
-/** NFR-305: at most 4 KB gzipped on top of the baseline total. */
+/** NFR-305: at most 4 KB gzipped on top of the baseline's app payload. */
 const SIZE_BUDGET_BYTES = 4 * 1024;
+
+/**
+ * NFR-305 is measured over the app's own output only — `index.html`, the JS and
+ * CSS chunks, the worker chunk, `sw.js`, `precache-manifest.json` — and not
+ * over the vendored Pyodide and Ruff blobs.
+ *
+ * Those blobs are 9 MB of the 9.2 MB cold load, so including them would drown
+ * a 4 KB budget in compressor noise: `gzipSync` is only as reproducible as the
+ * zlib Node was linked against, and Node 26 ships stock zlib 1.2.12 on macOS
+ * but zlib-ng on linux-x64, which compress the vendored bytes 152 KB apart.
+ * Nothing about the app changed between those two numbers — so the vendored
+ * bytes are held to byte-identity by digest in VC-326 below, which is a
+ * stricter check than any size delta, and left out of this one.
+ */
+const isVendored = (url: string): boolean =>
+  url.startsWith('/pyodide/') || url.startsWith('/ruff/');
 
 /**
  * VC-326 allows exactly two filenames to change — Vite content-hashes the main
@@ -313,16 +331,19 @@ test('VC-323 (NFR-304, NFR-305): the pane is painted and copies within 100 ms, a
   const manifest = JSON.parse(readFileSync(join(dist, 'precache-manifest.json'), 'utf8')) as {
     urls: string[];
   };
-  let gzipped = 0;
+  let gzippedApp = 0;
   for (const url of [...manifest.urls, '/index.html']) {
     if (url === '/') continue; // the shell is counted once, as /index.html
-    gzipped += gzipSync(readFileSync(join(dist, url.replace(/^\//, ''))), { level: 9 }).length;
+    if (isVendored(url)) continue; // pinned by digest in VC-326 instead
+    gzippedApp += gzipSync(readFileSync(join(dist, url.replace(/^\//, ''))), { level: 9 }).length;
   }
 
-  const delta = gzipped - baseline.gzippedTotal;
+  const delta = gzippedApp - baseline.gzippedApp;
   expect(
     delta,
-    `NFR-305 size delta vs ${baseline.commit}: ${delta} B gzipped (budget ${SIZE_BUDGET_BYTES} B)`,
+    `NFR-305 app size delta vs ${baseline.commit}: ${delta} B gzipped ` +
+      `(budget ${SIZE_BUDGET_BYTES} B; baseline gzipped by ${baseline.gzippedBy}, ` +
+      `here by ${process.platform}-${process.arch} zlib ${process.versions.zlib})`,
   ).toBeLessThanOrEqual(SIZE_BUDGET_BYTES);
 
   console.log(
@@ -331,7 +352,7 @@ test('VC-323 (NFR-304, NFR-305): the pane is painted and copies within 100 ms, a
       `  NFR-304 Symbols -> pane painted   ${openMs.toFixed(0)} ms   (<= 100)`,
       `  NFR-304 click -> "Copied #"       ${copyMs.toFixed(0)} ms   (<= 100)`,
       `  NFR-304 longest task              ${Math.max(0, ...longTasks).toFixed(0)} ms   (<= 100)`,
-      `  NFR-305 size delta vs ${baseline.commit}     ${(delta / 1024).toFixed(2)} KiB (<= 4.00)`,
+      `  NFR-305 app size delta vs ${baseline.commit} ${(delta / 1024).toFixed(2)} KiB (<= 4.00)`,
     ].join('\n'),
   );
 });
