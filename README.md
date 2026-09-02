@@ -96,7 +96,16 @@ npx vitest run         # unit tests (pure logic, jsdom)
 npx playwright test    # browser verification criteria against the built dist/
 npm run audit:perf     # VC-053 performance thresholds + the 15 MB budget
 npm run audit:contrast # VC-051 / VC-071 contrast, light and dark
-npm run test:matrix    # VC-055, the pinned browser matrix
+npm run test:matrix    # VC-055 + VC-432, the pinned browser matrix
+```
+
+Two environment variables re-run the suites in a different configuration,
+which is how the child specs verify that they changed nothing:
+
+```bash
+PANE_OPEN=1                   npx playwright test   # spec-03 VC-327
+PYPLAY_LAYOUT_PREF=vertical   npx playwright test   # spec-04 VC-433
+PYPLAY_LAYOUT_PREF=horizontal npx playwright test   # spec-04 VC-433
 ```
 
 ## Continuous integration
@@ -168,7 +177,20 @@ repository settings that live outside this repository:
 | `Shift` + `Alt` + `F` | Format (from the editor) |
 | `Enter` in the input field | Submit a line to the running program |
 | `Ctrl` + `D` in the input field | Send EOF |
-| `Tab` | Move to the next control — including Run, Stop, Clear console, Copy code, Format, the editor, the input field, Send EOF and the diagnostics entries |
+| `Tab` | Move to the next control — including Run, Stop, Clear console, Copy code, Format, Reset, the layout control, Symbols, the editor, the input field, Send EOF and the diagnostics entries |
+| `←` `→` `↑` `↓` in the layout control | Select the other layout — and apply it |
+| `Home` / `End` in the layout control | Select `Vertical` / `Horizontal` |
 
 `Tab` is deliberately **not** bound to indentation inside the editor: that
 would trap the tab sequence and break keyboard traversal of the page.
+
+The **layout control** is one tab stop, not two: `Tab` lands on whichever of
+`Vertical` / `Horizontal` is currently selected, and the arrow keys move
+between them — the same model the Symbols pane uses. Your choice is remembered
+on this browser.
+
+Below a **900 px** window width the vertical layout is the only layout, and the
+control is shown disabled with the reason attached — two columns at phone width
+leave neither one wide enough to read code or a traceback in. Your choice is
+not discarded: widen the window and the horizontal layout comes back without
+you re-selecting it.

@@ -893,19 +893,26 @@ test.describe('wide layout keyboard model', () => {
           if (!el || el === document.body) return '';
           if (el.classList.contains('symbol')) return 'pane';
           if (el.classList.contains('cm-content')) return 'editor';
+          // spec-04 FR-405: the layout radiogroup is one tab stop, whichever
+          // of its two radios currently holds the roving `tabindex="0"`.
+          if (el.closest('#layout-group')) return 'layout';
           return el.id ? `#${el.id}` : el.tagName.toLowerCase();
         }),
       );
     }
 
     expect(visited.filter((id) => id === 'pane')).toHaveLength(1);
-    expect(visited.slice(0, 9)).toEqual([
+    // spec-04 VC-407: and the layout group likewise contributes exactly one.
+    expect(visited.filter((id) => id === 'layout')).toHaveLength(1);
+    expect(visited.slice(0, 10)).toEqual([
       '#btn-run',
       '#btn-stop',
       '#btn-clear',
       '#btn-copy',
       '#btn-format',
       '#btn-reset',
+      // spec-04 FR-401: immediately after `Reset`, before `Symbols`.
+      'layout',
       '#btn-symbols',
       'pane',
       'editor',
@@ -1124,8 +1131,21 @@ test('VC-320 (FR-312, BR-304): opening and copying persists nothing, and a reloa
   await typeProgram(page, 'print("hi")');
   await expect.poll(() => storedProgram(page)).toBe('print("hi")');
 
+  /*
+   * The keys that may legitimately be present: FR-002's autosave, and — under
+   * a spec-04 VC-433 run, which loads the parent suites with the layout
+   * preference pre-seeded — spec-04's `pyplay.layout.v1`. Neither is the
+   * pane's; what VC-320 asserts is that *the pane* writes nothing, which is
+   * the unchanged-snapshot comparisons below, plus the absence of any key
+   * outside this set.
+   */
+  const ALLOWED_KEYS = ['pyplay.layout.v1', 'pyplay.program.v1'];
+  const unexpectedKeys = (snapshot: { local: Record<string, string> }): string[] =>
+    Object.keys(snapshot.local).filter((key) => !ALLOWED_KEYS.includes(key));
+
   const before = await storageSnapshot(page);
-  expect(Object.keys(before.local)).toEqual(['pyplay.program.v1']);
+  expect(Object.keys(before.local)).toContain('pyplay.program.v1');
+  expect(unexpectedKeys(before)).toEqual([]);
 
   await openSymbolPane(page);
   await symbolButton(page, '_').click();
@@ -1139,5 +1159,5 @@ test('VC-320 (FR-312, BR-304): opening and copying persists nothing, and a reloa
   await expect(page.locator('#symbol-pane')).toBeHidden();
   await expect(page.locator('#btn-symbols')).toHaveAttribute('aria-expanded', 'false');
   expect(await storageSnapshot(page)).toEqual(before);
-  expect(Object.keys((await storageSnapshot(page)).local)).toEqual(['pyplay.program.v1']);
+  expect(unexpectedKeys(await storageSnapshot(page))).toEqual([]);
 });

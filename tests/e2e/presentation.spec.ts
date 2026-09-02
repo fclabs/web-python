@@ -34,6 +34,10 @@ const CONTROLS = [
   '#btn-copy',
   '#btn-format',
   '#btn-reset',
+  // spec-04 FR-401 / NFR-401: the layout control, amending VC-050. Its
+  // three preference states are exercised by VC-427.
+  '#layout-vertical',
+  '#layout-horizontal',
   // spec-03 FR-301: the pane's toggle is a toolbar control like any other.
   '#btn-symbols',
   '.cm-content',
@@ -210,6 +214,21 @@ const TEXT_SAMPLES: Sample[] = [
   { label: 'symbol group heading', selector: '#symbol-pane .symbol-group-title', prop: 'color' },
   { label: 'symbol copy feedback', selector: '#symbol-status', prop: 'color' },
   { label: 'copied-state glyph', selector: '#symbol-pane .symbol[data-state="copied"]', prop: 'color' },
+  /*
+   * spec-04 NFR-402, amending VC-051: both layout radio labels, checked and
+   * unchecked. The disabled rendering only exists below 900 px, so VC-428
+   * samples that one — see `tests/e2e/layout.spec.ts`.
+   */
+  {
+    label: 'layout radio label (checked)',
+    selector: '#layout-group [role="radio"][aria-checked="true"]',
+    prop: 'color',
+  },
+  {
+    label: 'layout radio label (unchecked)',
+    selector: '#layout-group [role="radio"][aria-checked="false"]',
+    prop: 'color',
+  },
 ];
 
 /** Every non-text component NFR-013 lists. */
@@ -258,6 +277,28 @@ const NON_TEXT_SAMPLES: Sample[] = [
   {
     label: 'focus ring (symbol button)',
     selector: '#symbol-pane .symbol:not([data-state])',
+    prop: 'outlineColor',
+    focus: true,
+  },
+  /*
+   * spec-04 NFR-403, amending VC-071: the segment border, the checked-state
+   * indicator and the focus ring. The disabled border and the horizontal
+   * layout's column edge only exist in renderings this test does not produce,
+   * so VC-428 samples those — see `tests/e2e/layout.spec.ts`.
+   */
+  {
+    label: 'layout segment border',
+    selector: '#layout-group [role="radio"][aria-checked="false"]',
+    prop: 'borderTopColor',
+  },
+  {
+    label: 'layout checked indicator',
+    selector: '#layout-group [role="radio"][aria-checked="true"]',
+    prop: 'backgroundColor',
+  },
+  {
+    label: 'focus ring (layout radio)',
+    selector: '#layout-group [role="radio"][aria-checked="true"]',
     prop: 'outlineColor',
     focus: true,
   },
@@ -370,7 +411,9 @@ test('VC-052 (FR-049): Tab reaches every target, each with a visible ring', asyn
       const width = Number.parseFloat(style.outlineWidth || '0');
       const ring =
         style.outlineStyle !== 'none' && width >= 1 && style.outlineColor !== 'transparent';
-      const id = el.classList.contains('symbol')
+      const id = el.closest('#layout-group')
+        ? '#layout-group'
+        : el.classList.contains('symbol')
         ? '.symbol'
         : el.id
         ? `#${el.id}`
@@ -393,6 +436,8 @@ test('VC-052 (FR-049): Tab reaches every target, each with a visible ring', asyn
 
   // FR-049's targets, in the order the document presents them, as amended by
   // spec-03: `Symbols` after `Reset`, then the pane as a single stop.
+  // spec-04 FR-405: `#layout-group` contributes exactly one stop, immediately
+  // after `Reset` and before `Symbols`.
   const targets = [
     '#btn-run',
     '#btn-stop',
@@ -400,6 +445,7 @@ test('VC-052 (FR-049): Tab reaches every target, each with a visible ring', asyn
     '#btn-copy',
     '#btn-format',
     '#btn-reset',
+    '#layout-group',
     '#btn-symbols',
     '.symbol',
     '.cm-content',
@@ -414,6 +460,14 @@ test('VC-052 (FR-049): Tab reaches every target, each with a visible ring', asyn
   expect(
     firstCycle.filter((id) => id === '.symbol'),
     `the pane contributed ${firstCycle.filter((id) => id === '.symbol').length} tab stops`,
+  ).toHaveLength(1);
+
+  // spec-04 FR-405 / VC-407, amending VC-052: two radios, one tab stop.
+  expect(
+    firstCycle.filter((id) => id === '#layout-group'),
+    `the layout group contributed ${
+      firstCycle.filter((id) => id === '#layout-group').length
+    } tab stops`,
   ).toHaveLength(1);
 
   // ...and in the amended order: `Symbols`, then the pane, then the editor.

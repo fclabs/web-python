@@ -52,7 +52,7 @@ async function openAtLayout(page: Page, layout: Layout): Promise<void> {
       /* not this suite's subject */
     }
   }, layout);
-  await openPlayground(page);
+  await openPlayground(page, { seedLayout: false });
   await expect
     .poll(() => page.evaluate(() => document.getElementById('app')?.dataset.layout))
     .toBe(layout);

@@ -282,3 +282,220 @@ test('VC-324 (NFR-306): the special-character pane on this browser', async ({
 
   info.annotations.push({ type: 'browser', description: `${info.project.name}` });
 });
+
+/* -------------------------------------------------------------------------
+   spec-04 — VC-432 (NFR-406)
+   ------------------------------------------------------------------------- */
+
+/**
+ * NFR-406 asks that every Must-priority FR of spec-04 pass on each of the 8
+ * pinned versions, and VC-432 names the seven criteria that carry them:
+ * VC-403, VC-409, VC-413, VC-414, VC-416, VC-420 and VC-427.
+ *
+ * They are re-asserted here rather than grepped out of `layout.spec.ts`,
+ * because `playwright.config.ts` gives the matrix projects `testMatch:
+ * /matrix\.spec\.ts$/` — this file is the only one they run, which is what
+ * keeps a plain `npx playwright test` from running every spec twice. Each
+ * block below is the same assertion as its named criterion, condensed to what
+ * distinguishes one engine from another.
+ */
+test('VC-432 (NFR-406): the layout control on this browser', async ({ page }, info) => {
+  test.setTimeout(120_000);
+
+  const layoutOf = (): Promise<string | undefined> =>
+    page.evaluate(() => document.getElementById('app')?.dataset.layout);
+  const storedLayout = (): Promise<string | null> =>
+    page.evaluate(() => window.localStorage.getItem('pyplay.layout.v1'));
+  const checkedRadio = (): Promise<string | undefined> =>
+    page.evaluate(
+      () =>
+        (
+          document.querySelector('#layout-group [role="radio"][aria-checked="true"]') as
+            | HTMLElement
+            | undefined
+        )?.id,
+    );
+
+  // --- VC-416 (FR-416): resolved in the first painted frame ---------------
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.addInitScript(() => {
+    try {
+      window.localStorage.setItem('pyplay.layout.v1', 'vertical');
+    } catch {
+      /* VC-418's subject, not this one's */
+    }
+    const state = { firstFrame: null as string | null };
+    (window as unknown as { __firstFrame: typeof state }).__firstFrame = state;
+    const start = (): void => {
+      requestAnimationFrame(() => {
+        state.firstFrame = document.getElementById('app')?.dataset.layout ?? null;
+      });
+    };
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
+    else start();
+  });
+  await page.goto('/');
+  await page.waitForSelector('.cm-content');
+  await waitForPythonReady(page);
+
+  expect(
+    await page.evaluate(
+      () => (window as unknown as { __firstFrame: { firstFrame: string | null } }).__firstFrame.firstFrame,
+    ),
+    'VC-416: the first painted frame already carries the resolved layout',
+  ).toBe('vertical');
+
+  // --- VC-403 (FR-403, FR-414): selecting applies and persists ------------
+  await page.locator('#layout-horizontal').click();
+  expect(await layoutOf(), 'VC-403: applied').toBe('horizontal');
+  expect(await checkedRadio(), 'VC-403: checked').toBe('layout-horizontal');
+  expect(await storedLayout(), 'VC-403: persisted as a bare string').toBe('horizontal');
+
+  // --- VC-409 (FR-408, BR-407): the two-column geometry -------------------
+  const columns = await page.evaluate(() => {
+    const box = (selector: string): DOMRect =>
+      (document.querySelector(selector) as HTMLElement).getBoundingClientRect();
+    const editor = box('.panel--editor');
+    const app = document.getElementById('app') as HTMLElement;
+    const style = getComputedStyle(app);
+    const content =
+      app.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+    return {
+      editorRight: editor.right,
+      editorTop: editor.top,
+      editorBottom: editor.bottom,
+      consoleLeft: box('.panel--console').left,
+      consoleTop: box('.panel--console').top,
+      stdinLeft: box('.panel--stdin').left,
+      diagLeft: box('.panel--diagnostics').left,
+      diagBottom: box('.panel--diagnostics').bottom,
+      share: (editor.right - editor.left) / content,
+      scrollWidth: document.documentElement.scrollWidth,
+      innerWidth: window.innerWidth,
+    };
+  });
+  expect(columns.editorRight, 'VC-409: the editor ends before the right column').toBeLessThanOrEqual(
+    columns.consoleLeft,
+  );
+  expect(columns.stdinLeft, 'VC-409: shared inline-start edge').toBeCloseTo(columns.consoleLeft, 0);
+  expect(columns.diagLeft, 'VC-409: shared inline-start edge').toBeCloseTo(columns.consoleLeft, 0);
+  expect(columns.editorTop, 'VC-409: the editor spans the split').toBeCloseTo(columns.consoleTop, 0);
+  expect(columns.editorBottom, 'VC-409: the editor spans the split').toBeCloseTo(
+    columns.diagBottom,
+    0,
+  );
+  // FR-409's 50–65 % band, which `LAYOUT_EDITOR_COLUMN` sits inside at 58 %.
+  expect(columns.share, 'VC-409: the editor column share').toBeGreaterThanOrEqual(0.5);
+  expect(columns.share, 'VC-409: the editor column share').toBeLessThanOrEqual(0.65);
+  expect(columns.scrollWidth).toBeLessThanOrEqual(columns.innerWidth);
+
+  // --- VC-420 (FR-419): the editor survives a switch ----------------------
+  await setProgram(page, 'value = 1\nother = 2\nprint(value, other)\n');
+  await page.evaluate(() => {
+    const content = document.querySelector('.cm-content') as
+      | (HTMLElement & { cmView?: { view: unknown }; cmTile?: { view: unknown } })
+      | null;
+    const view = (content?.cmTile?.view ?? content?.cmView?.view) as
+      | { dispatch(spec: unknown): void }
+      | undefined;
+    view!.dispatch({ selection: { anchor: 6, head: 9 } });
+    (window as unknown as { __view: unknown }).__view = view;
+  });
+  const editorBefore = await page.evaluate(() => {
+    const content = document.querySelector('.cm-content') as
+      | (HTMLElement & { cmView?: { view: unknown }; cmTile?: { view: unknown } })
+      | null;
+    const view = (content?.cmTile?.view ?? content?.cmView?.view) as
+      | {
+          state: { doc: { toString(): string }; selection: { main: { from: number; to: number } } };
+        }
+      | undefined;
+    return {
+      doc: view!.state.doc.toString(),
+      from: view!.state.selection.main.from,
+      to: view!.state.selection.main.to,
+    };
+  });
+
+  await page.locator('#layout-vertical').click();
+  expect(await layoutOf()).toBe('vertical');
+  await page.locator('#layout-horizontal').click();
+  expect(await layoutOf()).toBe('horizontal');
+
+  const editorAfter = await page.evaluate(() => {
+    const content = document.querySelector('.cm-content') as
+      | (HTMLElement & { cmView?: { view: unknown }; cmTile?: { view: unknown } })
+      | null;
+    const view = (content?.cmTile?.view ?? content?.cmView?.view) as
+      | {
+          state: { doc: { toString(): string }; selection: { main: { from: number; to: number } } };
+        }
+      | undefined;
+    return {
+      doc: view!.state.doc.toString(),
+      from: view!.state.selection.main.from,
+      to: view!.state.selection.main.to,
+      sameView: (window as unknown as { __view: unknown }).__view === view,
+    };
+  });
+  expect(editorAfter.doc, 'VC-420: the document').toBe(editorBefore.doc);
+  expect(editorAfter.from, 'VC-420: the selection').toBe(editorBefore.from);
+  expect(editorAfter.to, 'VC-420: the selection').toBe(editorBefore.to);
+  expect(editorAfter.sameView, 'VC-420: the same EditorView instance').toBe(true);
+
+  // --- VC-413 (FR-413, BR-404): the narrow override, non-destructively ----
+  await page.setViewportSize({ width: 375, height: 667 });
+  await expect.poll(layoutOf, { timeout: 2_000 }).toBe('vertical');
+  expect(await storedLayout(), 'VC-413: the stored choice is untouched').toBe('horizontal');
+  expect(
+    await page.evaluate(() => document.documentElement.scrollWidth),
+    'VC-413: no horizontal scroll at 375 px',
+  ).toBeLessThanOrEqual(375);
+
+  // --- VC-414 (FR-415): inert but focusable, every interaction a no-op ----
+  await expect(page.locator('#layout-group')).toHaveAttribute('aria-disabled', 'true');
+  expect(
+    await page.locator('#layout-horizontal').evaluate((el) => el.hasAttribute('disabled')),
+    'VC-414: `aria-disabled`, never the `disabled` attribute',
+  ).toBe(false);
+  await page.locator('#layout-vertical').focus();
+  for (const key of ['ArrowRight', 'ArrowDown', 'Home', 'End', 'Space', 'Enter'] as const) {
+    await page.keyboard.press(key);
+    expect(await layoutOf(), `VC-414: ${key} did not apply`).toBe('vertical');
+    expect(await checkedRadio(), `VC-414: ${key} did not check`).toBe('layout-vertical');
+    expect(await storedLayout(), `VC-414: ${key} did not write`).toBe('horizontal');
+  }
+  await page.locator('#layout-horizontal').click({ force: true });
+  expect(await layoutOf(), 'VC-414: a pointer click did not apply').toBe('vertical');
+  expect(await storedLayout(), 'VC-414: a pointer click did not write').toBe('horizontal');
+
+  // --- VC-427 (NFR-401): 375 px is usable and the radios are big enough ---
+  const narrow = await page.evaluate(() => {
+    const boxes = ['#layout-vertical', '#layout-horizontal'].map((selector) => {
+      const box = (document.querySelector(selector) as HTMLElement).getBoundingClientRect();
+      return Math.min(box.width, box.height);
+    });
+    const unclipped = [
+      '.toolbar',
+      '#status-bar',
+      '.panel--console',
+      '.panel--editor',
+      '#stdin-input',
+      '#btn-eof',
+      '.panel--diagnostics',
+    ].every((selector) => {
+      const box = (document.querySelector(selector) as HTMLElement).getBoundingClientRect();
+      return box.width > 0 && box.height > 0 && box.left >= -1 && box.right <= window.innerWidth + 1;
+    });
+    return { smallest: Math.min(...boxes), unclipped, scrollWidth: document.documentElement.scrollWidth };
+  });
+  expect(narrow.smallest, 'VC-427: each radio is at least 32 x 32 px').toBeGreaterThanOrEqual(32);
+  expect(narrow.unclipped, 'VC-427: nothing is clipped').toBe(true);
+  expect(narrow.scrollWidth).toBeLessThanOrEqual(375);
+
+  // --- VC-413's last clause: widening restores it with no interaction -----
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await expect.poll(layoutOf, { timeout: 2_000 }).toBe('horizontal');
+
+  info.annotations.push({ type: 'browser', description: `${info.project.name}` });
+});

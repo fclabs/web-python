@@ -668,10 +668,19 @@ body {
   cursor: not-allowed;
 }
 
+/*
+ * NFR-403: the indicator survives the disabled rendering as a border rather
+ * than a fill — an `--accent` fill would read as an active control at a width
+ * where FR-415 has made it inert. It has to be a *border*, not a
+ * `box-shadow`: the contrast harness samples computed colour properties, and
+ * a shadow is not one, so an indicator drawn as a shadow would be an
+ * indicator no criterion could measure. `--fg-muted` on `--disabled-bg`
+ * clears 3:1 in both palettes.
+ */
 .segmented[aria-disabled='true'] .segment[aria-checked='true'] {
-  /* NFR-403: the indicator survives the disabled rendering as a border rather
-     than a fill, so it stays >= 3:1 against the disabled surface. */
-  box-shadow: inset 0 0 0 2px var(--disabled-border);
+  border-color: var(--fg-muted);
+  /* Above its neighbour's border, so the indicator is a closed outline. */
+  position: relative;
 }
 
 /* Horizontal / vertical pane layout (spec-04: FR-407 – FR-409, FR-425) ---- */

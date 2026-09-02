@@ -17,12 +17,15 @@ src/                       application code (TypeScript, no framework)
   offline.ts               service-worker registration and status wiring
   symbols.ts               the 29-row special-character set (spec-03)
   symbol-pane.ts           the special-character pane: layout, keys, feedback
+  layout.ts                the horizontal/vertical layout resolver (spec-04)
 scripts/                   build-time and test-time tooling
   precache.mjs             manifest + service-worker generation (shared)
   sw-template.js           the single service worker's source
   serve-plain.mjs          a non-isolated origin, for VC-015
   serve-deploy.mjs         a second deployment, for VC-063
   derive-version.mjs       the release bump derivation (pure; unit-tested)
+  record-baseline-build.mjs    pins a build's shape and size (VC-326, VC-429)
+  record-baseline-geometry.mjs pins the vertical layout's geometry (VC-408)
 tests/unit/                Vitest units
 tests/e2e/                 Playwright specs, one test per Verification Criterion
 docs/                      deployment, architecture and CI references
@@ -99,6 +102,52 @@ The excluded criteria are spec-03's own, plus the four parent criteria it
 amends — all of which already run with the pane open in the first
 configuration.
 
+spec-04's **VC-433** does the same for the layout: the parent suites run three
+times, with the preference unset, `vertical` and `horizontal`, because the
+layout is presentation only (BR-401) and every criterion must hold in both
+renderings. `PYPLAY_LAYOUT_PREF` selects the run, and `openPlayground()` is
+again the only place that reads it:
+
+```bash
+npx playwright test                                   # unset: FR-411 resolves from the width
+PYPLAY_LAYOUT_PREF=vertical   npx playwright test
+PYPLAY_LAYOUT_PREF=horizontal npx playwright test
+```
+
+spec-04's own suites (`layout.spec.ts`, `layout-state.spec.ts`) seed the
+preference themselves and opt out with `openPlayground(page, { seedLayout:
+false })`, so the environment cannot overwrite the value they are asserting on.
+
+### Re-recording the pinned baselines
+
+Two criteria compare a build against a named commit, and both read a committed
+fixture rather than re-measuring the baseline on every run:
+
+| Fixture | Criterion | Pinned commit |
+|---|---|---|
+| `tests/e2e/baseline-build.json` | VC-323 / VC-326 (spec-03, ≤ 4 KB) | `8df7fa5` |
+| `tests/e2e/baseline-build-spec04.json` | VC-429 (spec-04, ≤ 2 KB) | `0a4194f` |
+| `tests/e2e/baseline-geometry.json` | VC-408 (spec-04, ±1 px) | `384cb70` |
+
+Regenerate one only when a spec pins a new baseline commit:
+
+```bash
+git worktree add ../baseline <commit>
+(cd ../baseline && npm ci && npm run build)
+
+# Build shape and compressed size. `gzipSync` is only as reproducible as the
+# zlib Node was linked against, so record it under the same compressor the
+# comparison will run under — the spec-04 record holds one entry per
+# compressor and the test skips, rather than passing, on an unrecorded one.
+(cd ../baseline && node scripts/record-baseline-build.mjs dist out.json <commit>)
+
+# Rendered geometry. `vite preview` must serve it: without the COOP/COEP
+# headers the COI banner is painted and every panel below it shifts.
+(cd ../baseline && npx vite preview --port 4873 --strictPort &)
+node scripts/record-baseline-geometry.mjs http://localhost:4873 \
+  tests/e2e/baseline-geometry.json <commit>
+```
+
 Service workers are **blocked** by default (`use.serviceWorkers: 'block'`) so a
 cache-first worker cannot mask the deliberately-404ed assets of VC-014 and
 VC-049, and VC-015 can observe the page "with the service worker
@@ -122,7 +171,7 @@ npm run audit:contrast     # VC-051 (text >= 4.5:1) and VC-071 (non-text >= 3:1)
 samples `getComputedStyle` on the rendered page in both palettes, so a token
 that is defined but never applied cannot make a sample pass.
 
-### The browser matrix (VC-055, NFR-011)
+### The browser matrix (VC-055, VC-432, NFR-011)
 
 ```bash
 npm run test:matrix
@@ -134,7 +183,9 @@ npx playwright test --project=chrome-141 --project=chrome-140 \
 ```
 
 Those eight projects run `tests/e2e/matrix.spec.ts` only; the default
-`chromium` project runs everything else. The matrix is **opt-in** via `MATRIX=1`
+`chromium` project runs everything else. That is why the criteria spec-03's
+VC-324 and spec-04's VC-432 cover are re-asserted in that file rather than
+grepped out of their own specs. The matrix is **opt-in** via `MATRIX=1`
 (which `npm run test:matrix` sets, along with `--workers=1`): VC-024's NFR-014
 budget is a *reference-profile* wall-clock measurement, and six browser engines
 running concurrently is not that profile. Without the flag the matrix projects

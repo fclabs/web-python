@@ -370,20 +370,116 @@ why. `VC-325` greps the compiled set for exactly those code points.
 
 ---
 
+## Horizontal / vertical layout
+
+Spec-04 adds one switch and nothing else: **`#app[data-layout]`**, set to
+`vertical` or `horizontal`. Everything the visitor sees follows from that one
+attribute and the CSS keyed off it. No class is toggled, no element is moved,
+and the worker is never told the layout exists (BR-401).
+
+`src/layout.ts` holds the whole decision as three pure functions, so FR-411's
+rule and FR-417's tolerance for junk in storage are unit-testable without a
+DOM. The rule itself is one line: **`vertical` below 900 px, otherwise the
+stored preference, otherwise `horizontal`.** Nothing else may set
+`data-layout`.
+
+### The breakpoint lives twice, and must be changed twice
+
+`LAYOUT_MIN_WIDTH` (900) is evaluated on the main thread as
+`matchMedia('(min-width: 900px)')` and mirrored by a single
+`@media (min-width: 900px)` guard in `styles.css`. The mirror is the point: the
+CSS *cannot* paint two columns that the resolver did not choose, because the
+two-column rules only exist inside the same query the resolver consults. This
+is the same discipline spec-03 applies to its own 700 px pane breakpoint, and
+it has the same obligation — change one and you must change the other.
+
+Re-resolution is subscribed to the `matchMedia` `change` event and runs
+synchronously in the handler. There is deliberately **no `resize` listener and
+no debounce**: `change` fires once per crossing rather than once per pixel, so
+the cheap thing is also the correct thing (FR-412). A resize never writes to
+storage, which is what lets an unset preference track the viewport while a
+chosen one stays sticky (BR-405).
+
+### Document order is fixed, and that is load-bearing
+
+Both layouts render the same DOM in the same order — console, editor, stdin,
+diagnostics — and the columns are produced by `grid-template-areas` placement
+only (FR-410, BR-402). Two separate things depend on this:
+
+- **CodeMirror.** Re-parenting the editor element forces a re-measure and drops
+  focus and selection, which would break FR-419 outright. Because the element
+  never moves, a switch costs one repaint and the `EditorView` is the same
+  object afterwards — `VC-420` asserts object identity, not just equal state.
+- **WCAG SC 2.4.3.** A fixed document order means sequential focus order is
+  *identical* in both layouts, so switching cannot reorder the tab sequence.
+  That is only safe because **the console panel contains no focusable element**
+  (BR-407): focus visits the left column and then the right column top to
+  bottom, matching the visual reading order both ways. Any future change that
+  puts a tab stop inside the console has to re-verify SC 2.4.3 against this.
+
+The grid is shared with spec-03's pane, not competing with it. `.app` has two
+grid definitions, kept mutually exclusive by selector: spec-03's
+`.app:not([data-layout='horizontal']):has(#symbol-pane:not([hidden])))` and
+spec-04's `#app[data-layout='horizontal']`. The pane keeps its full-height
+inline-end column in *both* layouts. The `:not()` also matches when the
+attribute is absent, so a JavaScript failure leaves spec-03 rendering exactly
+as it shipped.
+
+### The diagnostics cap is a track, not a percentage
+
+In the vertical layout the diagnostics panel keeps its `max-height: 25vh`. In
+the right column FR-409 caps it at 40 % *of the right column*, which no
+percentage can express: a percentage `max-height` on a grid item resolves
+against its own track, which is circular. So the cap is the track —
+`minmax(0, 0.66fr)` gives the row 0.66/1.66 = 39.8 % of the free space the
+console and diagnostics share, which is below 40 % of the whole right column
+at every viewport height, with the console holding FR-409's 80 px floor via
+`minmax(80px, 1fr)`.
+
+### The control
+
+`#layout-group` is a `role="radiogroup"` with two `role="radio"` buttons and a
+roving `tabindex` — the same single-tab-stop model spec-03 uses for the pane
+and spec-01 for the diagnostics panel. `aria-checked` always reflects the
+**effective** layout, never a stored preference the narrow override is
+currently masking (FR-402).
+
+Below 900 px the group is inert via `setInert()` — `aria-disabled`, never the
+`disabled` attribute, so it stays in the tab order (see *Inert controls*
+above) — and every activation and navigation path returns early, making FR-415
+a strict no-op rather than a series of guarded special cases.
+
+It sits immediately after `#btn-reset` and *before* `#btn-symbols`. Spec-04's
+DOM contract also called it the toolbar's last child, but spec-03 had already
+shipped `Symbols` in that slot (VC-301); FR-401's own Given/When/Then says
+"immediately after `#btn-reset`", which is what ships. Recorded as an amendment
+in `specs/04-toogle-pane-aspect.md`.
+
+---
+
 ## Storage surface
 
-The origin holds exactly two things, and nothing else — no cookies, no
+The origin holds exactly three things, and nothing else — no cookies, no
 IndexedDB, no `sessionStorage`:
 
 | Store | Key | Contents |
 |---|---|---|
 | `localStorage` | `pyplay.program.v1` | the exact editor contents, UTF-8, no wrapper |
+| `localStorage` | `pyplay.layout.v1` | exactly `vertical` or `horizontal` — a bare string from a two-value enum, no JSON, no wrapper, no whitespace |
 | Cache Storage | `pyplay-assets-v<build>` | the precached static assets; older buckets are deleted on activation |
 
 Autosave is debounced 500 ms and additionally flushed **synchronously** on
 `pagehide` and on `visibilitychange → hidden`, so a fast navigation away can
 never persist a half-typed prefix. A rejected write (quota, private browsing,
 storage disabled) shows one notice per page load and changes nothing else.
+
+`pyplay.layout.v1` is written **synchronously on selection** — there is nothing
+to debounce, and a layout choice that survived only if the visitor waited half
+a second would be a bug. Because it is a two-value enum it needs no schema, so
+`v1` will only ever be superseded, never migrated: anything that is not exactly
+one of the two literals is treated as absent and **left in place**, never
+rewritten (FR-417). A rejected write shows one notice per page load and still
+applies the layout for the session (FR-418, BR-406).
 
 ---
 

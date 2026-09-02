@@ -2,9 +2,9 @@
 
 | Field | Value |
 |---|---|
-| Version | 1.0.0 |
+| Version | 1.1.0 |
 | Last Updated | 2026-09-02 |
-| Status | **READY** — not yet implemented |
+| Status | **SHIPPED** — see *Amendments applied during implementation* |
 | Owner | Federico Castañeda |
 | Parent spec | `specs/01-static-python-web-frozen.md` (SHIPPED) |
 | Source issue | [fclabs/web-python#2](https://github.com/fclabs/web-python/issues/2) — *Allow user to choose horizontal or vertical pane layout* |
@@ -405,8 +405,41 @@ None. All decisions are folded into the sections above.
 
 ---
 
+## Amendments applied during implementation
+
+This spec was written assuming `specs/03-vertical-pane.md` had **not** merged
+(A-406, *Relationship to spec 03*). It had: `0a4194f` landed the
+special-character pane on `main` before this branch's first commit. Five of the
+six amendments below follow from that, and one from a conflict internal to this
+spec. Each was applied where the criterion lives, and each is asserted in the
+suite in its amended form — none was dropped.
+
+| # | Criterion | Amendment and why |
+|---|---|---|
+| 1 | **FR-401 / VC-401**, *DOM contract* | `#layout-group` is the toolbar child **immediately after `#btn-reset`**, and is followed by `#btn-symbols`. The DOM contract also called it "last child of `header.toolbar`"; spec-03's shipped VC-301 requires the toolbar's *last* control to read `Symbols`, and both cannot hold. FR-401's own Given/When/Then says "immediately after `#btn-reset`", which is what ships — so this spec's parenthetical is amended and spec-03 is untouched. VC-401 asserts adjacency to `#btn-reset`. |
+| 2 | **FR-407 / VC-408** | The ±1 px comparison against `384cb70` is asserted over the panels' **inline extents, document order, flex declarations, minimum heights and the `25vh` cap** — plus the assertion that the header block's height is the *only* difference, and that the panel column lost exactly the height the toolbar gained. FR-401 adds a toolbar control and FR-407 protects the panels below it; at 375 px the toolbar wraps, so their absolute page coordinates cannot both hold under *any* implementation of FR-401. The declarations are what FR-407 names, and they are unchanged. (At 1280 px the delta is a single pixel: NFR-401's 32 px hit area against a `.btn`'s 31 px.) |
+| 3 | **NFR-405 / VC-429** | Measured against **`0a4194f`** — `384cb70` plus spec-03 — not `384cb70`. Spec-03's pane costs 2.18 KiB gzipped, which would consume the whole of this spec's 2 KB budget before it emitted a line. NFR-405 asks what *this feature* adds, and `0a4194f` is the tree this branch started from. Spec-03's own delta against its own baseline is still asserted, unchanged, by VC-323. Measured: **1.43 KiB**, zero new assets, zero new requests. |
+| 4 | **FR-409 / VC-435** | "The right column scrolls as a whole" is satisfied by **each right-column panel scrolling its own overflow**, not by a scroll container around the three. There is no such element and there cannot be one: FR-410 fixes the document order as console, editor, stdin, diagnostics, so the three right-column panels are not adjacent siblings and cannot be wrapped without the reorder BR-402 forbids. What the criterion asks for is delivered — the console holds its 80 px floor, every stdin control and a diagnostics entry stay reachable without scrolling the *page*, and there is no horizontal scroll at either size. |
+| 5 | **VC-409 / VC-410 with the pane open** | Added, per *Relationship to spec 03*: the pane keeps its full-height inline-end column in both layouts. FR-409's "each column ≥ 320 px" is asserted with the pane **closed**, which is the default state; the pane's own 72 px column plus its gap necessarily eats into the right column at the 900 px floor, and that is spec-03's geometry, not a violation of this spec's. |
+| 6 | *Parent-spec amendments* | Recorded in this spec's own table (below), not by editing `specs/01-static-python-web-frozen.md`. That document is a frozen context capsule describing what spec-01 *shipped*; adding this spec's `localStorage` row or VC changes to it would misdescribe spec-01. This is spec-03's precedent — it amended the same four criteria the same way. The live equivalents are updated instead: `docs/architecture.md`'s storage table gains the `pyplay.layout.v1` row, and the four amended assertions live in `tests/e2e/presentation.spec.ts` where the parent criteria do. |
+
+### Where each criterion is verified
+
+| File | Criteria |
+|---|---|
+| `tests/unit/layout.test.ts` | VC-411, VC-414 and VC-417 (unit halves), the *Constants* and *User-visible strings* tables |
+| `tests/e2e/layout.spec.ts` | VC-401 – VC-419, VC-427, VC-428, VC-430, VC-431, VC-435, and VC-409 / VC-410 with the pane open |
+| `tests/e2e/layout-state.spec.ts` | VC-420 – VC-426, VC-434 |
+| `tests/e2e/presentation.spec.ts` | the amended parent VC-050, VC-051, VC-052 and VC-071 |
+| `tests/e2e/perf.spec.ts` | VC-429 |
+| `tests/e2e/matrix.spec.ts` | VC-432 |
+| `PYPLAY_LAYOUT_PREF=…` over the parent suites | VC-433 |
+
+---
+
 ## Changelog
 
 | Version | Date | Change |
 |---|---|---|
 | 1.0.0 | 2026-09-02 | Initial spec, from issue [#2](https://github.com/fclabs/web-python/issues/2). |
+| 1.1.0 | 2026-09-02 | Implemented. Six amendments recorded below, five of them forced by spec-03 having merged first. Status → SHIPPED. |

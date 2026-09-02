@@ -392,3 +392,100 @@ test('VC-326 (BR-304, NFR-305): the build shape is the baseline’s, bar two con
   expect(baseline.cacheNameScheme).toBe('pyplay-assets-v${BUILD}');
   expect(sw).toContain(`const BUILD = "${manifest.build}";`);
 });
+
+/* -------------------------------------------------------------------------
+   spec-04 — VC-429 (NFR-405, BR-403)
+   ------------------------------------------------------------------------- */
+
+/**
+ * NFR-405 pins commit `384cb70`. Spec-03 merged first, so a comparison
+ * against `384cb70` would charge this feature for the special-character
+ * pane's bytes as well as its own — 2.18 KiB of the 2 KB budget before
+ * spec-04 emits a line. NFR-405 asks what *this feature* adds, so the
+ * baseline is the merge-base `0a4194f`: `384cb70` plus spec-03, which is
+ * exactly the tree this branch started from. Recorded in the spec.
+ *
+ * The pane's own delta against its own baseline is still asserted, unchanged,
+ * by VC-323 above.
+ */
+interface Spec04Baseline {
+  commit: string;
+  files: string[];
+  manifestUrls: string[];
+  manifestUrlCount: number;
+  cacheNameScheme: string;
+  vendored: Record<string, string>;
+  /** Compressed app size, per compressor — see the note in the record. */
+  gzippedAppBy: Record<string, number>;
+}
+
+const spec04Baseline = JSON.parse(
+  readFileSync(join(repoRoot, 'tests', 'e2e', 'baseline-build-spec04.json'), 'utf8'),
+) as Spec04Baseline;
+
+/** NFR-405: at most 2 KB gzipped on top of the baseline's app payload. */
+const LAYOUT_SIZE_BUDGET_BYTES = 2 * 1024;
+
+/** How this machine's `gzipSync` identifies itself, as the record keys it. */
+const compressor = `${process.platform}-${process.arch} zlib ${process.versions.zlib}`;
+
+test('VC-429 (NFR-405, BR-403): the layout control costs <= 2 KB and adds no asset', async () => {
+  // --- The compressed size delta ------------------------------------------
+  const expected = spec04Baseline.gzippedAppBy[compressor];
+  // A missing record is reported as uncovered, never as a pass: comparing a
+  // darwin build against a linux baseline would spend half the budget on
+  // compressor noise. Re-record with `scripts/record-baseline-build.mjs`.
+  test.skip(
+    expected === undefined,
+    `no ${spec04Baseline.commit} baseline recorded for "${compressor}" — ` +
+      `have: ${Object.keys(spec04Baseline.gzippedAppBy).join(', ')}`,
+  );
+
+  const manifest = JSON.parse(readFileSync(join(dist, 'precache-manifest.json'), 'utf8')) as {
+    build: string;
+    urls: string[];
+  };
+
+  let gzippedApp = 0;
+  for (const url of [...manifest.urls, '/index.html']) {
+    if (url === '/') continue; // the shell is counted once, as /index.html
+    if (isVendored(url)) continue; // pinned by digest below instead
+    gzippedApp += gzipSync(readFileSync(join(dist, url.replace(/^\//, ''))), { level: 9 }).length;
+  }
+
+  const delta = gzippedApp - expected!;
+  expect(
+    delta,
+    `NFR-405 app size delta vs ${spec04Baseline.commit}: ${delta} B gzipped ` +
+      `(budget ${LAYOUT_SIZE_BUDGET_BYTES} B, compressor "${compressor}")`,
+  ).toBeLessThanOrEqual(LAYOUT_SIZE_BUDGET_BYTES);
+
+  // --- Zero new assets, zero new requests ---------------------------------
+  expect(distFiles('').map(unhash).sort(), 'the emitted file set is unchanged').toEqual(
+    [...spec04Baseline.files].sort(),
+  );
+
+  for (const [path, digest] of Object.entries(spec04Baseline.vendored)) {
+    const actual = createHash('sha256')
+      .update(readFileSync(join(dist, path.slice(1))))
+      .digest('hex');
+    expect(actual, `${path} is byte-identical to ${spec04Baseline.commit}`).toBe(digest);
+  }
+
+  // The precache manifest and the generated worker differ only in the two
+  // content-hashed filenames, with the same URL count and cache-name scheme —
+  // so a cold load makes exactly the requests it made before (BR-403).
+  expect(manifest.urls.map(unhash).sort()).toEqual([...spec04Baseline.manifestUrls].sort());
+  expect(manifest.urls).toHaveLength(spec04Baseline.manifestUrlCount);
+
+  const sw = readFileSync(join(dist, 'sw.js'), 'utf8');
+  const embedded = JSON.parse(sw.match(/const MANIFEST = (\[.*?\]);/s)![1]!) as string[];
+  expect(embedded.map(unhash).sort()).toEqual([...spec04Baseline.manifestUrls].sort());
+  expect(embedded).toHaveLength(spec04Baseline.manifestUrlCount);
+  expect(sw).toContain('const CACHE = `pyplay-assets-v${BUILD}`;');
+  expect(spec04Baseline.cacheNameScheme).toBe('pyplay-assets-v${BUILD}');
+
+  console.log(
+    `VC-429: app size delta vs ${spec04Baseline.commit} ${(delta / 1024).toFixed(2)} KiB (<= 2.00)`,
+  );
+});

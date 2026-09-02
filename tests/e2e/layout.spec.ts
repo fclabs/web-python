@@ -22,12 +22,14 @@ import { expect, test, type Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { LAYOUT_NARROW_HINT } from '../../src/format';
+import { failures, measureContrast, type Sample } from './contrast';
 import {
   openPlayground,
   runProgram,
   submitStdin,
   waitForLinter,
   waitForPythonReady,
+  waitForStdinPrompt,
 } from './helpers';
 
 const LAYOUT_KEY = 'pyplay.layout.v1';
@@ -224,7 +226,7 @@ for (const viewport of [WIDE, NARROW]) {
     // The preference is how the shipped resolver is asked for vertical at a
     // width where an unset preference would resolve to horizontal (FR-411).
     await seedPreference(page, 'vertical');
-    await openPlayground(page);
+    await openPlayground(page, { seedLayout: false });
     await waitForPythonReady(page);
     await waitForLinter(page);
     expect(await renderedLayout(page)).toBe('vertical');
@@ -322,7 +324,7 @@ test.describe('the horizontal layout', () => {
     page,
   }) => {
     await seedPreference(page, 'horizontal');
-    await openPlayground(page);
+    await openPlayground(page, { seedLayout: false });
     await waitForPythonReady(page);
     await waitForLinter(page);
     expect(await renderedLayout(page)).toBe('horizontal');
@@ -396,7 +398,7 @@ test.describe('the horizontal layout', () => {
     }) => {
       await page.setViewportSize({ width, height: 800 });
       await seedPreference(page, 'horizontal');
-      await openPlayground(page);
+      await openPlayground(page, { seedLayout: false });
       await waitForPythonReady(page);
       await waitForLinter(page);
       expect(await renderedLayout(page)).toBe('horizontal');
@@ -432,7 +434,7 @@ test.describe('the horizontal layout', () => {
 
   test('VC-411 (FR-410, BR-402): both layouts render the same document order', async ({ page }) => {
     await seedPreference(page, 'vertical');
-    await openPlayground(page);
+    await openPlayground(page, { seedLayout: false });
     await waitForPythonReady(page);
 
     const readOrder = (): Promise<string[]> =>
@@ -490,7 +492,7 @@ for (const viewport of [
   }) => {
     await page.setViewportSize(viewport);
     await seedPreference(page, 'horizontal');
-    await openPlayground(page);
+    await openPlayground(page, { seedLayout: false });
     await waitForPythonReady(page);
     await waitForLinter(page);
     // Give the diagnostics panel something to scroll to.
@@ -542,7 +544,7 @@ test('VC-402 (FR-402, FR-411): an unset preference resolves from the width and s
 }) => {
   await page.setViewportSize(WIDE);
   await seedPreference(page, null);
-  await openPlayground(page);
+  await openPlayground(page, { seedLayout: false });
   expect(await renderedLayout(page)).toBe('horizontal');
   expect(await storedLayout(page), 'resolving writes nothing').toBeNull();
 
@@ -558,7 +560,7 @@ test('VC-412 (FR-411, FR-412, BR-405): crossing 900 px re-resolves within 100 ms
 }) => {
   await page.setViewportSize(WIDE);
   await seedPreference(page, null);
-  await openPlayground(page);
+  await openPlayground(page, { seedLayout: false });
   expect(await renderedLayout(page)).toBe('horizontal');
 
   await recordCrossingLatency(page);
@@ -585,7 +587,7 @@ test('VC-413 (FR-413, BR-404, BR-405): the narrow override never overwrites the 
 }) => {
   await page.setViewportSize(WIDE);
   await seedPreference(page, 'horizontal');
-  await openPlayground(page);
+  await openPlayground(page, { seedLayout: false });
   expect(await renderedLayout(page)).toBe('horizontal');
 
   await page.setViewportSize(NARROW);
@@ -640,7 +642,7 @@ for (const preference of ['horizontal', 'vertical'] as const) {
       }
     });
 
-    await openPlayground(page);
+    await openPlayground(page, { seedLayout: false });
     await waitForPythonReady(page);
 
     const frames = await page.evaluate(
@@ -684,7 +686,7 @@ for (const [label, value] of MALFORMED) {
 
     await page.setViewportSize(WIDE);
     await seedPreference(page, value);
-    await openPlayground(page);
+    await openPlayground(page, { seedLayout: false });
     await waitForPythonReady(page);
 
     expect(await renderedLayout(page), 'falls back to the unset default').toBe('horizontal');
@@ -700,7 +702,7 @@ for (const [label, value] of MALFORMED) {
 test('VC-417 (FR-417): a malformed preference still narrows below 900 px', async ({ page }) => {
   await page.setViewportSize({ width: 800, height: 800 });
   await seedPreference(page, 'diagonal');
-  await openPlayground(page);
+  await openPlayground(page, { seedLayout: false });
   expect(await renderedLayout(page)).toBe('vertical');
 });
 
@@ -720,7 +722,7 @@ test('VC-418 (FR-417): a throwing localStorage still boots and still runs Python
     Object.defineProperty(window.localStorage, 'setItem', { value: deny, configurable: true });
   });
 
-  await openPlayground(page);
+  await openPlayground(page, { seedLayout: false });
   await waitForPythonReady(page);
 
   expect(await renderedLayout(page)).toBe('horizontal');
@@ -775,7 +777,7 @@ test.describe('the layout control', () => {
 
   test('VC-401 (FR-401): the group is a two-radio radiogroup named Layout', async ({ page }) => {
     await seedPreference(page, null);
-    await openPlayground(page);
+    await openPlayground(page, { seedLayout: false });
 
     const group = page.locator('#layout-group');
     await expect(group).toHaveRole('radiogroup');
@@ -799,7 +801,7 @@ test.describe('the layout control', () => {
     page,
   }) => {
     await seedPreference(page, null);
-    await openPlayground(page);
+    await openPlayground(page, { seedLayout: false });
     expect(await renderedLayout(page)).toBe('horizontal');
     expect(await controlState(page)).toMatchObject({ checked: ['layout-horizontal'] });
     expect(await storedLayout(page)).toBeNull();
@@ -818,7 +820,7 @@ test.describe('the layout control', () => {
     // The stored choice is horizontal, but below 900 px the effective layout
     // is vertical — so `Vertical` is checked while `horizontal` stays stored.
     await seedPreference(page, 'horizontal');
-    await openPlayground(page);
+    await openPlayground(page, { seedLayout: false });
     expect(await controlState(page)).toMatchObject({ checked: ['layout-horizontal'] });
 
     await page.setViewportSize(NARROW);
@@ -829,7 +831,7 @@ test.describe('the layout control', () => {
 
   test('VC-403 (FR-403, FR-414): clicking Horizontal applies and persists it', async ({ page }) => {
     await seedPreference(page, 'vertical');
-    await openPlayground(page);
+    await openPlayground(page, { seedLayout: false });
     expect(await renderedLayout(page)).toBe('vertical');
 
     await page.click(RADIOS.horizontal);
@@ -845,7 +847,7 @@ test.describe('the layout control', () => {
 
   test('VC-404 (FR-404, FR-414): clicking Vertical applies and persists it', async ({ page }) => {
     await seedPreference(page, 'horizontal');
-    await openPlayground(page);
+    await openPlayground(page, { seedLayout: false });
     expect(await renderedLayout(page)).toBe('horizontal');
 
     await page.click(RADIOS.vertical);
@@ -862,7 +864,7 @@ test.describe('the layout control', () => {
     page,
   }) => {
     await seedPreference(page, 'vertical');
-    await openPlayground(page);
+    await openPlayground(page, { seedLayout: false });
 
     // Tab lands on the checked radio, which is the only tabbable one.
     await page.locator('#btn-reset').focus();
@@ -905,7 +907,7 @@ test.describe('the layout control', () => {
     page,
   }) => {
     await seedPreference(page, 'vertical');
-    await openPlayground(page);
+    await openPlayground(page, { seedLayout: false });
 
     for (const key of [' ', 'Enter'] as const) {
       for (const layout of ['horizontal', 'vertical'] as const) {
@@ -925,7 +927,7 @@ test.describe('the layout control', () => {
 
   test('VC-431 (BR-407): the left column precedes the right in tab order', async ({ page }) => {
     await seedPreference(page, 'horizontal');
-    await openPlayground(page);
+    await openPlayground(page, { seedLayout: false });
     await waitForPythonReady(page);
     await waitForLinter(page);
     await runProgram(page, 'import os\nx=1\n');
@@ -1004,7 +1006,7 @@ test.describe('the layout control', () => {
         },
       });
     });
-    await openPlayground(page);
+    await openPlayground(page, { seedLayout: false });
     await waitForPythonReady(page);
     await waitForLinter(page);
 
@@ -1029,7 +1031,7 @@ test.describe('the layout control', () => {
   test('VC-430 (BR-403): exactly one new key, and no other store touched', async ({ page }) => {
     // Deliberately *not* seeded: `addInitScript` runs on every navigation,
     // including the reload below, and would wipe the key under test.
-    await openPlayground(page);
+    await openPlayground(page, { seedLayout: false });
     await waitForPythonReady(page);
 
     const snapshot = (): Promise<{ session: string[]; cookies: string; databases: string[] }> =>
@@ -1074,7 +1076,7 @@ test.describe('the layout control below 900 px', () => {
 
   test('VC-414 (FR-415): inert but focusable, and every interaction a no-op', async ({ page }) => {
     await seedPreference(page, null);
-    await openPlayground(page);
+    await openPlayground(page, { seedLayout: false });
     await waitForPythonReady(page);
 
     const group = page.locator('#layout-group');
@@ -1158,7 +1160,7 @@ test.describe('the layout control below 900 px', () => {
 
   test('VC-415 (FR-406): the hint is present only below 900 px', async ({ page }) => {
     await seedPreference(page, null);
-    await openPlayground(page);
+    await openPlayground(page, { seedLayout: false });
 
     const group = page.locator('#layout-group');
     await expect(group).toHaveAttribute('title', LAYOUT_NARROW_HINT);
@@ -1188,7 +1190,7 @@ test('VC-407 (FR-049 from spec-01, FR-405): Tab reaches every control once, iden
 }) => {
   await page.setViewportSize(WIDE);
   await seedPreference(page, 'vertical');
-  await openPlayground(page);
+  await openPlayground(page, { seedLayout: false });
   await waitForPythonReady(page);
   await waitForLinter(page);
   await runProgram(page, 'import os\nx=1\n');
@@ -1275,3 +1277,286 @@ test('VC-407 (FR-049 from spec-01, FR-405): Tab reaches every control once, iden
 
   expect(horizontal, 'the enumeration is identical at both layouts').toEqual(vertical);
 });
+
+/* -------------------------------------------------------------------------
+   VC-427 (NFR-401, FR-047 from spec-01) — the 375 px viewport, in all three
+   preference states. Also parent VC-050's amendment.
+   ------------------------------------------------------------------------- */
+
+for (const preference of [null, 'vertical', 'horizontal'] as const) {
+  const label = preference ?? 'unset';
+
+  test(`VC-427 (NFR-401, FR-047 from spec-01): 375 px works with the preference ${label}`, async ({
+    page,
+  }) => {
+    await page.setViewportSize(NARROW);
+    await seedPreference(page, preference);
+    await openPlayground(page, { seedLayout: false });
+    await waitForPythonReady(page);
+    await waitForLinter(page);
+
+    // BR-404: vertical is the only layout here, whatever is stored.
+    expect(await renderedLayout(page)).toBe('vertical');
+
+    /** Nothing is clipped and the page never scrolls sideways. */
+    const check = async (stage: string): Promise<void> => {
+      const report = await page.evaluate(() => {
+        const selectors = [
+          '.toolbar',
+          '#status-bar',
+          '.panel--console',
+          '.panel--editor',
+          '#stdin-input',
+          '#btn-eof',
+          '.panel--diagnostics',
+          '#layout-group',
+          '#layout-vertical',
+          '#layout-horizontal',
+        ];
+        const clipped: string[] = [];
+        const radios: { id: string; width: number; height: number }[] = [];
+        for (const selector of selectors) {
+          const el = document.querySelector(selector) as HTMLElement | null;
+          if (!el) {
+            clipped.push(`${selector}: missing`);
+            continue;
+          }
+          const box = el.getBoundingClientRect();
+          if (box.width <= 0 || box.height <= 0) clipped.push(`${selector}: no box`);
+          if (box.left < -1 || box.right > window.innerWidth + 1) {
+            clipped.push(`${selector}: outside the viewport inline`);
+          }
+          if (el.scrollWidth > el.clientWidth + 1 && !getComputedStyle(el).overflowX.match(/auto|scroll/)) {
+            clipped.push(`${selector}: content wider than its box`);
+          }
+          if (el.id.startsWith('layout-') && el.getAttribute('role') === 'radio') {
+            radios.push({ id: el.id, width: box.width, height: box.height });
+          }
+        }
+        return { clipped, radios, scrollWidth: document.documentElement.scrollWidth };
+      });
+
+      expect(report.clipped, `${stage}: nothing clipped`).toEqual([]);
+      expect(report.scrollWidth, `${stage}: no horizontal scroll`).toBeLessThanOrEqual(
+        NARROW.width,
+      );
+      // NFR-401: each radio's rendered hit area is at least 32 x 32 px, even
+      // though FR-415 renders it disabled at this width.
+      expect(report.radios, `${stage}: both radios measured`).toHaveLength(2);
+      for (const radio of report.radios) {
+        expect(radio.width, `${stage}: ${radio.id} width`).toBeGreaterThanOrEqual(32);
+        expect(radio.height, `${stage}: ${radio.id} height`).toBeGreaterThanOrEqual(32);
+      }
+    };
+
+    await check('on load');
+
+    // Run the starter program through to a submitted `input()`, which is the
+    // widest the console and the stdin row ever get.
+    await page.getByRole('button', { name: 'Run' }).click();
+    await waitForStdinPrompt(page);
+    await check('blocked on input()');
+    await submitStdin(page, 'Ana');
+    await expect(page.locator('#console')).toContainText('Hola, Ana!');
+    await expect(page.locator('#console')).toContainText('Program finished in');
+    await check('after the run');
+  });
+}
+
+/* -------------------------------------------------------------------------
+   VC-428 (NFR-402, NFR-403) — the control's contrast, in every rendering.
+   Extends parent VC-051 and VC-071, whose sampling sets grow in
+   `presentation.spec.ts` for the renderings that test produces.
+   ------------------------------------------------------------------------- */
+
+/** Both radio labels, checked and unchecked (NFR-402: >= 4.5:1). */
+const LAYOUT_TEXT_SAMPLES: Sample[] = [
+  {
+    label: 'layout radio label (checked)',
+    selector: '#layout-group [role="radio"][aria-checked="true"]',
+    prop: 'color',
+  },
+  {
+    label: 'layout radio label (unchecked)',
+    selector: '#layout-group [role="radio"][aria-checked="false"]',
+    prop: 'color',
+  },
+];
+
+/** The control's non-text components (NFR-403: >= 3:1). */
+const LAYOUT_NON_TEXT_SAMPLES: Sample[] = [
+  {
+    label: 'layout segment border',
+    selector: '#layout-group [role="radio"][aria-checked="false"]',
+    prop: 'borderTopColor',
+  },
+  {
+    label: 'layout checked indicator',
+    selector: '#layout-group [role="radio"][aria-checked="true"]',
+    prop: 'backgroundColor',
+  },
+  {
+    label: 'focus ring (layout radio)',
+    selector: '#layout-group [role="radio"][aria-checked="true"]',
+    prop: 'outlineColor',
+    focus: true,
+  },
+];
+
+for (const scheme of ['light', 'dark'] as const) {
+  test.describe(`VC-428 — ${scheme} palette`, () => {
+    test.use({ colorScheme: scheme });
+
+    for (const layout of ['vertical', 'horizontal'] as const) {
+      test(`VC-428 (NFR-402, NFR-403): the control clears contrast at 1280 px — ${layout}, ${scheme}`, async ({
+        page,
+      }) => {
+        await page.setViewportSize(WIDE);
+        await seedPreference(page, layout);
+        await openPlayground(page, { seedLayout: false });
+        await waitForPythonReady(page);
+        expect(await renderedLayout(page)).toBe(layout);
+
+        const text = await measureContrast(page, LAYOUT_TEXT_SAMPLES);
+        expect(text).toHaveLength(LAYOUT_TEXT_SAMPLES.length);
+        expect(failures(text, 4.5)).toEqual([]);
+
+        const nonText = await measureContrast(page, [
+          ...LAYOUT_NON_TEXT_SAMPLES,
+          // NFR-403's "edge between the two columns in the horizontal
+          // layout": the panels' own borders are what draws it, so they are
+          // sampled in the rendering that actually has two columns.
+          ...(layout === 'horizontal'
+            ? ([
+                {
+                  label: 'horizontal column edge (editor)',
+                  selector: '.panel--editor',
+                  prop: 'borderTopColor',
+                },
+                {
+                  label: 'horizontal column edge (console)',
+                  selector: '.panel--console',
+                  prop: 'borderTopColor',
+                },
+              ] as Sample[])
+            : []),
+        ]);
+        expect(failures(nonText, 3)).toEqual([]);
+      });
+    }
+
+    test(`VC-428 (NFR-402, NFR-403): the disabled control clears contrast at 375 px — ${scheme}`, async ({
+      page,
+    }) => {
+      await page.setViewportSize(NARROW);
+      await seedPreference(page, null);
+      await openPlayground(page, { seedLayout: false });
+      await waitForPythonReady(page);
+
+      // FR-415's rendering: `aria-disabled`, styled as disabled.
+      await expect(page.locator('#layout-group')).toHaveAttribute('aria-disabled', 'true');
+
+      const text = await measureContrast(page, LAYOUT_TEXT_SAMPLES);
+      expect(text).toHaveLength(LAYOUT_TEXT_SAMPLES.length);
+      expect(failures(text, 4.5), 'the disabled labels').toEqual([]);
+
+      const nonText = await measureContrast(page, [
+        {
+          label: 'layout disabled border',
+          selector: '#layout-group [role="radio"][aria-checked="false"]',
+          prop: 'borderTopColor',
+        },
+        {
+          // The disabled indicator is the checked segment's border, not a
+          // fill — see the note in `src/styles.css`.
+          label: 'layout disabled checked indicator',
+          selector: '#layout-group [role="radio"][aria-checked="true"]',
+          prop: 'borderTopColor',
+        },
+        {
+          label: 'focus ring (layout radio, disabled)',
+          selector: '#layout-group [role="radio"][aria-checked="true"]',
+          prop: 'outlineColor',
+          focus: true,
+        },
+      ]);
+      expect(failures(nonText, 3), 'the disabled non-text components').toEqual([]);
+    });
+  });
+}
+
+/* -------------------------------------------------------------------------
+   VC-409 / VC-410 with spec-03's pane open.
+
+   spec-04's *Relationship to spec 03* requires that whichever spec merges
+   second re-runs the other's layout criteria: the pane keeps its full-height
+   **inline-end** column in *both* layouts, never inside the editor column and
+   never inside the right column. Spec-03 merged first, so that assertion
+   belongs here.
+   ------------------------------------------------------------------------- */
+
+for (const layout of ['vertical', 'horizontal'] as const) {
+  test(`VC-409 / VC-410 (spec-03 FR-311, FR-317): the pane keeps its inline-end column — ${layout}`, async ({
+    page,
+  }) => {
+    await page.setViewportSize(WIDE);
+    await seedPreference(page, layout);
+    await openPlayground(page, { seedLayout: false });
+    await waitForPythonReady(page);
+    await page.locator('#btn-symbols').click();
+    await expect(page.locator('#symbol-pane .symbol').first()).toBeVisible();
+    expect(await renderedLayout(page)).toBe(layout);
+
+    const boxes = await page.evaluate(() => {
+      const box = (selector: string): { top: number; right: number; bottom: number; left: number } => {
+        const rect = (document.querySelector(selector) as HTMLElement).getBoundingClientRect();
+        return { top: rect.top, right: rect.right, bottom: rect.bottom, left: rect.left };
+      };
+      const app = document.getElementById('app') as HTMLElement;
+      const style = getComputedStyle(app);
+      return {
+        pane: box('#symbol-pane'),
+        editor: box('.panel--editor'),
+        console: box('.panel--console'),
+        stdin: box('.panel--stdin'),
+        diagnostics: box('.panel--diagnostics'),
+        contentRight: app.getBoundingClientRect().right - parseFloat(style.paddingRight),
+        scrollWidth: document.documentElement.scrollWidth,
+      };
+    });
+
+    // The pane is the inline-end column: every other panel ends before it
+    // starts, and it reaches the app's content edge.
+    for (const name of ['editor', 'console', 'stdin', 'diagnostics'] as const) {
+      expect(
+        boxes[name].right,
+        `${name} ends before the pane's column starts`,
+      ).toBeLessThanOrEqual(boxes.pane.left + 1);
+    }
+    expect(boxes.pane.right, 'the pane reaches the content edge').toBeCloseTo(
+      boxes.contentRight,
+      0,
+    );
+
+    // ...and it is full-height across the split, in both layouts.
+    expect(boxes.pane.top, 'the pane spans the split').toBeCloseTo(
+      Math.min(boxes.console.top, boxes.editor.top),
+      0,
+    );
+    expect(boxes.pane.bottom, 'the pane spans the split').toBeCloseTo(
+      Math.max(boxes.diagnostics.bottom, boxes.editor.bottom),
+      0,
+    );
+
+    // spec-04 FR-408's split still holds inside the remaining space.
+    if (layout === 'horizontal') {
+      expect(boxes.editor.right, 'the editor is still inline-start').toBeLessThanOrEqual(
+        boxes.console.left,
+      );
+      expect(boxes.stdin.left).toBeCloseTo(boxes.console.left, 0);
+      expect(boxes.diagnostics.left).toBeCloseTo(boxes.console.left, 0);
+    }
+
+    expect(boxes.scrollWidth, 'the page never scrolls sideways').toBeLessThanOrEqual(WIDE.width);
+  });
+}
