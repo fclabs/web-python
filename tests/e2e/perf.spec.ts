@@ -392,3 +392,128 @@ test('VC-326 (BR-304, NFR-305): the build shape is the baseline’s, bar two con
   expect(baseline.cacheNameScheme).toBe('pyplay-assets-v${BUILD}');
   expect(sw).toContain(`const BUILD = "${manifest.build}";`);
 });
+
+/* -------------------------------------------------------------------------
+   spec-05 — VC-513 (NFR-501, NFR-505, BR-505)
+   ------------------------------------------------------------------------- */
+
+/** The build color-mode is measured against (NFR-505, VC-513). */
+const themeBaseline = JSON.parse(
+  readFileSync(join(repoRoot, 'tests', 'e2e', 'baseline-build-theme.json'), 'utf8'),
+) as BaselineBuild;
+
+test('VC-513 (NFR-501, NFR-505, BR-505): color-mode switches within 100 ms and costs <= 4 KB', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+
+  await openPlayground(page);
+  await waitForPythonReady(page);
+  await waitForLinter(page);
+
+  const requests: string[] = [];
+  const record = (request: Request): void => void requests.push(request.url());
+  page.on('request', record);
+
+  await page.evaluate(() => {
+    const box = window as unknown as { __longTasks: number[] };
+    box.__longTasks = [];
+    new PerformanceObserver((list) => {
+      for (const entry of list.getEntries()) box.__longTasks.push(entry.duration);
+    }).observe({ entryTypes: ['longtask'] });
+  });
+  await page.waitForTimeout(250);
+  await page.evaluate(() => {
+    (window as unknown as { __longTasks: number[] }).__longTasks.length = 0;
+  });
+
+  // Seed a known preference so the first click always lands on a forced flip
+  // (light → dark) whose chrome and editor changes are observable.
+  await page.evaluate(() => {
+    window.localStorage.setItem('pyplay.theme.v1', 'light');
+  });
+  await page.reload();
+  await waitForPythonReady(page);
+  await waitForLinter(page);
+  await page.evaluate(() => {
+    const box = window as unknown as { __longTasks: number[] };
+    box.__longTasks = [];
+    new PerformanceObserver((list) => {
+      for (const entry of list.getEntries()) box.__longTasks.push(entry.duration);
+    }).observe({ entryTypes: ['longtask'] });
+  });
+  await page.waitForTimeout(250);
+  await page.evaluate(() => {
+    (window as unknown as { __longTasks: number[] }).__longTasks.length = 0;
+  });
+  requests.length = 0;
+
+  const switchMs = await page.evaluate(
+    () =>
+      new Promise<number>((resolve, reject) => {
+        const btn = document.getElementById('btn-theme') as HTMLButtonElement;
+        const start = performance.now();
+        const check = (): void => {
+          const theme = document.documentElement.dataset.theme;
+          const bg = getComputedStyle(document.body).backgroundColor;
+          const content = document.querySelector('.cm-content') as HTMLElement & {
+            cmView?: { view: { state: { facet: (f: unknown) => unknown }; constructor: { darkTheme: unknown } } };
+            cmTile?: { view: { state: { facet: (f: unknown) => unknown }; constructor: { darkTheme: unknown } } };
+          };
+          const view = content?.cmTile?.view ?? content?.cmView?.view;
+          if (!view) return;
+          const editorDark = !!view.state.facet(view.constructor.darkTheme);
+          if (theme === 'dark' && bg === 'rgb(20, 22, 26)' && editorDark) {
+            requestAnimationFrame(() => resolve(performance.now() - start));
+            return;
+          }
+          requestAnimationFrame(check);
+        };
+        setTimeout(() => reject(new Error('color mode never switched')), 5_000);
+        btn.click();
+        requestAnimationFrame(check);
+      }),
+  );
+
+  await page.waitForTimeout(500);
+  page.off('request', record);
+  const longTasks = await page.evaluate(
+    () => (window as unknown as { __longTasks: number[] }).__longTasks,
+  );
+
+  expect(switchMs, 'NFR-501 theme switch to chrome+editor painted').toBeLessThanOrEqual(100);
+  expect(Math.max(0, ...longTasks), 'NFR-501 longest main-thread task').toBeLessThanOrEqual(100);
+  expect(requests, 'NFR-505 / BR-505 requests attributable to the theme click').toEqual([]);
+
+  const manifest = JSON.parse(readFileSync(join(dist, 'precache-manifest.json'), 'utf8')) as {
+    urls: string[];
+  };
+  let gzippedApp = 0;
+  for (const url of [...manifest.urls, '/index.html']) {
+    if (url === '/') continue;
+    if (isVendored(url)) continue;
+    gzippedApp += gzipSync(readFileSync(join(dist, url.replace(/^\//, ''))), { level: 9 }).length;
+  }
+
+  const delta = gzippedApp - themeBaseline.gzippedApp;
+  expect(
+    delta,
+    `NFR-505 app size delta vs ${themeBaseline.commit}: ${delta} B gzipped ` +
+      `(budget ${SIZE_BUDGET_BYTES} B; baseline gzipped by ${themeBaseline.gzippedBy}, ` +
+      `here by ${process.platform}-${process.arch} zlib ${process.versions.zlib})`,
+  ).toBeLessThanOrEqual(SIZE_BUDGET_BYTES);
+
+  // BR-505 / NFR-505: no new runtime asset file — same unhashed shape as the
+  // theme baseline (content hashes of the main JS/CSS chunks may change).
+  expect(distFiles('').map(unhash).sort()).toEqual([...themeBaseline.files].sort());
+  expect(manifest.urls).toHaveLength(themeBaseline.manifestUrlCount);
+
+  console.log(
+    [
+      'VC-513 measurements:',
+      `  NFR-501 click -> chrome+editor       ${switchMs.toFixed(0)} ms   (<= 100)`,
+      `  NFR-501 longest task                 ${Math.max(0, ...longTasks).toFixed(0)} ms   (<= 100)`,
+      `  NFR-505 app size delta vs ${themeBaseline.commit} ${(delta / 1024).toFixed(2)} KiB (<= 4.00)`,
+    ].join('\n'),
+  );
+});

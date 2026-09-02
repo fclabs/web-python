@@ -68,3 +68,24 @@ export function formatSymbolCopied(value: string): string {
 
 /** FR-308: the notice shown when the pane's clipboard write is rejected. */
 export const SYMBOL_COPY_FAILED = "Couldn't copy — select the character and press Ctrl/Cmd+C";
+
+/** Mode table labels (FR-504): tooltip and accessible-name suffix. */
+export const THEME_LABELS = {
+  light: 'Light',
+  dark: 'Dark',
+  system: 'System',
+} as const;
+
+/**
+ * Mode table glyphs (FR-503): U+2600 sun, U+263D first quarter moon, Latin `S`.
+ */
+export const THEME_GLYPHS = {
+  light: '\u2600',
+  dark: '\u263D',
+  system: 'S',
+} as const;
+
+/** FR-504: accessible name `Color mode: <label>`. */
+export function formatThemeAccessibleName(label: string): string {
+  return `Color mode: ${label}`;
+}

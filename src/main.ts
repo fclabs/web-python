@@ -44,6 +44,7 @@ import {
   saveWorkspace,
   type WorkspaceFile,
 } from './workspace';
+import { applyDocumentTheme, bindThemeControl, loadPreference } from './theme';
 
 const AUTOSAVE_UNAVAILABLE = 'Autosave unavailable — your workspace will not survive a reload';
 const COPY_FAILED = "Couldn't copy — select the code and press Ctrl/Cmd+C";
@@ -69,6 +70,10 @@ function boot(): void {
     if (name === null) return '';
     return decodeText(workspace.get(name) ?? new Uint8Array()) ?? '';
   };
+  // FR-505 / FR-506 / FR-515: preference already applied by the HTML bootstrap;
+  // re-apply so the module's load-time OS sample stays in sync (BR-502).
+  const preference = loadPreference(storage);
+  const effective = applyDocumentTheme(preference);
 
   const autosaver = new Autosaver(
     () => saveWorkspace(storage, workspace),
@@ -78,6 +83,7 @@ function boot(): void {
   const view = createEditor({
     parent: need('editor'),
     initialDoc: activeText(),
+    effectiveColorScheme: effective,
     onChange: (doc) => {
       if (suppressEditorChange) return;
       const name = workspace.activeFile;
@@ -174,6 +180,19 @@ function boot(): void {
       autosaver.flush();
       openActiveFile();
     },
+  });
+
+  // FR-501 – FR-504 / FR-512: cycling color-mode control (after Symbols).
+  bindThemeControl(need<HTMLButtonElement>('btn-theme'), view, storage);
+
+  // FR-010: reset the complete classroom workspace.
+  need<HTMLButtonElement>('btn-reset').addEventListener('click', () => {
+    if (!window.confirm(RESET_CONFIRM)) return;
+    workspace.reset();
+    autosaver.schedule('workspace');
+    autosaver.flush();
+    openActiveFile();
+    view.focus();
   });
 
   function openActiveFile(): void {
