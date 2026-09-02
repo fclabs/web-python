@@ -76,6 +76,14 @@
         <p id="symbol-status" class="symbol-status" role="status"></p>
       </section>
 
+      <section class="panel panel--console" aria-label="Console">
+        <div id="console" class="console"></div>
+      </section>
+
+      <!-- FR-317 pins only `#symbol-pane`'s position (between `#notices` and
+           the console panel); the files pane sits here instead, and its
+           `.panel--files` grid-area places it visually without moving it in
+           the document. -->
       <section id="file-pane" class="panel panel--files" aria-label="Files" hidden>
         <div class="files-heading">
           <h2 class="panel-title">Files</h2>
@@ -98,10 +106,6 @@
           aria-valuenow="260"
           tabindex="0"
         ></div>
-      </section>
-
-      <section class="panel panel--console" aria-label="Console">
-        <div id="console" class="console"></div>
       </section>
 
       <section class="panel panel--editor" aria-label="Editor">

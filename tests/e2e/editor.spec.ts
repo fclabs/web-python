@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { STARTER_PROGRAM, editorText, openPlayground, typeProgram } from './helpers';
+import { STARTER_PROGRAM, editorText, openPlayground, storedProgram, typeProgram } from './helpers';
 
 test('cross-origin isolation headers are served (BR-002)', async ({ page }) => {
   const response = await page.goto('/');
@@ -53,14 +53,16 @@ test('VC-003 (FR-050): pagehide inside the debounce window flushes the full cont
   await page.waitForTimeout(100);
 
   // Still inside the 500 ms debounce: nothing written yet.
-  const flushed = await page.evaluate((key) => {
-    const before = window.localStorage.getItem(key);
+  const before = await page.evaluate(
+    (key) => window.localStorage.getItem(key),
+    'pyplay.workspace.v1',
+  );
+  await page.evaluate(() => {
     window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: false }));
-    return { before, after: window.localStorage.getItem(key) };
-  }, 'pyplay.program.v1');
+  });
 
-  expect(flushed.before).toBeNull();
-  expect(flushed.after).toBe('x = 42');
+  expect(before).toBeNull();
+  expect(await storedProgram(page)).toBe('x = 42');
 
   await page.reload();
   await page.waitForSelector('.cm-content');
@@ -102,5 +104,8 @@ test('VC-010 (FR-010): Reset replaces the buffer on confirm and leaves it on can
   await page.waitForTimeout(200);
   expect(await editorText(page)).toBe('mi_codigo = 1');
 
-  expect(messages).toEqual(['Discard your code?', 'Discard your code?']);
+  expect(messages).toEqual([
+    'Delete all files and reset the workspace?',
+    'Delete all files and reset the workspace?',
+  ]);
 });

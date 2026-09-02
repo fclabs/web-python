@@ -18,6 +18,7 @@ export const STARTER_PROGRAM =
   '    print(i, "al cuadrado es", i * i)\n';
 
 export const PROGRAM_KEY = 'pyplay.program.v1';
+export const WORKSPACE_KEY = 'pyplay.workspace.v1';
 
 /**
  * Load the playground and wait for the editor to be mounted.
@@ -54,9 +55,22 @@ export async function typeProgram(page: Page, text: string): Promise<void> {
   await page.keyboard.type(text);
 }
 
-/** The value persisted under the autosave key, or null. */
+/** `main.py`'s text as persisted in the workspace autosave key, or null. */
 export async function storedProgram(page: Page): Promise<string | null> {
-  return page.evaluate((key) => window.localStorage.getItem(key), PROGRAM_KEY);
+  return page.evaluate((key) => {
+    const raw = window.localStorage.getItem(key);
+    if (raw === null) return null;
+    try {
+      const parsed = JSON.parse(raw) as { files: Array<{ name: string; dataBase64: string }> };
+      const main = parsed.files.find((file) => file.name === 'main.py');
+      if (!main) return null;
+      const binary = atob(main.dataBase64);
+      const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+      return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+    } catch {
+      return null;
+    }
+  }, WORKSPACE_KEY);
 }
 
 /**

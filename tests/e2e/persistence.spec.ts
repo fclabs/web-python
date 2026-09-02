@@ -13,7 +13,9 @@ test('VC-005 (FR-005, BR-009): a full localStorage shows the notice once and kee
   await typeProgram(page, 'x = 1');
   await page.waitForTimeout(800);
 
-  const notice = page.locator('[data-notice="Autosave unavailable — your code will not survive a reload"]');
+  const notice = page.locator(
+    '[data-notice="Autosave unavailable — your workspace will not survive a reload"]',
+  );
   await expect(notice).toHaveCount(1);
   expect(await editorText(page)).toBe('x = 1');
 

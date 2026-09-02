@@ -26,6 +26,13 @@ import {
   waitForPythonReady,
 } from './helpers';
 
+// NFR-003's warm-boot threshold assumes one Pyodide instance loading at a
+// time, per the reference profile above. Run alongside this file's other
+// tests under Playwright's default full parallelism, four Chromium
+// instances each compile ~9 MB of WASM at once and contend for CPU, which
+// inflates NFR-003 well past 2,500 ms without any change to the app itself.
+test.describe.configure({ mode: 'serial' });
+
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const dist = join(repoRoot, 'dist');
 

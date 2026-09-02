@@ -889,7 +889,7 @@ test.describe('wide layout keyboard model', () => {
     await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
 
     const visited: string[] = [];
-    for (let i = 0; i < 15; i++) {
+    for (let i = 0; i < 16; i++) {
       await page.keyboard.press('Tab');
       visited.push(
         await page.evaluate(() => {
@@ -897,22 +897,32 @@ test.describe('wide layout keyboard model', () => {
           if (!el || el === document.body) return '';
           if (el.classList.contains('symbol')) return 'pane';
           if (el.classList.contains('cm-content')) return 'editor';
+          if (el.classList.contains('file-tree-button')) return 'file-tree';
           return el.id ? `#${el.id}` : el.tagName.toLowerCase();
         }),
       );
     }
 
     expect(visited.filter((id) => id === 'pane')).toHaveLength(1);
-    expect(visited.slice(0, 10)).toEqual([
+    // The files pane is open by default at this width (`FilePane`'s
+    // `syncLayout`), contributing its own toolbar buttons, one roving-tabindex
+    // stop for the file tree, and the resizer before the editor.
+    expect(visited.slice(0, 16)).toEqual([
       '#btn-run',
       '#btn-stop',
       '#btn-clear',
       '#btn-copy',
       '#btn-format',
       '#btn-reset',
+      '#btn-files',
       '#btn-symbols',
       '#btn-theme',
       'pane',
+      '#btn-file-new',
+      '#btn-file-rename',
+      '#btn-file-delete',
+      'file-tree',
+      '#file-resizer',
       'editor',
     ]);
   });
@@ -1129,13 +1139,13 @@ test('VC-320 (FR-312, BR-304): opening and copying persists nothing, and a reloa
   await typeProgram(page, 'print("hi")');
   await expect.poll(() => storedProgram(page)).toBe('print("hi")');
 
-  // Allowed keys: program (required after edit) and optionally theme (spec-05).
-  // Symbols must never invent any other key.
+  // Allowed keys: workspace (required after edit) and optionally theme
+  // (spec-05). Symbols must never invent any other key.
   const before = await storageSnapshot(page);
-  expect(Object.keys(before.local)).toContain('pyplay.program.v1');
+  expect(Object.keys(before.local)).toContain('pyplay.workspace.v1');
   expect(
     Object.keys(before.local).every(
-      (k) => k === 'pyplay.program.v1' || k === 'pyplay.theme.v1',
+      (k) => k === 'pyplay.workspace.v1' || k === 'pyplay.theme.v1',
     ),
   ).toBe(true);
 
@@ -1153,7 +1163,7 @@ test('VC-320 (FR-312, BR-304): opening and copying persists nothing, and a reloa
   expect(await storageSnapshot(page)).toEqual(before);
   expect(
     Object.keys((await storageSnapshot(page)).local).every(
-      (k) => k === 'pyplay.program.v1' || k === 'pyplay.theme.v1',
+      (k) => k === 'pyplay.workspace.v1' || k === 'pyplay.theme.v1',
     ),
   ).toBe(true);
 });

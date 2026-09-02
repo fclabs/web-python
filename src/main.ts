@@ -158,6 +158,7 @@ function boot(): void {
       workspace.select(name);
       openActiveFile();
       autosaver.schedule('workspace');
+      syncControls();
     },
     onCreate(name) {
       const error = workspace.put(name, new Uint8Array());
@@ -166,6 +167,7 @@ function boot(): void {
       autosaver.schedule('workspace');
       autosaver.flush();
       openActiveFile();
+      syncControls();
     },
     onRename(from, to) {
       const error = workspace.rename(from, to);
@@ -173,12 +175,14 @@ function boot(): void {
       autosaver.schedule('workspace');
       autosaver.flush();
       openActiveFile();
+      syncControls();
     },
     onDelete(name) {
       workspace.remove(name);
       autosaver.schedule('workspace');
       autosaver.flush();
       openActiveFile();
+      syncControls();
     },
   });
 

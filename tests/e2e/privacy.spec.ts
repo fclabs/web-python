@@ -142,11 +142,12 @@ test.describe('storage surface', () => {
       databases: (await indexedDB.databases?.())?.map((db) => db.name ?? '') ?? [],
     }));
 
-    // Data & Interfaces (amended by spec-05): program key required; theme key
-    // optional; never any other localStorage key.
-    expect(storage.local).toContain('pyplay.program.v1');
+    // Data & Interfaces (amended by spec-05 and the workspace feature):
+    // workspace key required; theme key optional; never any other
+    // localStorage key.
+    expect(storage.local).toContain('pyplay.workspace.v1');
     expect(
-      storage.local.every((k) => k === 'pyplay.program.v1' || k === 'pyplay.theme.v1'),
+      storage.local.every((k) => k === 'pyplay.workspace.v1' || k === 'pyplay.theme.v1'),
     ).toBe(true);
     // No cookies, no IndexedDB, no session storage.
     expect(storage.session).toEqual([]);
