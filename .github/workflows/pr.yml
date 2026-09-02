@@ -271,3 +271,95 @@ jobs:
             test-results/
           retention-days: 7
           overwrite: true
+
+  # FR-107, FR-108. `needs:` the five gates of FR-102 - FR-106, so a red gate
+  # leaves this job *skipped* rather than failed and the run's conclusion is the
+  # gate's (VC-121). The artifact is named from `package.json`'s version at the
+  # head commit, the PR number and the 7-char head SHA, which is the SHA a
+  # reviewer can match to the pull request -- `github.sha` on a `pull_request`
+  # event is the ephemeral merge commit, which appears nowhere in the PR's UI.
+  artifact:
+    name: artifact
+    needs: [typecheck, unit, e2e-chromium, audit-contrast, audit-perf]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out the pull request merge result
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Activate Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Compute the artifact name
+        id: name
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          base_version="$(node -p "require('./package.json').version")"
+          short_sha="${HEAD_SHA:0:7}"
+          # pyplay-<base-version>-pr.<pr-number>+<short-sha>: a semver-legal
+          # prerelease + build-metadata string, so it sorts below the release
+          # it precedes.
+          artifact="pyplay-${base_version}-pr.${PR_NUMBER}+${short_sha}"
+          echo "artifact=${artifact}" >> "$GITHUB_OUTPUT"
+          echo "Artifact name: ${artifact}"
+      - name: Build the site
+        run: npm run build
+      - name: Pack the built site
+        env:
+          ARTIFACT: ${{ steps.name.outputs.artifact }}
+        run: |
+          # `-C dist .` so the extraction root is dist/'s *contents*, with no
+          # wrapping directory (spec, "Tarball layout").
+          tar -czf "${RUNNER_TEMP}/${ARTIFACT}.tar.gz" -C dist .
+          ls -l "${RUNNER_TEMP}/${ARTIFACT}.tar.gz"
+      - name: Upload the built site
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ steps.name.outputs.artifact }}
+          path: ${{ runner.temp }}/${{ steps.name.outputs.artifact }}.tar.gz
+          retention-days: 14
+          # A build that produced nothing must fail loudly, not upload silence.
+          if-no-files-found: error
+      - name: Delete the superseded commit's artifact for this pull request
+        # FR-108: exactly one `pyplay-*-pr.<N>+*` per open pull request. The
+        # run's own `contents: read` token is used; BR-106 forbids widening it,
+        # so a token that cannot delete leaves FR-108 satisfied by the 14-day
+        # retention alone and this step reports that rather than failing.
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          KEEP: ${{ steps.name.outputs.artifact }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -u
+          prefix="pyplay-"
+          suffix="-pr.${PR_NUMBER}+"
+          stale=0
+          while IFS=$'\t' read -r id artifact_name; do
+            [ -z "${id}" ] && continue
+            [ "${artifact_name}" = "${KEEP}" ] && continue
+            case "${artifact_name}" in
+              "${prefix}"*"${suffix}"*) ;;
+              *) continue ;;
+            esac
+            echo "Deleting the superseded artifact ${artifact_name} (id ${id})"
+            if gh api --method DELETE \
+                 "repos/${GITHUB_REPOSITORY}/actions/artifacts/${id}" >/dev/null 2>&1; then
+              echo "  deleted"
+            else
+              stale=$((stale + 1))
+              echo "  not deleted: this run's read-only token cannot delete artifacts."
+              echo "  Leaving it to expire; FR-108's single-artifact guarantee then"
+              echo "  rests on the 14-day retention alone (see docs/ci.md)."
+            fi
+          done < <(
+            gh api --paginate \
+              "repos/${GITHUB_REPOSITORY}/actions/artifacts?per_page=100" \
+              --jq '.artifacts[] | select(.expired == false) | [.id, .name] | @tsv' \
+              2>/dev/null || true
+          )
+          echo "Superseded artifacts left in place: ${stale}"
