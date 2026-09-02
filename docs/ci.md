@@ -366,7 +366,8 @@ regression: it boots a 13 MB Pyodide WASM runtime, which is CPU-bound, and its
 thresholds were measured on a maintainer's laptop against loopback. It is a
 required check anyway, because a performance gate that does not gate is not a
 gate. That is why every measurement is printed next to its threshold — the log
-shows how much headroom the runner actually has.
+shows how much headroom the runner actually has, and it is what the two
+runner-scale thresholds above were set from.
 
 ---
 
@@ -476,8 +477,17 @@ NFR-008 format 500 lines        20 ms   (<= 300)      93% headroom
 
 NFR-003 (warm runtime ready, 63%) and NFR-004 (transfer size, 41%) are the
 tightest. NFR-004 is hardware-independent — it is a byte count — so the binding
-CPU-bound constraint on a slower runner is **NFR-003 at 2.5 s**, with NFR-002 the
-next in line.
+CPU-bound constraint on a slower runner is **NFR-003**, with NFR-002 next in
+line.
+
+That prediction held, and NFR-003 did not: on `ubuntu-latest` the same build
+measured 1523 – 2433 ms warm when VC-053 passed and 2500 – 3890 ms when it
+failed — on `main` as often as on a branch. It is asserted on CI at **5.0 s**,
+and NFR-404's switch budget at **250 ms** to paint with a **500 ms**
+main-thread ceiling, for the same reason; both are recorded in their specs with
+the runs behind them, and both keep the reference-profile expectation above
+unchanged. The measurements are still printed next to the thresholds, so the
+day a runner or the product gets faster the headroom is visible in the log.
 
 ### Runner figures: not yet measured
 

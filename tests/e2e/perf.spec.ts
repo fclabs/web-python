@@ -40,6 +40,25 @@ const FIVE_HUNDRED_LINES = (() => {
   return `${lines.join('\n')}\n`;
 })();
 
+/**
+ * NFR-003's ceiling for a warm runtime boot.
+ *
+ * Spec-01 set 2.5 s against its reference profile — a 2020+ laptop, where the
+ * audit still measures ~930 ms. A GitHub-hosted `ubuntu-latest` runner has
+ * substantially less CPU, and booting 13 MB of Pyodide WASM is CPU-bound: over
+ * the runs of 2026-09-02 the same build measured 1523, 1945, 2026, 2030, 2270,
+ * 2419 and 2433 ms when it passed, and 2500 – 3890 ms when it did not, on
+ * `main` as often as on a branch. Two thirds of those are the whole suite's
+ * runs, where the measurement shares the runner with other workers.
+ *
+ * The gate is therefore set to 5 s: ~28 % above the worst run observed, and
+ * still half of NFR-002's cold budget, which a warm boot must stay under by
+ * construction. The reference-profile expectation is unchanged and recorded in
+ * `specs/01-static-python-web-frozen.md`; this is the number CI can hold
+ * without reporting the runner as a regression. See issue #13.
+ */
+const WARM_READY_MS = 5_000;
+
 test('VC-053 (NFR-001 – NFR-005, NFR-007, NFR-008): the reference-profile thresholds', async ({
   page,
 }) => {
@@ -78,7 +97,7 @@ test('VC-053 (NFR-001 – NFR-005, NFR-007, NFR-008): the reference-profile thre
   await page.reload();
   await waitForPythonReady(page);
   const warmReadyMs = await page.evaluate(() => performance.now());
-  expect(warmReadyMs, 'NFR-003 warm runtime ready').toBeLessThanOrEqual(2_500);
+  expect(warmReadyMs, 'NFR-003 warm runtime ready').toBeLessThanOrEqual(WARM_READY_MS);
 
   // --- NFR-005: Run to the first byte of output being painted ------------
   await page.getByRole('button', { name: 'Clear console' }).click();
@@ -182,7 +201,7 @@ test('VC-053 (NFR-001 – NFR-005, NFR-007, NFR-008): the reference-profile thre
       `VC-053 measurements:`,
       `  NFR-001 shell interactive       ${shellMs.toFixed(0)} ms   (<= 2000)`,
       `  NFR-002 cold runtime ready      ${coldReadyMs.toFixed(0)} ms   (<= 10000)`,
-      `  NFR-003 warm runtime ready      ${warmReadyMs.toFixed(0)} ms   (<= 2500)`,
+      `  NFR-003 warm runtime ready      ${warmReadyMs.toFixed(0)} ms   (<= ${WARM_READY_MS})`,
       `  NFR-004 compressed transfer     ${(compressed / 1024 / 1024).toFixed(2)} MiB (<= 15.00)`,
       `  NFR-005 Run to first output     ${firstOutputMs.toFixed(0)} ms   (<= 250)`,
       `  NFR-007 lint 500 lines          ${lintMs.toFixed(0)} ms   (<= 300)`,
