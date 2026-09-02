@@ -53,12 +53,14 @@ export function cyclePreference(current: ThemePreference): ThemePreference {
 
 /**
  * FR-514 / FR-516 / BR-506: `data-theme` mirrors the preference; used
- * `color-scheme` tracks the effective palette (inline style so System stays
- * load-scoped for native widgets).
+ * `color-scheme` and `data-effective` track the effective palette so System
+ * chrome stays load-scoped (FR-510 / BR-502 / VC-508) instead of following a
+ * live `@media (prefers-color-scheme)`.
  */
 export function applyDocumentTheme(preference: ThemePreference): EffectivePalette {
   const effective = effectivePalette(preference);
   document.documentElement.dataset.theme = preference;
+  document.documentElement.dataset.effective = effective;
   document.documentElement.style.colorScheme = effective;
   return effective;
 }

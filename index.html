@@ -21,6 +21,9 @@
         } catch (e) {}
         var effective =
           pref === 'dark' || (pref === 'system' && osDark) ? 'dark' : 'light';
+        /* data-effective freezes System chrome against mid-session OS flips
+           (FR-510 / BR-502); data-theme still mirrors the preference (FR-514). */
+        document.documentElement.dataset.effective = effective;
         document.documentElement.style.colorScheme = effective;
       })();
     </script>
