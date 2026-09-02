@@ -10,7 +10,7 @@
   --bg-raised: #ffffff;
   --fg: #16181d;
   --fg-muted: #4a4f58;
-  --border: #9aa0aa;
+  --border: #7f8590;
   --border-strong: #6b7280;
 
   --accent: #0b5bd3;
@@ -42,7 +42,7 @@
 
   --disabled-fg: #5c6270;
   --disabled-bg: #e4e6ea;
-  --disabled-border: #8c929c;
+  --disabled-border: #777d87;
 
   --font-ui: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
@@ -141,16 +141,31 @@ body {
   color: var(--accent-fg);
 }
 
-.btn:disabled {
+/* FR-054 / FR-058: visibly disabled and non-activatable, yet still in the tab
+   order (FR-049) — see src/controls.ts. `aria-disabled`, not `disabled`. */
+.btn[aria-disabled='true'] {
   background: var(--disabled-bg);
   border-color: var(--disabled-border);
   color: var(--disabled-fg);
   cursor: not-allowed;
 }
 
+/* NFR-013: the focus indicator is 2 px of --focus, which clears 3:1 against
+   every surface it can land on in either palette. */
 :focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
+}
+
+/* FR-049: the editor is a tab stop like any other control, and shows the same
+   ring. CodeMirror's own focus outline is replaced, not doubled. */
+.cm-editor.cm-focused {
+  outline: none;
+}
+
+.cm-editor .cm-content:focus {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
 }
 
 /* Status bar (FR-065) ---------------------------------------------------- */
@@ -292,10 +307,11 @@ body {
   padding: 6px 8px;
 }
 
-.stdin-input:disabled {
+.stdin-input[aria-disabled='true'] {
   background: var(--disabled-bg);
   border-color: var(--disabled-border);
   color: var(--disabled-fg);
+  cursor: not-allowed;
 }
 
 /* Diagnostics ------------------------------------------------------------ */

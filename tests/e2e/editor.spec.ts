@@ -22,8 +22,11 @@ test('VC-001 (FR-001): multi-line Python with keyword highlighting and line numb
   const keywords = await page
     .locator('.cm-content .tok-keyword')
     .evaluateAll((nodes) => nodes.map((n) => n.textContent));
-  expect(keywords).toContain('def');
-  expect(keywords).toContain('return');
+  // Joined, not matched span by span: CodeMirror may split a highlighted run
+  // across sibling text nodes while it is measuring, so `return` can arrive as
+  // `re` + `turn` — both still inside `.tok-keyword`, which is what FR-001 asks.
+  expect(keywords.join('')).toContain('def');
+  expect(keywords.join('')).toContain('return');
 
   const gutter = await page
     .locator('.cm-gutter.cm-lineNumbers .cm-gutterElement')

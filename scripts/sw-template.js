@@ -94,7 +94,10 @@ async function serve(request) {
   // `ignoreVary`: hosts routinely send `Vary: Origin` (vite preview does), and
   // the precache requests carry no `Origin` header, so honouring Vary would
   // miss every entry the worker itself stored.
-  const cached = await cache.match(request, { ignoreSearch: navigation, ignoreVary: true });
+  // `ignoreSearch`: no manifest URL carries a query string, and the page adds
+  // one deliberately when it respawns the Python worker (see
+  // `PyodideRuntime.spawn`), which must still be served from the cache offline.
+  const cached = await cache.match(request, { ignoreSearch: true, ignoreVary: true });
   if (cached) return navigation ? withIsolation(cached) : cached;
 
   if (navigation) {

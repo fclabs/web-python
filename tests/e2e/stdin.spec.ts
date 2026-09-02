@@ -58,9 +58,11 @@ async function countStdinEnables(page: Page): Promise<void> {
     const field = document.getElementById('stdin-input') as HTMLInputElement;
     const box = window as unknown as { __stdinEnables: number };
     box.__stdinEnables = 0;
+    // The field is inert via `aria-disabled` so it stays tab-reachable
+    // (FR-049); see src/controls.ts.
     new MutationObserver(() => {
-      if (!field.disabled) box.__stdinEnables++;
-    }).observe(field, { attributes: true, attributeFilter: ['disabled'] });
+      if (field.getAttribute('aria-disabled') !== 'true') box.__stdinEnables++;
+    }).observe(field, { attributes: true, attributeFilter: ['aria-disabled'] });
   });
 }
 
@@ -243,11 +245,14 @@ test('VC-032 (FR-032): with no program running the field takes no text', async (
   await openReady(page);
   await expectStdinIdle(page);
 
-  // Clicking and typing at it changes nothing.
+  // Clicking and typing at it changes nothing. The field stays reachable by
+  // keyboard (FR-049), so it may take focus — what FR-032 forbids is text.
   await stdinField(page).click({ force: true });
   await page.keyboard.type('hola');
+  await page.keyboard.press('Enter');
   await expect(stdinField(page)).toHaveValue('');
-  await expect(stdinField(page)).not.toBeFocused();
+  expect(await stdinField(page).evaluate((el: HTMLInputElement) => el.readOnly)).toBe(true);
+  await expect(stdinField(page)).toBeDisabled();
   await expect(page.locator('#btn-eof')).toBeDisabled();
 });
 

@@ -84,12 +84,19 @@ export async function statusText(page: Page): Promise<string> {
   return page.evaluate(() => document.getElementById('status-bar')?.textContent ?? '');
 }
 
+/**
+ * The conditionally-inert controls carry `aria-disabled` rather than
+ * `disabled`, so they stay in the tab order (FR-049) while remaining
+ * non-activatable (FR-054, FR-058) — see `src/controls.ts`. Playwright's
+ * `toBeDisabled()`/`toBeEnabled()` read the same attribute.
+ */
+
 /** Wait for FR-013: the runtime is ready and Run is enabled. */
 export async function waitForPythonReady(page: Page): Promise<void> {
   await page.waitForFunction(
     () => {
-      const run = document.getElementById('btn-run') as HTMLButtonElement | null;
-      return !!run && !run.disabled;
+      const run = document.getElementById('btn-run');
+      return !!run && run.getAttribute('aria-disabled') !== 'true';
     },
     undefined,
     { timeout: 60_000 },
@@ -141,8 +148,8 @@ export async function programStdout(page: Page): Promise<string> {
 export async function waitForStdinPrompt(page: Page): Promise<void> {
   await page.waitForFunction(
     () => {
-      const field = document.getElementById('stdin-input') as HTMLInputElement | null;
-      return !!field && !field.disabled;
+      const field = document.getElementById('stdin-input');
+      return !!field && field.getAttribute('aria-disabled') !== 'true';
     },
     undefined,
     { timeout: 30_000 },
@@ -170,8 +177,8 @@ export async function runProgram(page: Page, code: string): Promise<void> {
 export async function waitForLinter(page: Page): Promise<void> {
   await page.waitForFunction(
     () => {
-      const btn = document.getElementById('btn-format') as HTMLButtonElement | null;
-      return !!btn && !btn.disabled;
+      const btn = document.getElementById('btn-format');
+      return !!btn && btn.getAttribute('aria-disabled') !== 'true';
     },
     undefined,
     { timeout: 30_000 },

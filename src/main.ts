@@ -2,6 +2,7 @@ import './styles.css';
 import { Autosaver } from './autosave';
 import { writeClipboard } from './clipboard';
 import { ConsoleView } from './console';
+import { isInert, setInert } from './controls';
 import { createEditor, revealPosition, selectAll, setDoc } from './editor';
 import {
   NOT_ISOLATED_BANNER,
@@ -131,7 +132,7 @@ function boot(): void {
   function runFormat(): void {
     // FR-058: inert by pointer, by keyboard and via the FR-009 shortcut when
     // the engine never loaded.
-    if (engine === null || formatBtn.disabled) return;
+    if (engine === null || isInert(formatBtn)) return;
     if (formatDocument(view, engine) === 'syntax-error') notices.show(CANNOT_FORMAT);
   }
 
@@ -142,7 +143,7 @@ function boot(): void {
   void loadRuff().then(
     (loaded) => {
       engine = loaded;
-      formatBtn.disabled = false;
+      setInert(formatBtn, false);
       linter = new Linter(loaded, (diagnostics) => {
         panel.render(diagnostics); // FR-038 / FR-040
         applyDiagnostics(view, diagnostics); // FR-036 / FR-037
@@ -153,8 +154,7 @@ function boot(): void {
       // FR-046 / FR-058 / BR-009: the linter alone degrades — editing, Run,
       // autosave and Copy are all untouched.
       panel.markUnavailable();
-      formatBtn.disabled = true;
-      formatBtn.setAttribute('aria-disabled', 'true');
+      setInert(formatBtn, true);
     },
   );
 
@@ -197,8 +197,8 @@ function boot(): void {
    * Stop enabled if and only if a program is currently running.
    */
   function syncControls(): void {
-    runBtn.disabled = !ready || running || restarting;
-    stopBtn.disabled = !running;
+    setInert(runBtn, !ready || running || restarting);
+    setInert(stopBtn, !running);
   }
 
   // --- stdin field (FR-029 – FR-034, FR-060 – FR-062, FR-066) -------------
@@ -211,8 +211,8 @@ function boot(): void {
   /** FR-029: enabled and focused only while a read is actually pending. */
   function stdinPending(mode: StdinMode): void {
     stdinMode = mode;
-    if (stdinInput.disabled) stdinInput.disabled = false;
-    if (eofBtn.disabled) eofBtn.disabled = false;
+    setInert(stdinInput, false);
+    setInert(eofBtn, false);
     stdinInput.focus();
   }
 
@@ -220,12 +220,12 @@ function boot(): void {
   function stdinIdle(): void {
     stdinMode = null;
     stdinInput.value = '';
-    if (!stdinInput.disabled) stdinInput.disabled = true;
-    if (!eofBtn.disabled) eofBtn.disabled = true;
+    setInert(stdinInput, true);
+    setInert(eofBtn, true);
   }
 
   function submitStdin(): void {
-    if (stdinInput.disabled || stdinMode === null) return;
+    if (isInert(stdinInput) || stdinMode === null) return;
     const text = stdinInput.value;
     // FR-066: measured in Unicode code points, as the spec states.
     if (Array.from(text).length > STDIN_MAX_LINE) {
@@ -248,7 +248,7 @@ function boot(): void {
 
   /** FR-034: end-of-file for the suspended read. */
   function sendStdinEof(): void {
-    if (stdinInput.disabled) return;
+    if (isInert(eofBtn)) return;
     runtime.sendStdinEof();
     stdinIdle();
   }
@@ -268,7 +268,7 @@ function boot(): void {
   eofBtn.addEventListener('click', () => sendStdinEof());
 
   function startRun(): void {
-    if (runBtn.disabled) return;
+    if (isInert(runBtn)) return;
     // BR-006: the executed bytes are the buffer as it stands right now.
     const code = view.state.doc.toString();
     stdinIdle();
@@ -356,7 +356,7 @@ function boot(): void {
 
   // FR-023 / FR-024 / FR-054: Stop is inert unless a program is running.
   stopBtn.addEventListener('click', () => {
-    if (stopBtn.disabled) return;
+    if (isInert(stopBtn)) return;
     runtime.stop();
   });
 

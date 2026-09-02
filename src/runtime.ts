@@ -1,3 +1,7 @@
+// The bundled worker script's URL, as a plain string. Imported this way, and
+// not through `new Worker(new URL(…))`, so a replacement worker can be spawned
+// from a *distinct* URL — see `spawn()`.
+import pyodideWorkerUrl from './worker/pyodide.worker.ts?worker&url';
 import { STDIN_BUFFER_BYTES, isCurrentRun, type FromWorker, type ToWorker } from './protocol';
 import { writeSubmission } from './stdin-channel';
 import type { StdinMode } from './stdin-stream';
@@ -54,6 +58,8 @@ export class PyodideRuntime {
   private progressTimer: ReturnType<typeof setInterval> | null = null;
   private startedAt = 0;
   private lastPercent = 0;
+  /** How many workers have been spawned, first boot included (FR-064). */
+  private spawnCount = 0;
 
   constructor(private readonly handlers: RuntimeHandlers) {}
 
@@ -70,9 +76,22 @@ export class PyodideRuntime {
    * Used for the first boot and for every post-Stop recovery.
    */
   private spawn(): void {
-    // A classic worker: it pulls the self-hosted Pyodide loader in with
-    // `importScripts`, so no CDN and no bundler indirection (BR-001).
-    const worker = new Worker(new URL('./worker/pyodide.worker.ts', import.meta.url));
+    /*
+     * A classic worker: it pulls the self-hosted Pyodide loader in with
+     * `importScripts`, so no CDN and no bundler indirection (BR-001).
+     *
+     * Every *replacement* worker (FR-064) is loaded from a distinct URL. In
+     * WebKit a worker script replayed from the HTTP cache arrives without the
+     * `Cross-Origin-Embedder-Policy` header of its original response, and the
+     * COEP-require-corp document then refuses to start it — so the first Stop
+     * would be the last, and Safari could never recover the runtime. The query
+     * string is inert everywhere else (the response is identical, and the
+     * service worker looks entries up with `ignoreSearch`), and costs one
+     * refetch of a ~6 KB script per Stop.
+     */
+    const url =
+      this.spawnCount++ === 0 ? pyodideWorkerUrl : `${pyodideWorkerUrl}?respawn=${this.spawnCount}`;
+    const worker = new Worker(url);
     this.worker = worker;
     worker.addEventListener('message', (event: MessageEvent<FromWorker>) => {
       // A message from a worker we have already replaced is never acted on.

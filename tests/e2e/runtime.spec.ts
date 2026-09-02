@@ -42,7 +42,9 @@ test('VC-012 (FR-012): Run is disabled and shows a rising progress value during 
     setInterval(() => {
       const run = document.getElementById('btn-run') as HTMLButtonElement | null;
       const percent = Number(run?.dataset.progress);
-      if (run && Number.isFinite(percent)) samples.push({ percent, disabled: run.disabled });
+      // Inert controls carry `aria-disabled`, not `disabled` (src/controls.ts).
+      if (run && Number.isFinite(percent))
+        samples.push({ percent, disabled: run.getAttribute('aria-disabled') === 'true' });
     }, 25);
   });
 

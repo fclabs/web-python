@@ -8,7 +8,7 @@ import {
   keymap,
   lineNumbers,
 } from '@codemirror/view';
-import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
+import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
 import {
   HighlightStyle,
   bracketMatching,
@@ -97,7 +97,13 @@ export function createEditor({
     python(),
     // FR-036 / FR-037: diagnostic underlines, gutter icons and tooltips.
     diagnosticMarkers(),
-    keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
+    // FR-049: `Tab` is deliberately NOT bound to indentation. CodeMirror's
+    // `indentWithTab` would trap the tab sequence inside the editor, and
+    // FR-049 requires `Tab` from page load to walk past the editor to the
+    // stdin field, Send EOF and the diagnostics entries. Indentation still
+    // comes from `indentOnInput`, `indentUnit` and the default keymap's
+    // `insertNewlineAndIndent`.
+    keymap.of([...defaultKeymap, ...historyKeymap]),
     EditorView.lineWrapping,
     EditorView.updateListener.of((update) => {
       if (update.docChanged) onChange(update.state.doc.toString());

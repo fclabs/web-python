@@ -1,0 +1,359 @@
+# Architecture
+
+How the page, the Python worker and the stdin channel fit together — and where
+the implementation deliberately differs from the spec's *Data & Interfaces*.
+
+```
+┌──────────────────────────── main thread ────────────────────────────┐
+│  index.html + src/main.ts                                           │
+│    CodeMirror editor ── autosave → localStorage['pyplay.program.v1'] │
+│    console (rAF-batched, bounded)                                   │
+│    status bar, toolbar, stdin field, diagnostics panel              │
+│    Ruff-WASM (lint + format, in-thread)                             │
+│    src/runtime.ts ── owns the worker, runIds, stop-and-replace       │
+└───────────┬──────────────────────────────────┬──────────────────────┘
+            │ postMessage (init / run)         │ SharedArrayBuffer
+            │ postMessage (ready / stdout /…)  │ + Atomics.wait/notify
+┌───────────▼──────────────────────────────────▼──────────────────────┐
+│  src/worker/pyodide.worker.ts — a dedicated Web Worker              │
+│    Pyodide 0.28.x (CPython 3.13 → WASM), loaded from /pyodide/      │
+│    a Python runner that executes the program as a fresh __main__    │
+│    a Python stdin shim delegating to src/stdin-stream.ts            │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+The visitor's program **never** runs on the main thread. That is what makes
+Stop unconditional: a runaway `while True: pass` can be killed with
+`worker.terminate()` because it was never holding the UI.
+
+---
+
+## Main ↔ worker message protocol
+
+Messages are structured-clone-able objects with a `type` discriminator. The
+types live in [`src/protocol.ts`](../src/protocol.ts).
+
+### Main → worker
+
+| `type` | Payload | Meaning |
+|---|---|---|
+| `init` | `{ stdinBuffer: SharedArrayBuffer }` | Boot Pyodide; adopt the shared buffer as this worker's stdin channel. Sent once per worker, immediately after it is spawned. |
+| `run` | `{ code: string, runId: number }` | Execute `code` as `__main__` in a brand-new namespace. |
+
+**Stop is not a message.** It is `worker.terminate()` — see
+*Stop and replace* below.
+
+### Worker → main
+
+| `type` | Payload | Meaning |
+|---|---|---|
+| `ready` | `{ pythonVersion: string }` | The runtime is initialised. |
+| `initError` | `{ message: string }` | The runtime failed to initialise. |
+| `stdout` | `{ runId, text }` | A chunk of `sys.stdout`. |
+| `stderr` | `{ runId, text }` | A chunk of `sys.stderr`. |
+| `stdinRequest` | `{ runId, prompt, mode }` | The program is suspended on a blocking read. **`mode` is an addition — see below.** |
+| `done` | `{ runId, durationMs }` | Normal termination. |
+| `error` | `{ runId, traceback }` | Uncaught exception; `traceback` is the full CPython traceback with the runner's own frame stripped. |
+
+### Deviation from *Data & Interfaces*: `stdinRequest.mode`
+
+The spec's table gives `stdinRequest` the payload `{ runId, prompt }`. The
+implementation adds a third field:
+
+```ts
+{ type: 'stdinRequest'; runId: number; prompt: string; mode: 'line' | 'stream' }
+```
+
+**Why.** The spec requires two different stdin-field behaviours after a
+submission, and only the worker knows which applies:
+
+- for a *line-based* read (`input()`, `sys.stdin.readline()`) the field is
+  cleared and **disabled** after the visitor submits one line — the read is
+  satisfied;
+- for a *stream* read (`sys.stdin.read()`, or `sys.stdin.read(n)` that is still
+  short of `n` characters) the field is cleared but **stays enabled**, because
+  the read wants more lines or an EOF.
+
+Without `mode`, the main thread would have to guess which kind of read it is
+answering, or the worker would have to emit a second message after every
+submission. `mode` is the smaller, race-free option: one extra scalar on a
+message the worker is already sending, at the only moment when the answer is
+known. `'line'` covers `input()`/`readline()`; `'stream'` covers
+`read()`/`read(n)`.
+
+Nothing else in *Data & Interfaces* is changed. `init`, `run`, `ready`,
+`initError`, `stdout`, `stderr`, `done` and `error` carry exactly the payloads
+the spec lists.
+
+### Other implementation choices the spec leaves open
+
+- **The worker is a classic worker, not a module worker.** It pulls the
+  self-hosted Pyodide loader in with `importScripts('/pyodide/pyodide.js')`, so
+  the runtime is fetched from this origin with no CDN and no bundler
+  indirection.
+- **`init` carries the buffer from the very first boot**, not only after a
+  Stop. Every worker gets its own channel; nothing is ever reused.
+- **Ruff runs on the main thread**, not in a worker. Lint and format of a
+  500-line file each measure well under their 300 ms budget, and keeping Ruff
+  in-thread means Format can be a single, synchronous, undoable editor
+  transaction.
+
+---
+
+## `runId` discipline
+
+`runId` is allocated by the **main thread** (`src/runtime.ts`), starts at 1,
+increments on every Run, and is **never reset** — not when a worker is
+terminated, not when one is replaced.
+
+The main thread keeps exactly one `currentRunId`. Every inbound message that
+carries a `runId` is passed through `isCurrentRun()`; anything that does not
+match is dropped on the floor:
+
+```ts
+export function isCurrentRun(message: FromWorker, currentRunId: number | null): boolean {
+  if (!('runId' in message)) return true;               // ready / initError
+  return currentRunId !== null && message.runId === currentRunId;
+}
+```
+
+Because ids are monotonic and never recycled, a message still in flight from a
+worker that has just been terminated can never be mistaken for output of the
+current run. `currentRunId` is also set to `null` the instant Stop is pressed,
+so *nothing* from the dead worker is acted on even before its replacement
+exists.
+
+There is a second, cheaper guard on the same problem: the message listener
+closes over the `Worker` instance it was installed on and returns immediately
+if `this.worker !== worker`. The `runId` check is the one that matters for
+correctness; the identity check just stops the work earlier.
+
+---
+
+## The `SharedArrayBuffer` stdin channel
+
+This is why the whole site must be cross-origin isolated. `Atomics.wait` on a
+`SharedArrayBuffer` is the only way to park a WebAssembly interpreter on a
+value that the main thread will produce later, which is exactly what a blocking
+`input()` is.
+
+### Wire format
+
+One buffer per worker, handed over with `init`. It is a 4-slot `Int32Array`
+header followed by a UTF-8 payload
+([`src/stdin-channel.ts`](../src/stdin-channel.ts)):
+
+| Slot | Meaning |
+|---|---|
+| 0 | control word — `0` = empty, `1` = a submission is waiting |
+| 1 | `1` when the submission is EOF rather than text |
+| 2 | payload length, in bytes |
+| 3 | reserved |
+
+The payload region is sized for one submitted line of 65 536 code points at up
+to 4 UTF-8 bytes each, plus the `\n` the main thread appends — the same cap
+the UI enforces before it ever writes (`Input line too long (max 65536
+characters)`).
+
+### The cycle
+
+1. The Python shim calls a blocking read.
+2. The worker posts `stdinRequest { runId, prompt, mode }` and then parks in
+   `Atomics.wait(header, CONTROL, CONTROL_EMPTY)` — nothing else in the worker
+   runs.
+3. The main thread renders the prompt (exactly once, from the message — the
+   worker's shim consumes it so it never reaches the `stdout` stream), enables
+   and focuses the stdin field, and waits for the visitor.
+4. On submit, the main thread writes the line **plus a trailing `\n`** into the
+   payload, sets `length`, clears the EOF flag, stores `1` into the control
+   word and calls `Atomics.notify`. Send EOF instead sets the EOF flag with a
+   zero-length payload.
+5. The worker wakes, `takeSubmission()` reads the payload and **resets the
+   control word to `0`**, so the channel is immediately ready for the next
+   submission of the *same* read.
+6. If the read is not yet satisfied, the worker parks again — step 2 without a
+   new `stdinRequest` for `read()`/`read(n)`, because the field is already open.
+
+Reads are unlimited in number and may sit anywhere in the program: top level,
+loop bodies, function calls, `try` blocks, after arbitrary computation. Each
+one suspends and resumes independently.
+
+### Consumption semantics
+
+The pure state machine lives in
+[`src/stdin-stream.ts`](../src/stdin-stream.ts) — no DOM, no `Atomics` — so it
+is unit-testable in Node. It buffers **code points**, not bytes, so `read(n)`
+counts the way CPython does.
+
+| API | Blocks until | Returns | Field after a submission |
+|---|---|---|---|
+| `input()` | one line, or EOF | the line without its trailing `\n`; raises `EOFError` on EOF before a line | disabled (`mode: 'line'`) |
+| `sys.stdin.readline()` | one line, or EOF | the line **including** `\n`; `''` on EOF before a line | disabled (`mode: 'line'`) |
+| `sys.stdin.read()` | EOF | every buffered character; `''` on immediate EOF | stays enabled (`mode: 'stream'`) |
+| `sys.stdin.read(n)` | `n` characters, or EOF | the first `n` characters; the partial buffer if EOF arrives first | stays enabled while short of `n` (`mode: 'stream'`) |
+
+EOF is **latched** for the run: once it has been delivered, every later read
+returns immediately rather than re-opening the field. `reset()` clears the
+buffer and the latch at the start of every run, so nothing survives from a
+previous one.
+
+The prompt of `input(prompt)` travels **only** in `stdinRequest.prompt`. The
+worker's shim flushes `stdout` and `stderr` before it suspends — so console
+ordering matches a terminal's — and then swallows the prompt instead of writing
+it, which is what makes "the prompt appears exactly once" true.
+
+---
+
+## Stop and replace
+
+Stop is deliberately not a message: a message would have to be *received*, and
+a program spinning in a tight loop never yields to the worker's event loop.
+
+```
+Stop pressed
+  ├─ worker.terminate()                    execution ceases immediately
+  ├─ currentRunId = null                   nothing in flight is ever acted on
+  ├─ state = 'restarting'
+  ├─ onStopped()   → console "Program stopped.", status "Restarting Python…",
+  │                   Run disabled, stdin field disabled
+  ├─ onRunStateChange(false)
+  └─ spawn()
+       ├─ new Worker(<script URL>)         a fresh interpreter, from scratch
+       ├─ new SharedArrayBuffer            a brand-new stdin channel
+       ├─ postMessage({ type: 'init', … })
+       └─ on 'ready' → onRecovered()
+            status returns to its steady value, Run is enabled again,
+            and **no** second "Python … ready" line is appended
+```
+
+Recovery is silent by design: the console belongs to the visitor's program, and
+a runtime restart is not program output. The budget is 5 seconds from Stop to
+Run being enabled again, with no page reload.
+
+The same replacement is what guarantees a fresh namespace on every run after a
+stop or a crash — there is literally no interpreter left to leak state.
+
+### The respawn URL carries a query string
+
+`PyodideRuntime.spawn()` loads the *first* worker from the bundled script URL
+and every **replacement** from `<url>?respawn=<n>`.
+
+This is a WebKit workaround, and a necessary one: in WebKit a worker script
+replayed from the HTTP cache arrives without the
+`Cross-Origin-Embedder-Policy` header its original response carried, and the
+COEP-`require-corp` document then refuses to start it
+(*"Refused to load … worker because of Cross-Origin-Embedder-Policy"*).
+Without the query string, the first Stop in Safari would be the last: the
+replacement worker never loads and the page is stuck at `Python unavailable`.
+
+The cost is one refetch of a ~6 KB script per Stop. The service worker looks
+cache entries up with `ignoreSearch: true`, so the respawn URL is still served
+from the precache bucket when the network is gone, and no manifest URL carries
+a query string of its own.
+
+---
+
+## Inert controls (FR-049 vs FR-054 / FR-058)
+
+Two requirements pull in opposite directions:
+
+- keyboard traversal must reach **every** control — Run, Stop, Clear console,
+  Copy code, Format, the editor, the stdin field, Send EOF and the diagnostics
+  entries — each showing a visible focus indicator;
+- Stop must be visibly disabled and non-activatable whenever nothing is
+  running, and Format likewise when the lint engine failed to load.
+
+A natively `disabled` control satisfies the second and violates the first: the
+browser removes it from the tab order.
+
+The resolution is in [`src/controls.ts`](../src/controls.ts). No
+conditionally-inert control ever uses the `disabled` attribute. Instead:
+
+- `aria-disabled="true"` plus an explicit `tabindex="0"` — focusable,
+  announced as disabled, and styled by `.btn[aria-disabled='true']` /
+  `.stdin-input[aria-disabled='true']`;
+- the stdin field additionally carries `readonly`, so it takes focus but
+  refuses text;
+- **every** activation path is guarded by `isInert()` inside its handler:
+  click, `Enter`, `Space`, `Ctrl/Cmd+Enter`, `Shift+Alt+F` and `Ctrl+D`.
+
+`setInert()` writes the attribute only when it actually changes, so a
+`MutationObserver` watching `aria-disabled` sees exactly one record per
+transition. `aria-disabled` is also what Playwright's `toBeDisabled()` and
+`toBeEnabled()` report, so the inertness criteria read unchanged in the tests.
+
+Related: `Tab` is **not** bound to indentation in the editor. CodeMirror's
+`indentWithTab` would trap the tab sequence inside the editor and make the
+stdin field, Send EOF and the diagnostics entries unreachable. Indentation
+comes from `indentOnInput`, `indentUnit` and the default keymap's
+newline-and-indent instead.
+
+---
+
+## Console
+
+Output arrives as chunks and is painted on a `requestAnimationFrame` batch, so
+a program printing tens of thousands of lines a second never blocks the main
+thread for more than a frame — and Stop still lands inside its 500 ms budget.
+
+Two caps keep memory bounded:
+
+- **5 000 lines per run.** Older lines are dropped and a
+  `… earlier output truncated …` marker heads the retained region.
+- **100 000 characters per write.** The remainder is replaced by
+  `… line truncated (N characters dropped) …`.
+
+The view stays pinned to the bottom only while it *is* at the bottom; once the
+visitor scrolls up, new output no longer moves the viewport, and returning to
+the bottom re-pins it.
+
+---
+
+## Storage surface
+
+The origin holds exactly two things, and nothing else — no cookies, no
+IndexedDB, no `sessionStorage`:
+
+| Store | Key | Contents |
+|---|---|---|
+| `localStorage` | `pyplay.program.v1` | the exact editor contents, UTF-8, no wrapper |
+| Cache Storage | `pyplay-assets-v<build>` | the precached static assets; older buckets are deleted on activation |
+
+Autosave is debounced 500 ms and additionally flushed **synchronously** on
+`pagehide` and on `visibilitychange → hidden`, so a fast navigation away can
+never persist a half-typed prefix. A rejected write (quota, private browsing,
+storage disabled) shows one notice per page load and changes nothing else.
+
+---
+
+## Browser matrix
+
+The spec pins eight browser versions. Playwright cannot install arbitrary
+historical builds, so `playwright.config.ts` declares one project per pinned
+name and maps it onto the closest engine it can actually launch. A project
+whose engine is unavailable on the machine is **omitted** from the config, and
+the runner prints which — a matrix run can never report a pass it did not earn.
+
+As executed on the development machine (macOS arm64, Playwright 1.62.1):
+
+| Project | Mapped to | Genuine? |
+|---|---|---|
+| `chrome-141` | Google Chrome 152 (`channel: 'chrome'`, locally installed) | **alias** — same engine family (Blink), newer version |
+| `chrome-140` | Playwright's bundled Chromium (≈152) | **alias** — Blink, newer version |
+| `edge-141` | `channel: 'msedge'` | **not run** — Edge is not installed here; the project is omitted |
+| `edge-140` | `channel: 'msedge'` | **not run** — same |
+| `firefox-145` | Playwright's bundled Firefox 153 | **alias** — Gecko, newer version |
+| `firefox-144` | Playwright's bundled Firefox 153 | **alias** — Gecko, newer version |
+| `safari-26.1` | Playwright's bundled WebKit 26.5 | **alias** — WebKit, close to the pinned Safari 26.x |
+| `safari-26.0` | Playwright's bundled WebKit 26.5 | **alias** — same |
+
+So the honest statement is: **three engines** (Blink, Gecko, WebKit) pass the
+VC-016 / VC-022 / VC-024 / VC-030 / VC-067 / VC-045 set at versions at or above
+the pinned ones; **six of the eight named projects run**, all as engine
+aliases; **two (Edge 141 and 140) are not covered here** and need a machine
+with Microsoft Edge installed. Edge is Chromium-based, so the Blink result is
+strong evidence — but it is evidence, not a run, and the config will not
+pretend otherwise.
+
+The WebKit run is what surfaced the respawn-URL bug described above; before
+that fix, Safari genuinely could not satisfy post-Stop worker recovery.
