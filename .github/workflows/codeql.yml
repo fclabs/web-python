@@ -1,0 +1,64 @@
+# CodeQL code scanning.
+#
+# The `main` ruleset carries a `code_scanning` rule that gates merges on CodeQL
+# results ("high_or_higher" security alerts, "errors" for quality alerts).
+# Nothing in the repository produced those results, so every pull request sat
+# on "Waiting for Code Scanning results. Code Scanning may not be configured
+# for the target branch." This workflow is the advanced-setup analysis that
+# rule is waiting for: it runs on each pull request into `main`, and on pushes
+# to `main` so the target branch has a baseline of its own.
+#
+# Unlike `pr.yml` (BR-106: `contents: read`, no writes), uploading SARIF needs
+# `security-events: write`. That is the one write this workflow holds; it runs
+# no repository code -- `npm ci` is deliberately absent, since CodeQL analyzes
+# JavaScript and TypeScript sources without a build -- and it reads no secret
+# beyond the GitHub-provided `GITHUB_TOKEN`.
+name: CodeQL
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  # A weekly re-analysis keeps the default-branch results fresh as the CodeQL
+  # query packs change, independent of commit traffic.
+  schedule:
+    - cron: "17 5 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: codeql-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      # Required to upload the SARIF results to code scanning.
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        # One analysis covers both languages; the repository is TypeScript,
+        # JavaScript, CSS and HTML, and only the first two are CodeQL targets.
+        language: [javascript-typescript]
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
+        with:
+          languages: ${{ matrix.language }}
+          # `security-and-quality` is what the ruleset's quality threshold
+          # ("errors") is scored against; the default `security` suite emits no
+          # quality alerts at all.
+          queries: security-and-quality
+      - name: Analyze
+        uses: github/codeql-action/analyze@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
+        with:
+          category: /language:${{ matrix.language }}
