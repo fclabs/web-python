@@ -289,7 +289,7 @@ test('VC-034 (FR-033, FR-064): Stop while suspended on a read', async ({ page })
   await expectStdinIdle(page);
 
   // FR-064: Run comes back within 5.0 s, without a page reload.
-  await expect(page.getByRole('button', { name: 'Run' })).toBeEnabled({ timeout: 5_000 });
+  await expect(page.locator('#btn-run')).toBeEnabled({ timeout: 5_000 });
   expect(Date.now() - startedAt).toBeLessThan(5_000);
   expect(
     await page.evaluate(

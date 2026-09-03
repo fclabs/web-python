@@ -316,11 +316,40 @@ body {
   border-color: var(--accent);
 }
 
-.file-tree-button[data-entrypoint='true']::after {
+.file-run-state {
   color: var(--fg-muted);
-  content: ' · run';
   font-family: var(--font-ui);
   font-size: 11px;
+}
+
+.file-tree-button[data-run-state='running'] .file-run-state {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+#btn-run {
+  align-items: center;
+  display: inline-flex;
+  gap: 8px;
+  max-width: 100%;
+  min-width: 0;
+}
+
+#run-action {
+  flex: 0 0 auto;
+  font-weight: 700;
+}
+
+#run-file-name {
+  border-left: 1px solid color-mix(in srgb, currentcolor 55%, transparent);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 500;
+  max-inline-size: min(28ch, calc(100vw - 96px));
+  overflow: hidden;
+  padding-left: 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .file-resizer {

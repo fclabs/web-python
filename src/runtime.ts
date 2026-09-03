@@ -165,11 +165,11 @@ export class PyodideRuntime {
    * snapshots at the moment Run was activated. Returns the allocated `runId`,
    * or null when no run could be started.
    */
-  run(files: WorkspaceFile[]): number | null {
+  run(files: WorkspaceFile[], entryFile: string): number | null {
     if (this.state !== 'ready' || this.isRunning || !this.worker) return null;
     const runId = this.nextRunId++;
     this.currentRunId = runId;
-    const message: ToWorker = { type: 'run', files, runId };
+    const message: ToWorker = { type: 'run', files, entryFile, runId };
     this.worker.postMessage(message);
     this.handlers.onRunStateChange(true);
     return runId;

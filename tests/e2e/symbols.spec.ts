@@ -363,7 +363,7 @@ test('VC-332 (FR-318): nothing but the toggle and Escape dismisses the pane', as
   // Stop to be genuinely enabled while the pane is inspected.
   await setProgram(page, 'while True: pass\n');
   await stillOpen('after replacing the program');
-  await page.getByRole('button', { name: 'Run' }).click();
+  await page.locator('#btn-run').click();
   await stillOpen('after Run');
   await expect(page.getByRole('button', { name: 'Stop' })).toBeEnabled();
   await page.getByRole('button', { name: 'Stop' }).click();
@@ -1037,7 +1037,7 @@ test('VC-316 (FR-310, BR-301): copying mid-run interrupts neither the run nor it
   await waitForPythonReady(page);
   await runProgram(page, 'import time\nfor i in range(20):\n    print(i)\n    time.sleep(0.2)\n');
 
-  const run = page.getByRole('button', { name: 'Run' });
+  const run = page.locator('#btn-run');
   const stop = page.getByRole('button', { name: 'Stop' });
   await expect(stop).toBeEnabled();
   await expect(run).toBeDisabled();

@@ -40,7 +40,7 @@ types live in [`src/protocol.ts`](../src/protocol.ts).
 | `type` | Payload | Meaning |
 |---|---|---|
 | `init` | `{ stdinBuffer, fsBuffer: SharedArrayBuffer }` | Boot Pyodide; adopt the stdin channel and filesystem-operation mailbox. Sent once per worker, immediately after it is spawned. |
-| `run` | `{ files, runId }` | Hydrate the flat workspace and execute UTF-8 `main.py` as `__main__` in a brand-new namespace. |
+| `run` | `{ files, entryFile, runId }` | Hydrate the flat workspace and execute the selected UTF-8 `.py` file as `__main__` in a brand-new namespace. |
 
 **Stop is not a message.** It is `worker.terminate()` — see
 *Stop and replace* below.
@@ -534,7 +534,9 @@ The workspace begins with the same friendly UTF-8 `main.py` used by the
 original playground: a welcome message, a name prompt and a short squares loop.
 It intentionally has no directories: names containing a path separator are
 rejected in both the interface and the Python filesystem bridge. `Run` is
-available only while a UTF-8 `main.py` exists. Files written by Python are
+available only while the active file is UTF-8 and ends in `.py`; its name is
+captured with the workspace snapshot, shown while it runs, and retained as the
+Files panel's session-only `Last run` marker. Files written by Python are
 mirrored to the page operation-by-operation through a `SharedArrayBuffer`, so
 they appear in the tree and survive Stop; a final worker snapshot reconciles
 the complete workspace. Non-UTF-8 files are retained but opened read-only.

@@ -20,7 +20,7 @@ test('VC-011 (FR-011): the editor accepts typing while the runtime is still load
   // 2.0 s after navigation start the shell must already be interactive.
   await page.waitForTimeout(2000);
   expect(await statusText(page)).toMatch(/^Loading Python… \d+%$/);
-  await expect(page.getByRole('button', { name: 'Run' })).toBeDisabled();
+  await expect(page.locator('#btn-run')).toBeDisabled();
 
   await page.locator('.cm-content').click();
   await page.keyboard.press('ControlOrMeta+a');
@@ -66,7 +66,7 @@ test('VC-013 (FR-013): ready enables Run and prints exactly one version line', a
   await page.goto('/');
   await waitForPythonReady(page);
 
-  await expect(page.getByRole('button', { name: 'Run' })).toBeEnabled();
+  await expect(page.locator('#btn-run')).toBeEnabled();
 
   const readyLines = (await consoleText(page))
     .split('\n')
@@ -97,7 +97,7 @@ test('VC-014 (FR-014, BR-009): 404ing the Pyodide assets fails visibly and keeps
   expect(text).not.toContain('ready');
 
   expect(await statusText(page)).toBe('Python unavailable');
-  await expect(page.getByRole('button', { name: 'Run' })).toBeDisabled();
+  await expect(page.locator('#btn-run')).toBeDisabled();
 
   await page.locator('.cm-content').click();
   await page.keyboard.press('ControlOrMeta+a');
@@ -122,7 +122,7 @@ test('VC-015 (FR-015, FR-065, BR-002, BR-009): a non-isolated origin disables Ru
   );
 
   expect(await statusText(page)).toBe('Python unavailable');
-  await expect(page.getByRole('button', { name: 'Run' })).toBeDisabled();
+  await expect(page.locator('#btn-run')).toBeDisabled();
 
   // The banner is not modal and does not overlay the editor.
   const overlaps = await page.evaluate(() => {

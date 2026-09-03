@@ -245,7 +245,7 @@ export async function submitStdin(page: Page, text: string): Promise<void> {
 /** Load, wait for the runtime, put `code` in the editor and press Run. */
 export async function runProgram(page: Page, code: string): Promise<void> {
   await setProgram(page, code);
-  await page.getByRole('button', { name: 'Run' }).click();
+  await page.locator('#btn-run').click();
 }
 
 /**

@@ -3,7 +3,7 @@ import { waitForSubmission } from '../stdin-channel';
 import { publishFsMutation, type FsMutation } from '../fs-channel';
 import { StdinStream, type StdinMode } from '../stdin-stream';
 import type { FromWorker, ToWorker } from '../protocol';
-import { MAIN_FILE, WORKSPACE_MAX_BYTES, type WorkspaceFile } from '../workspace';
+import { WORKSPACE_MAX_BYTES, type WorkspaceFile } from '../workspace';
 
 /**
  * The Pyodide worker (BR-003: the visitor's program never runs on the main
@@ -458,7 +458,7 @@ function describe(error: unknown): string {
 }
 
 /** FR-016 / FR-021 / FR-022: one whole-program run, start to finish. */
-function run(files: WorkspaceFile[], runId: number): void {
+function run(files: WorkspaceFile[], entryFile: string, runId: number): void {
   if (!runner || !filesystem) {
     post({ type: 'error', runId, traceback: 'The Python runtime is not ready.' });
     return;
@@ -471,24 +471,29 @@ function run(files: WorkspaceFile[], runId: number): void {
     currentRunId = null;
     return;
   }
-  let main: string | Uint8Array;
-  try {
-    main = filesystem.readFile(`${WORKSPACE_ROOT}/${MAIN_FILE}`, { encoding: 'binary' });
-  } catch {
-    post({ type: 'error', runId, traceback: 'Create a UTF-8 main.py before running.' });
+  if (!entryFile.endsWith('.py') || !files.some((file) => file.name === entryFile)) {
+    post({ type: 'error', runId, traceback: 'Select a Python (.py) file before running.' });
     currentRunId = null;
     return;
   }
-  if (!(main instanceof Uint8Array)) {
-    post({ type: 'error', runId, traceback: 'main.py must be a UTF-8 text file.' });
+  let source: string | Uint8Array;
+  try {
+    source = filesystem.readFile(`${WORKSPACE_ROOT}/${entryFile}`, { encoding: 'binary' });
+  } catch {
+    post({ type: 'error', runId, traceback: `The selected file no longer exists: ${entryFile}` });
+    currentRunId = null;
+    return;
+  }
+  if (!(source instanceof Uint8Array)) {
+    post({ type: 'error', runId, traceback: `${entryFile} must be a UTF-8 text file.` });
     currentRunId = null;
     return;
   }
   let code: string;
   try {
-    code = new TextDecoder('utf-8', { fatal: true }).decode(main);
+    code = new TextDecoder('utf-8', { fatal: true }).decode(source);
   } catch {
-    post({ type: 'error', runId, traceback: 'main.py must be a UTF-8 text file.' });
+    post({ type: 'error', runId, traceback: `${entryFile} must be a UTF-8 text file.` });
     currentRunId = null;
     return;
   }
@@ -500,7 +505,7 @@ function run(files: WorkspaceFile[], runId: number): void {
   const startedAt = performance.now();
   let traceback: string;
   try {
-    traceback = runner(code, `${WORKSPACE_ROOT}/${MAIN_FILE}`);
+    traceback = runner(code, `${WORKSPACE_ROOT}/${entryFile}`);
   } catch (error) {
     traceback = describe(error);
   }
@@ -526,5 +531,5 @@ self.addEventListener('message', (event: MessageEvent<ToWorker>) => {
     void boot();
     return;
   }
-  if (message.type === 'run') run(message.files, message.runId);
+  if (message.type === 'run') run(message.files, message.entryFile, message.runId);
 });

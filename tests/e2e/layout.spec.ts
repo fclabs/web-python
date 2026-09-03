@@ -1419,7 +1419,7 @@ for (const preference of [null, 'horizontal', 'vertical'] as const) {
 
     // Run the starter program through to a submitted `input()`, which is the
     // widest the console and the stdin row ever get.
-    await page.getByRole('button', { name: 'Run' }).click();
+    await page.locator('#btn-run').click();
     await waitForStdinPrompt(page);
     await check('blocked on input()');
     await submitStdin(page, 'Ana');

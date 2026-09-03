@@ -13,7 +13,7 @@ import type { WorkspaceFile } from './workspace';
 /** Main -> worker. */
 export type ToWorker =
   | { type: 'init'; stdinBuffer: SharedArrayBuffer; fsBuffer: SharedArrayBuffer }
-  | { type: 'run'; files: WorkspaceFile[]; runId: number };
+  | { type: 'run'; files: WorkspaceFile[]; entryFile: string; runId: number };
 
 /** Worker -> main. */
 export type FromWorker =

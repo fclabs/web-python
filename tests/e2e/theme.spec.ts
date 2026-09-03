@@ -191,7 +191,7 @@ async function watchSchemeListeners(page: Page): Promise<void> {
 async function assertUsableAndQuiet(page: Page): Promise<void> {
   await waitForPythonReady(page);
   await setProgram(page, 'print("ok")\n');
-  await page.getByRole('button', { name: 'Run' }).click();
+  await page.locator('#btn-run').click();
   await expect.poll(() => programStdout(page), { timeout: 30_000 }).toContain('ok');
   const notices = await noticeTexts(page);
   expect(notices.filter((t) => /theme|color mode|dark|light|system/i.test(t))).toEqual([]);

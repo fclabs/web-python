@@ -3,11 +3,17 @@
 const two = (n: number): string => String(n).padStart(2, '0');
 
 /**
- * FR-018: `─── Run at HH:MM:SS ───`, 24-hour clock, visitor's local time zone.
+ * `─── Running filename.py at HH:MM:SS ───`, 24-hour clock, visitor's local time zone.
  */
-export function formatRunSeparator(at: Date): string {
-  return `─── Run at ${two(at.getHours())}:${two(at.getMinutes())}:${two(at.getSeconds())} ───`;
+export function formatRunSeparator(filename: string, at: Date): string {
+  return `─── Running ${filename} at ${two(at.getHours())}:${two(at.getMinutes())}:${two(at.getSeconds())} ───`;
 }
+
+/** Labels shared by the dynamic Run control and the Files execution state. */
+export const RUN_LABEL = 'Run';
+export const RUNNING_LABEL = 'Running';
+export const LAST_RUN_LABEL = 'Last run';
+export const RUN_PYTHON_FILE_LABEL = 'Python file';
 
 /** FR-022: `Program finished in N.NN s`, wall-clock seconds to two decimals. */
 export function formatFinished(durationMs: number): string {

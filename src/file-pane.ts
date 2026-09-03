@@ -1,4 +1,5 @@
-import { MAIN_FILE, type Workspace } from './workspace';
+import type { Workspace } from './workspace';
+import { LAST_RUN_LABEL, RUNNING_LABEL } from './format';
 
 export interface FilePaneOptions {
   toggle: HTMLButtonElement;
@@ -22,6 +23,8 @@ export class FilePane {
   private workspace: Workspace | null = null;
   private mode: EditMode = null;
   private desktopInitialized = false;
+  private runningFile: string | null = null;
+  private lastRunFile: string | null = null;
 
   constructor(private readonly options: FilePaneOptions) {
     const { toggle, pane, nameInput, newButton, renameButton, deleteButton, resizer } = options;
@@ -68,7 +71,19 @@ export class FilePane {
         button.setAttribute('aria-selected', String(name === active));
         button.tabIndex = name === active ? 0 : -1;
         button.textContent = name;
-        if (name === MAIN_FILE) button.dataset.entrypoint = 'true';
+        const runState = name === this.runningFile
+          ? RUNNING_LABEL
+          : name === this.lastRunFile
+            ? LAST_RUN_LABEL
+            : null;
+        if (runState !== null) {
+          const state = document.createElement('span');
+          state.className = 'file-run-state';
+          state.textContent = ` · ${runState}`;
+          button.dataset.runState = runState === RUNNING_LABEL ? 'running' : 'last';
+          button.setAttribute('aria-label', `${name}, ${runState}`);
+          button.append(state);
+        }
         button.addEventListener('click', () => this.options.onSelect(name));
         button.addEventListener('keydown', (event) => this.handleTreeKey(event, name));
         item.append(button);
@@ -78,6 +93,13 @@ export class FilePane {
     const hasActive = active !== null;
     renameButton.setAttribute('aria-disabled', String(!hasActive));
     deleteButton.setAttribute('aria-disabled', String(!hasActive));
+  }
+
+  /** Render the session-only execution state without changing the workspace. */
+  setRunState(runningFile: string | null, lastRunFile: string | null): void {
+    this.runningFile = runningFile;
+    this.lastRunFile = lastRunFile;
+    if (this.workspace !== null) this.render(this.workspace);
   }
 
   private begin(mode: Exclude<EditMode, null>): void {

@@ -24,6 +24,9 @@ import {
   formatRunSeparator,
   LAYOUT_NARROW_HINT,
   LAYOUT_SAVE_FAILED,
+  RUN_LABEL,
+  RUNNING_LABEL,
+  RUN_PYTHON_FILE_LABEL,
 } from './format';
 import { CANNOT_FORMAT, formatDocument } from './lint/format-command';
 import { Linter } from './lint/linter';
@@ -49,7 +52,6 @@ import {
   getWorkspaceStorage,
   isText,
   loadWorkspace,
-  MAIN_FILE,
   saveWorkspace,
   type WorkspaceFile,
 } from './workspace';
@@ -76,6 +78,9 @@ function boot(): void {
   const workspace = loadWorkspace(storage);
   const activeFileName = need('active-file-name');
   let suppressEditorChange = false;
+  // The files pane is available before the runtime controls are initialized.
+  // It becomes the real renderer once those controls exist below.
+  let refreshRunPresentation = (): void => {};
 
   // --- Layout (FR-411, FR-412, FR-416, FR-417) ---------------------------
   //
@@ -364,6 +369,7 @@ function boot(): void {
     setEditorReadOnly(view, text === null);
     activeFileName.textContent = name ?? 'No file selected';
     filePane.render(workspace);
+    refreshRunPresentation();
     if (name?.endsWith('.py') && text !== null) linter?.lintNow(text);
     else {
       applyDiagnostics(view, []);
@@ -463,6 +469,8 @@ function boot(): void {
   const statusBar = need('status-bar');
   const banner = need('coi-banner');
   const runBtn = need<HTMLButtonElement>('btn-run');
+  const runAction = need('run-action');
+  const runFileName = need('run-file-name');
   const stopBtn = need<HTMLButtonElement>('btn-stop');
 
   // FR-026: Clear console removes every console line and leaves the editor
@@ -474,6 +482,10 @@ function boot(): void {
   let ready = false;
   let running = false;
   let restarting = false;
+  /** Immutable target of the run in flight; it survives a file-tree selection. */
+  let runTarget: string | null = null;
+  /** Session-only history: deliberately not added to workspace persistence. */
+  let lastRunFile: string | null = null;
 
   /**
    * FR-065: the status the bar returns to once the runtime is idle again —
@@ -492,14 +504,40 @@ function boot(): void {
     if (ready && !restarting) statusBar.textContent = steadyStatus;
   }
 
+  /** A Python source is an editable UTF-8 `.py` file in the active workspace. */
+  function activeRunnableFile(): string | null {
+    const name = workspace.activeFile;
+    if (name === null || !name.endsWith('.py')) return null;
+    const bytes = workspace.get(name);
+    return bytes !== null && isText(bytes) ? name : null;
+  }
+
+  function setRunLabel(action: string, filename: string | null, title: string): void {
+    runAction.textContent = action;
+    runFileName.textContent = filename ?? '';
+    runBtn.title = title;
+  }
+
+  /** Keep the run target explicit in both the toolbar and the Files tree. */
+  function syncRunPresentation(): void {
+    if (running && runTarget !== null) {
+      setRunLabel(RUNNING_LABEL, `${runTarget}…`, `${RUNNING_LABEL} ${runTarget}`);
+    } else {
+      const active = activeRunnableFile();
+      if (active !== null) setRunLabel(RUN_LABEL, active, `${RUN_LABEL} ${active}`);
+      else setRunLabel(RUN_LABEL, RUN_PYTHON_FILE_LABEL, 'Open a Python (.py) file to run it');
+    }
+    filePane.setRunState(running ? runTarget : null, lastRunFile);
+  }
+
+  refreshRunPresentation = syncRunPresentation;
+
   /**
    * FR-017 / FR-054 / FR-064: Run only when idle, ready and not recovering;
    * Stop enabled if and only if a program is currently running.
    */
   function syncControls(): void {
-    const main = workspace.get(MAIN_FILE);
-    const runnableMain = main !== null && isText(main);
-    setInert(runBtn, !ready || running || restarting || !runnableMain);
+    setInert(runBtn, !ready || running || restarting || activeRunnableFile() === null);
     setInert(stopBtn, !running);
   }
 
@@ -571,11 +609,20 @@ function boot(): void {
 
   function startRun(): void {
     if (isInert(runBtn)) return;
+    const entryFile = activeRunnableFile();
+    if (entryFile === null) return;
     // BR-006: the worker receives an immutable whole-workspace snapshot.
     autosaver.flush();
     stdinIdle();
-    if (runtime.run(workspace.snapshot().files) === null) return;
-    consoleView.meta(formatRunSeparator(new Date())); // FR-018
+    runTarget = entryFile;
+    if (runtime.run(workspace.snapshot().files, entryFile) === null) {
+      runTarget = null;
+      syncRunPresentation();
+      return;
+    }
+    lastRunFile = entryFile;
+    syncRunPresentation();
+    consoleView.meta(formatRunSeparator(entryFile, new Date())); // FR-018
     syncControls();
   }
 
@@ -584,25 +631,25 @@ function boot(): void {
       if (ready) return;
       const label = formatLoading(percent);
       statusBar.textContent = label; // FR-065
-      runBtn.textContent = `Run ${Math.round(percent)}%`; // FR-012
+      setRunLabel(RUN_LABEL, `${Math.round(percent)}%`, label); // FR-012
       runBtn.dataset.progress = String(Math.round(percent));
     },
     onReady(pythonVersion) {
       ready = true;
-      runBtn.textContent = 'Run';
       delete runBtn.dataset.progress;
       statusBar.textContent = steadyStatus;
       consoleView.meta(formatReady(pythonVersion)); // FR-013
+      syncRunPresentation();
       syncControls();
     },
     onInitError(message) {
       // FR-014: Run stays disabled, status and console explain the failure.
       ready = false;
-      runBtn.textContent = 'Run';
       delete runBtn.dataset.progress;
       statusBar.textContent = STATUS_PYTHON_UNAVAILABLE;
       consoleView.errorText(RUNTIME_FAILED);
       consoleView.errorText(message);
+      syncRunPresentation();
       syncControls();
     },
     onStdout(text) {
@@ -648,6 +695,8 @@ function boot(): void {
     },
     onRunStateChange(next) {
       running = next;
+      if (!next) runTarget = null;
+      syncRunPresentation();
       syncControls();
     },
     onStopped() {
@@ -655,6 +704,7 @@ function boot(): void {
       stdinIdle();
       consoleView.endRun(); // FR-056
       restarting = true;
+      if (runTarget !== null) lastRunFile = runTarget;
       statusBar.textContent = STATUS_RESTARTING; // FR-065
       consoleView.meta(PROGRAM_STOPPED);
       autosaver.flush();
@@ -680,6 +730,7 @@ function boot(): void {
     if (!window.confirm(RESET_CONFIRM)) return;
     if (runtime.isRunning) runtime.stop();
     workspace.reset();
+    lastRunFile = null;
     autosaver.schedule('workspace');
     autosaver.flush();
     openActiveFile();
@@ -708,6 +759,7 @@ function boot(): void {
     statusBar.textContent = STATUS_PYTHON_UNAVAILABLE;
   }
   syncControls();
+  syncRunPresentation();
 
   // FR-011: the editor is usable immediately, while the runtime downloads.
   document.documentElement.dataset.shellReady = 'true';

@@ -64,10 +64,10 @@ test('VC-024 (FR-023, FR-024, NFR-006, NFR-014, BR-003): Stop kills a non-termin
 
   // FR-065: recovery is announced while it runs.
   expect(await statusText(page)).toBe('Restarting Python…');
-  await expect(page.getByRole('button', { name: 'Run' })).toBeDisabled();
+  await expect(page.locator('#btn-run')).toBeDisabled();
 
   // NFR-014 / FR-064: Run is usable again within 5.0 s, without a reload.
-  await expect(page.getByRole('button', { name: 'Run' })).toBeEnabled({ timeout: 5_000 });
+  await expect(page.locator('#btn-run')).toBeEnabled({ timeout: 5_000 });
   expect(Date.now() - startedAt).toBeLessThan(5_000);
   expect(await statusText(page)).not.toBe('Restarting Python…');
   expect(await sameDocument(page)).toBe(true);
@@ -91,7 +91,7 @@ test('VC-079 (FR-064, NFR-014, BR-003): the stop-then-run cycle needs no reload 
 
   await startRun(page, 'while True: pass\n');
   await page.getByRole('button', { name: 'Stop' }).click();
-  await expect(page.getByRole('button', { name: 'Run' })).toBeEnabled({ timeout: 5_000 });
+  await expect(page.locator('#btn-run')).toBeEnabled({ timeout: 5_000 });
 
   await runProgram(page, 'print("ok")');
   await waitForTermination(page, 1);
@@ -170,7 +170,7 @@ test('VC-064 (FR-054): the complete Stop control cycle, inert while disabled', a
   expect(idleText).not.toContain('Program stopped.');
   expect(idleText).not.toContain('Restarting Python…');
   expect(await statusText(page)).not.toBe('Restarting Python…');
-  await expect(page.getByRole('button', { name: 'Run' })).toBeEnabled();
+  await expect(page.locator('#btn-run')).toBeEnabled();
 
   // Enabled if and only if a program is running.
   await startRun(page, 'import time\ntime.sleep(2)\n');
@@ -202,7 +202,7 @@ test('VC-060 (BR-003): a runaway loop never occupies the main thread', async ({ 
   expect(await panel.textContent()).toContain('Problems');
 
   await page.getByRole('button', { name: 'Stop' }).click();
-  await expect(page.getByRole('button', { name: 'Run' })).toBeEnabled({ timeout: 5_000 });
+  await expect(page.locator('#btn-run')).toBeEnabled({ timeout: 5_000 });
 });
 
 /**
@@ -226,7 +226,7 @@ async function expectStillRunning(page: Page): Promise<void> {
   expect(text.toLowerCase()).not.toContain('timeout');
   expect(text.toLowerCase()).not.toContain('timed out');
   await expect(page.getByRole('button', { name: 'Stop' })).toBeEnabled();
-  await expect(page.getByRole('button', { name: 'Run' })).toBeDisabled();
+  await expect(page.locator('#btn-run')).toBeDisabled();
   expect(await statusText(page)).not.toBe('Restarting Python…');
 }
 
@@ -240,7 +240,7 @@ test('VC-059 (BR-008, fast variant): a long run is not timed out', async ({ page
 
   // Only the visitor ends it.
   await page.getByRole('button', { name: 'Stop' }).click();
-  await expect(page.getByRole('button', { name: 'Run' })).toBeEnabled({ timeout: 5_000 });
+  await expect(page.locator('#btn-run')).toBeEnabled({ timeout: 5_000 });
   expect(await consoleText(page)).toContain('Program stopped.');
 });
 
