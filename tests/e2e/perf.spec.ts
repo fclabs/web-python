@@ -327,12 +327,16 @@ const isVendored = (url: string): boolean =>
   url.startsWith('/pyodide/') || url.startsWith('/ruff/');
 
 /**
- * VC-326 allows exactly two filenames to change — Vite content-hashes the main
- * JS chunk and the main CSS file, so asserting byte-identity of the manifest
- * would be unsatisfiable by construction.
+ * VC-326 allows the content-hashed first-party bundles to change — the entry
+ * JS/CSS and the Pyodide worker. Their contents are held to the app-size
+ * budget below; asserting their generated filenames would make a valid worker
+ * implementation change look like a new runtime asset.
  */
 const unhash = (url: string): string =>
-  url.replace(/^\/assets\/index-[A-Za-z0-9_-]+\.(js|css)$/, '/assets/index-HASH.$1');
+  url.replace(
+    /^\/assets\/(index|pyodide\.worker)-[A-Za-z0-9_-]+\.(js|css)$/,
+    '/assets/$1-HASH.$2',
+  );
 
 function distFiles(dir: string, prefix = ''): string[] {
   const out: string[] = [];
@@ -454,9 +458,9 @@ test('VC-323 (NFR-304, NFR-305): the pane is painted and copies within 100 ms, a
   );
 });
 
-test('VC-326 (BR-304, NFR-305): the build shape is the baseline’s, bar two content hashes', async () => {
+test('VC-326 (BR-304, NFR-305): the build shape is the baseline’s, bar first-party content hashes', async () => {
   // The emitted file *set* is unchanged: no added asset, no removed asset.
-  expect(distFiles('').map(unhash).sort()).toEqual([...baseline.files].sort());
+  expect(distFiles('').map(unhash).sort()).toEqual([...baseline.files].map(unhash).sort());
 
   // Every Pyodide and Ruff asset is byte-identical.
   for (const [path, expected] of Object.entries(baseline.vendored)) {
@@ -476,14 +480,14 @@ test('VC-326 (BR-304, NFR-305): the build shape is the baseline’s, bar two con
   // so `index-<hash>.css` and `index-<hash>.js` swap places from build to
   // build. That is the content hash VC-326 already exempts, not a change of
   // contents — the count is asserted separately.
-  expect(manifest.urls.map(unhash).sort()).toEqual([...baseline.manifestUrls].sort());
+  expect(manifest.urls.map(unhash).sort()).toEqual([...baseline.manifestUrls].map(unhash).sort());
   expect(manifest.urls).toHaveLength(baseline.manifestUrlCount);
 
   // ...and so does the generated worker, which also keeps the cache-name
   // scheme spec-01 pinned.
   const sw = readFileSync(join(dist, 'sw.js'), 'utf8');
   const embedded = JSON.parse(sw.match(/const MANIFEST = (\[.*?\]);/s)![1]!) as string[];
-  expect(embedded.map(unhash).sort()).toEqual([...baseline.manifestUrls].sort());
+  expect(embedded.map(unhash).sort()).toEqual([...baseline.manifestUrls].map(unhash).sort());
   expect(embedded).toHaveLength(baseline.manifestUrlCount);
   expect(sw).toContain('const CACHE = `pyplay-assets-v${BUILD}`;');
   expect(baseline.cacheNameScheme).toBe('pyplay-assets-v${BUILD}');
@@ -535,7 +539,7 @@ test('VC-429 (NFR-405, BR-403): the layout control costs <= 2 KB and adds no ass
 
   // --- Zero new assets, zero new requests ---------------------------------
   expect(distFiles('').map(unhash).sort(), 'the emitted file set is unchanged').toEqual(
-    [...branchPoint.files].sort(),
+    [...branchPoint.files].map(unhash).sort(),
   );
 
   for (const [path, digest] of Object.entries(branchPoint.vendored)) {
@@ -548,12 +552,16 @@ test('VC-429 (NFR-405, BR-403): the layout control costs <= 2 KB and adds no ass
   // The precache manifest and the generated worker differ only in the two
   // content-hashed filenames, with the same URL count and cache-name scheme —
   // so a cold load makes exactly the requests it made before (BR-403).
-  expect(manifest.urls.map(unhash).sort()).toEqual([...branchPoint.manifestUrls].sort());
+  expect(manifest.urls.map(unhash).sort()).toEqual(
+    [...branchPoint.manifestUrls].map(unhash).sort(),
+  );
   expect(manifest.urls).toHaveLength(branchPoint.manifestUrlCount);
 
   const sw = readFileSync(join(dist, 'sw.js'), 'utf8');
   const embedded = JSON.parse(sw.match(/const MANIFEST = (\[.*?\]);/s)![1]!) as string[];
-  expect(embedded.map(unhash).sort()).toEqual([...branchPoint.manifestUrls].sort());
+  expect(embedded.map(unhash).sort()).toEqual(
+    [...branchPoint.manifestUrls].map(unhash).sort(),
+  );
   expect(embedded).toHaveLength(branchPoint.manifestUrlCount);
   expect(sw).toContain('const CACHE = `pyplay-assets-v${BUILD}`;');
   expect(branchPoint.cacheNameScheme).toBe('pyplay-assets-v${BUILD}');
@@ -683,7 +691,7 @@ test('VC-513 (NFR-501, NFR-505, BR-505): color-mode switches within 100 ms and c
 
   // BR-505 / NFR-505: no new runtime asset file — same unhashed shape as the
   // theme baseline (content hashes of the main JS/CSS chunks may change).
-  expect(distFiles('').map(unhash).sort()).toEqual([...themeBaseline.files].sort());
+  expect(distFiles('').map(unhash).sort()).toEqual([...themeBaseline.files].map(unhash).sort());
   expect(manifest.urls).toHaveLength(themeBaseline.manifestUrlCount);
 
   console.log(
