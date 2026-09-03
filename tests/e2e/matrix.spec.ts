@@ -136,7 +136,7 @@ test('VC-055 (NFR-011): the Must-priority core flows on this browser', async ({ 
   const stoppedAt = Date.now();
   await page.getByRole('button', { name: 'Stop' }).click();
   await expect.poll(() => consoleText(page), { timeout: 5_000 }).toContain('Program stopped.');
-  await expect(page.getByRole('button', { name: 'Run' })).toBeEnabled({ timeout: 5_000 });
+  await expect(page.locator('#btn-run')).toBeEnabled({ timeout: 5_000 });
   expect(Date.now() - stoppedAt, 'NFR-014 recovery').toBeLessThanOrEqual(5_000);
   expect(await statusText(page)).not.toBe('Restarting Python…');
   await runProgram(page, 'print("ok")\n');
@@ -230,7 +230,7 @@ test('VC-324 (NFR-306): the special-character pane on this browser', async ({
   await runProgram(page, 'import time\nfor i in range(10):\n    print(i)\n    time.sleep(0.1)\n');
   await expect(page.getByRole('button', { name: 'Stop' })).toBeEnabled();
   await button('%').click();
-  await expect(page.getByRole('button', { name: 'Run' })).toBeDisabled();
+  await expect(page.locator('#btn-run')).toBeDisabled();
   await expect(page.getByRole('button', { name: 'Stop' })).toBeEnabled();
   await expect
     .poll(() => consoleText(page), { timeout: 60_000 })

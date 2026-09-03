@@ -1,7 +1,7 @@
 # Python Playground (`pyplay`)
 
-A **static**, backend-free web page where a visitor writes a single-file Python
-program, runs it, watches `stdout`/`stderr` stream into a console, types input
+A **static**, backend-free web page where a visitor works in a small local Python
+workspace, runs `main.py`, watches `stdout`/`stderr` stream into a console, types input
 into the running program, copies the program to the clipboard, picks Python
 punctuation out of a special-character pane, forces light or dark chrome (or
 follows the system), and gets inline Ruff lint diagnostics plus one-click PEP 8
@@ -20,10 +20,13 @@ Everything runs in the visitor's own browser:
 | Color mode | A toolbar control that cycles Light → Dark → System; System follows the OS preference sampled once per page load. The choice persists under `pyplay.theme.v1` |
 | Build | Vite → a directory of static files (`dist/`) deployable to any static host |
 
-There is **no server**. The site issues no request to any origin but its own,
-and the visitor's source code is never transmitted anywhere — it lives in the
-editor, the Web Worker, and `localStorage` on this origin (`pyplay.program.v1`
-and, when chosen, `pyplay.theme.v1`).
+There is **no server** and no cloud sync. The site issues no request to any
+origin but its own, and the visitor's workspace is never transmitted anywhere.
+It lives in the editor, the Web Worker, and `localStorage` on this origin
+(`pyplay.workspace.v1`, plus the `pyplay.theme.v1` color-mode preference). The
+workspace starts with `main.py`, permits a small flat set of files (including
+importable `.py` modules), accepts Python-created text or binary files, and is
+limited to 2 MB for classroom exercises.
 
 - Specification: [`specs/01-static-python-web-frozen.md`](specs/01-static-python-web-frozen.md)
 - Special-character pane: [`specs/03-vertical-pane-frozen.md`](specs/03-vertical-pane-frozen.md)

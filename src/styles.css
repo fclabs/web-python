@@ -53,6 +53,9 @@
   --disabled-fg: #5c6270;
   --disabled-bg: #e4e6ea;
   --disabled-border: #777d87;
+  --font-ui: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  --files-width: 260px;
 }
 
 [data-theme="dark"],
@@ -240,6 +243,117 @@ body {
 .panel--editor {
   flex: 2 1 45%;
   display: flex;
+  flex-direction: column;
+}
+
+/* Flat classroom workspace ------------------------------------------------ */
+#file-pane[hidden] {
+  display: none;
+}
+
+.panel--files {
+  background: var(--bg-raised);
+  flex: 0 0 auto;
+  padding: 6px 8px;
+  position: relative;
+}
+
+.files-heading,
+.files-actions {
+  align-items: center;
+  display: flex;
+  gap: 6px;
+}
+
+.files-heading {
+  justify-content: space-between;
+}
+
+.btn--small {
+  font-size: 12px;
+  padding: 3px 7px;
+}
+
+.file-name-input {
+  background: var(--bg-raised);
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  color: var(--fg);
+  font: inherit;
+  font-family: var(--font-mono);
+  margin-top: 6px;
+  padding: 4px 6px;
+  width: 100%;
+}
+
+.file-tree {
+  list-style: none;
+  margin: 6px 0 0;
+  max-height: 20vh;
+  overflow: auto;
+  padding: 0;
+}
+
+.file-tree-button {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: var(--fg);
+  cursor: pointer;
+  display: block;
+  font: inherit;
+  font-family: var(--font-mono);
+  overflow: hidden;
+  padding: 4px 6px;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  width: 100%;
+}
+
+.file-tree-button[aria-selected='true'] {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  border-color: var(--accent);
+}
+
+.file-run-state {
+  color: var(--fg-muted);
+  font-family: var(--font-ui);
+  font-size: 11px;
+}
+
+.file-tree-button[data-run-state='running'] .file-run-state {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+#btn-run {
+  align-items: center;
+  display: inline-flex;
+  gap: 8px;
+  max-width: 100%;
+  min-width: 0;
+}
+
+#run-action {
+  flex: 0 0 auto;
+  font-weight: 700;
+}
+
+#run-file-name {
+  border-left: 1px solid color-mix(in srgb, currentcolor 55%, transparent);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 500;
+  max-inline-size: min(28ch, calc(100vw - 96px));
+  overflow: hidden;
+  padding-left: 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-resizer {
+  display: none;
 }
 
 .console {
@@ -268,6 +382,22 @@ body {
   flex: 1;
   min-height: 120px;
   overflow: auto;
+}
+
+.editor-heading {
+  background: var(--bg-sunken);
+  border-bottom: 1px solid var(--border);
+  color: var(--fg-muted);
+  flex: 0 0 auto;
+  font-size: 12px;
+  font-weight: 600;
+  margin: 0;
+  padding: 5px 8px;
+}
+
+#active-file-name {
+  color: var(--fg);
+  font-family: var(--font-mono);
 }
 
 .cm-editor {
@@ -594,6 +724,62 @@ body {
     flex-wrap: nowrap;
     flex-direction: column;
   }
+
+  /* spec-04 BR-404: at 900 px and above `#app[data-layout='vertical']`'s own
+     rules below take over, exactly as the symbols-only rule already does. */
+  .app:not([data-layout='vertical']):has(#file-pane:not([hidden])) {
+    display: grid;
+    grid-template-areas:
+      "toolbar toolbar"
+      "banner banner"
+      "status status"
+      "notices notices"
+      "files console"
+      "files editor"
+      "files stdin"
+      "files diag";
+    grid-template-columns: minmax(160px, var(--files-width)) minmax(0, 1fr);
+    grid-template-rows: auto auto auto auto minmax(80px, 1fr) minmax(120px, 2fr) auto auto;
+  }
+
+  .app:not([data-layout='vertical']):has(#file-pane:not([hidden])):has(#symbol-pane:not([hidden])) {
+    grid-template-areas:
+      "toolbar toolbar toolbar"
+      "banner banner banner"
+      "status status status"
+      "notices notices notices"
+      "files console symbols"
+      "files editor symbols"
+      "files stdin symbols"
+      "files diag symbols";
+    grid-template-columns: minmax(160px, var(--files-width)) minmax(0, 1fr) 72px;
+  }
+
+  .panel--files {
+    grid-area: files;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .file-resizer {
+    background: var(--border);
+    cursor: col-resize;
+    display: block;
+    height: 100%;
+    position: absolute;
+    right: 0;
+    top: 0;
+    width: 5px;
+  }
+
+  .file-resizer:hover,
+  .file-resizer:focus-visible {
+    background: var(--focus);
+  }
+
+  .file-tree {
+    max-height: none;
+  }
 }
 
 /* The layout control (spec-04: FR-401 – FR-406, FR-415, NFR-401 – NFR-403) - */
@@ -781,6 +967,38 @@ body {
       "editor  stdin   symbols"
       "editor  diag    symbols";
     grid-template-columns: 58% minmax(0, 1fr) 72px;
+  }
+
+  /*
+   * The files pane (undocumented by spec-04) sits as an additional
+   * inline-start column, ahead of the editor. `58fr`/`42fr` keep FR-409's
+   * 58 % split exact against the space `fr` tracks divide — the remainder
+   * after the fixed-width files (and, combined below, symbols) columns are
+   * subtracted — rather than against the whole grid, which a literal `58%`
+   * would resolve against and so shrink under a wide files pane.
+   */
+  #app[data-layout='vertical']:has(#file-pane:not([hidden])) {
+    grid-template-areas:
+      "toolbar toolbar toolbar"
+      "banner  banner  banner"
+      "status  status  status"
+      "notices notices notices"
+      "files   editor  console"
+      "files   editor  stdin"
+      "files   editor  diag";
+    grid-template-columns: minmax(160px, var(--files-width)) 58fr 42fr;
+  }
+
+  #app[data-layout='vertical']:has(#file-pane:not([hidden])):has(#symbol-pane:not([hidden])) {
+    grid-template-areas:
+      "toolbar toolbar toolbar toolbar"
+      "banner  banner  banner  banner"
+      "status  status  status  status"
+      "notices notices notices notices"
+      "files   editor  console symbols"
+      "files   editor  stdin   symbols"
+      "files   editor  diag    symbols";
+    grid-template-columns: minmax(160px, var(--files-width)) 58fr 42fr 72px;
   }
 
   /*

@@ -13,7 +13,7 @@
  * VC-503 (FR-503, FR-504) — glyph / title / accessible name.
  * VC-511 (FR-513) — tab after Symbols; focus ring; Enter/Space.
  * VC-512 (FR-514, FR-516) — data-theme + colorScheme after each cycle.
- * VC-517 (BR-501) — only theme key added; program key untouched.
+ * VC-517 (BR-501) — only theme key added; workspace key untouched.
  * VC-518 (BR-503) — chrome `--bg` agrees with editor dark flag.
  * VC-519 — Symbols still opens; theme follows it.
  * VC-506 (FR-507, BR-504) — corrupt / read throw → System; write throw still cycles.
@@ -24,11 +24,11 @@ import { expect, test, type Page } from '@playwright/test';
 import {
   noticeTexts,
   openPlayground,
-  PROGRAM_KEY,
   programStdout,
   setCaret,
   setProgram,
   waitForPythonReady,
+  WORKSPACE_KEY,
 } from './helpers';
 
 const THEME_KEY = 'pyplay.theme.v1';
@@ -191,7 +191,7 @@ async function watchSchemeListeners(page: Page): Promise<void> {
 async function assertUsableAndQuiet(page: Page): Promise<void> {
   await waitForPythonReady(page);
   await setProgram(page, 'print("ok")\n');
-  await page.getByRole('button', { name: 'Run' }).click();
+  await page.locator('#btn-run').click();
   await expect.poll(() => programStdout(page), { timeout: 30_000 }).toContain('ok');
   const notices = await noticeTexts(page);
   expect(notices.filter((t) => /theme|color mode|dark|light|system/i.test(t))).toEqual([]);
@@ -505,7 +505,7 @@ test.describe('cycle under OS light', () => {
     await expectPair('light', 'light');
   });
 
-  test('VC-517 (BR-501): only pyplay.theme.v1 is written; program key untouched', async ({
+  test('VC-517 (BR-501): only pyplay.theme.v1 is written; workspace key untouched', async ({
     page,
   }) => {
     await seedTheme(page, 'light');
@@ -513,28 +513,38 @@ test.describe('cycle under OS light', () => {
       ({ key, value }) => {
         window.localStorage.setItem(key, value);
       },
-      { key: PROGRAM_KEY, value: 'print(1)\n' },
+      {
+        key: WORKSPACE_KEY,
+        value: JSON.stringify({
+          version: 1,
+          activeFile: 'main.py',
+          files: [{ name: 'main.py', dataBase64: btoa('print(1)\n') }],
+        }),
+      },
     );
     await openPlayground(page);
 
-    const beforeProgram = await page.evaluate((k) => localStorage.getItem(k), PROGRAM_KEY);
+    const beforeWorkspace = await page.evaluate((k) => localStorage.getItem(k), WORKSPACE_KEY);
     const btn = page.locator('#btn-theme');
     await btn.click();
     await btn.click();
     await btn.click();
 
-    const after = await page.evaluate(async () => ({
-      local: Object.keys(window.localStorage).sort(),
-      theme: window.localStorage.getItem('pyplay.theme.v1'),
-      program: window.localStorage.getItem('pyplay.program.v1'),
-      session: Object.keys(window.sessionStorage),
-      cookies: document.cookie,
-      databases: (await indexedDB.databases?.())?.map((db) => db.name ?? '') ?? [],
-    }));
+    const after = await page.evaluate(
+      async (k) => ({
+        local: Object.keys(window.localStorage).sort(),
+        theme: window.localStorage.getItem('pyplay.theme.v1'),
+        workspace: window.localStorage.getItem(k),
+        session: Object.keys(window.sessionStorage),
+        cookies: document.cookie,
+        databases: (await indexedDB.databases?.())?.map((db) => db.name ?? '') ?? [],
+      }),
+      WORKSPACE_KEY,
+    );
 
     expect(after.local.filter((k) => k.startsWith('pyplay.theme'))).toEqual([THEME_KEY]);
     expect(after.theme).toBe('light');
-    expect(after.program).toBe(beforeProgram);
+    expect(after.workspace).toBe(beforeWorkspace);
     expect(after.session).toEqual([]);
     expect(after.cookies).toBe('');
     expect(after.databases).toEqual([]);

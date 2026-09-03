@@ -1,7 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { consoleText, runProgram, setProgram, waitForPythonReady } from './helpers';
 
-const SEPARATOR = /─── Run at (\d{2}):(\d{2}):(\d{2}) ───/g;
+const SEPARATOR = /─── Running ([^\n]+) at (\d{2}):(\d{2}):(\d{2}) ───/g;
 
 /** Load the playground and wait until Python is ready to run (FR-013). */
 async function openReady(page: Page): Promise<void> {
@@ -95,7 +95,7 @@ test('VC-019 (FR-017): Run is disabled for the whole run, so only one program is
   await openReady(page);
   await runProgram(page, 'import time; time.sleep(3)');
 
-  const run = page.getByRole('button', { name: 'Run' });
+  const run = page.locator('#btn-run');
   await expect(run).toBeDisabled();
   // Even a synthetic activation must not start a second run.
   await run.dispatchEvent('click');
@@ -143,11 +143,12 @@ test('VC-020 (FR-018): each run appends a 24-hour separator without clearing the
   const lines = text.split('\n');
   expect(lines).toContain('1');
   expect(lines).toContain('2');
-  expect(text.indexOf('\n1\n')).toBeLessThan(text.lastIndexOf('─── Run at'));
-  expect(text.lastIndexOf('─── Run at')).toBeLessThan(text.lastIndexOf('2'));
+  expect(text.indexOf('\n1\n')).toBeLessThan(text.lastIndexOf('─── Running'));
+  expect(text.lastIndexOf('─── Running')).toBeLessThan(text.lastIndexOf('2'));
 
   // The second separator carries the visitor's local wall-clock time, 24-hour.
-  const [, hh, mm, ss] = matches[1];
+  const [, filename, hh, mm, ss] = matches[1];
+  expect(filename).toBe('main.py');
   expect(Number(hh)).toBeLessThanOrEqual(23);
   const window = await page.evaluate(
     ([start, end, h, m, s]) => {

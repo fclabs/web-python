@@ -3,7 +3,9 @@ import { Autosaver } from './autosave';
 import { writeClipboard } from './clipboard';
 import { ConsoleView } from './console';
 import { isInert, setInert } from './controls';
-import { createEditor, revealPosition, selectAll, setDoc } from './editor';
+import { createEditor, revealPosition, selectAll, setDoc, setEditorReadOnly } from './editor';
+import { FilePane } from './file-pane';
+import type { FsMutation } from './fs-channel';
 import {
   NOT_ISOLATED_BANNER,
   PROGRAM_ERRORED,
@@ -22,6 +24,9 @@ import {
   formatRunSeparator,
   LAYOUT_NARROW_HINT,
   LAYOUT_SAVE_FAILED,
+  RUN_LABEL,
+  RUNNING_LABEL,
+  RUN_PYTHON_FILE_LABEL,
 } from './format';
 import { CANNOT_FORMAT, formatDocument } from './lint/format-command';
 import { Linter } from './lint/linter';
@@ -33,7 +38,6 @@ import { setupOffline } from './offline';
 import { STDIN_MAX_LINE } from './protocol';
 import { PyodideRuntime } from './runtime';
 import type { StdinMode } from './stdin-stream';
-import { STARTER_PROGRAM } from './starter';
 import {
   LAYOUT_MIN_WIDTH,
   type Layout,
@@ -42,12 +46,20 @@ import {
   saveLayoutPreference,
 } from './layout';
 import { SymbolPane } from './symbol-pane';
-import { getLocalStorage, loadProgram, saveProgram } from './storage';
+import {
+  decodeText,
+  encodeText,
+  getWorkspaceStorage,
+  isText,
+  loadWorkspace,
+  saveWorkspace,
+  type WorkspaceFile,
+} from './workspace';
 import { applyDocumentTheme, bindThemeControl, loadPreference } from './theme';
 
-const AUTOSAVE_UNAVAILABLE = 'Autosave unavailable — your code will not survive a reload';
+const AUTOSAVE_UNAVAILABLE = 'Autosave unavailable — your workspace will not survive a reload';
 const COPY_FAILED = "Couldn't copy — select the code and press Ctrl/Cmd+C";
-const RESET_CONFIRM = 'Discard your code?';
+const RESET_CONFIRM = 'Delete all files and reset the workspace?';
 /** FR-066 */
 const STDIN_TOO_LONG = `Input line too long (max ${STDIN_MAX_LINE} characters)`;
 
@@ -62,7 +74,13 @@ const LAYOUT_QUERY = `(min-width: ${LAYOUT_MIN_WIDTH}px)`;
 
 function boot(): void {
   const notices = new Notices(need('notices'));
-  const storage = getLocalStorage();
+  const storage = getWorkspaceStorage();
+  const workspace = loadWorkspace(storage);
+  const activeFileName = need('active-file-name');
+  let suppressEditorChange = false;
+  // The files pane is available before the runtime controls are initialized.
+  // It becomes the real renderer once those controls exist below.
+  let refreshRunPresentation = (): void => {};
 
   // --- Layout (FR-411, FR-412, FR-416, FR-417) ---------------------------
   //
@@ -205,26 +223,42 @@ function boot(): void {
   // stored `vertical` is masked while narrow and restored on widening,
   // because `layoutPref` is re-resolved, never rewritten.
   wide.addEventListener('change', renderLayout);
+
+  const activeText = (): string => {
+    const name = workspace.activeFile;
+    if (name === null) return '';
+    return decodeText(workspace.get(name) ?? new Uint8Array()) ?? '';
+  };
+
   // FR-505 / FR-506 / FR-515: preference already applied by the HTML bootstrap;
   // re-apply so the module's load-time OS sample stays in sync (BR-502).
   const preference = loadPreference(storage);
   const effective = applyDocumentTheme(preference);
 
-  // FR-003 / FR-004
-  const initialDoc = loadProgram(storage);
-
   const autosaver = new Autosaver(
-    (code) => saveProgram(storage, code),
+    () => saveWorkspace(storage, workspace),
     () => notices.show(AUTOSAVE_UNAVAILABLE),
   );
 
   const view = createEditor({
     parent: need('editor'),
-    initialDoc,
+    initialDoc: activeText(),
     effectiveColorScheme: effective,
     onChange: (doc) => {
-      autosaver.schedule(doc);
-      linter?.schedule(doc); // FR-035
+      if (suppressEditorChange) return;
+      const name = workspace.activeFile;
+      if (name === null) return;
+      if (!isText(workspace.get(name) ?? new Uint8Array())) return;
+      const error = workspace.put(name, encodeText(doc));
+      if (error !== null) {
+        notices.show(error);
+        suppressEditorChange = true;
+        setDoc(view, activeText());
+        suppressEditorChange = false;
+        return;
+      }
+      autosaver.schedule('workspace');
+      if (name.endsWith('.py')) linter?.schedule(doc); // FR-035
     },
     onRun: () => startRun(), // FR-008
     onFormat: () => runFormat(), // FR-009
@@ -271,17 +305,110 @@ function boot(): void {
     notices,
   });
 
+  const filePane = new FilePane({
+    toggle: need<HTMLButtonElement>('btn-files'),
+    pane: need('file-pane'),
+    list: need('file-tree'),
+    resizer: need('file-resizer'),
+    nameInput: need<HTMLInputElement>('file-name-input'),
+    newButton: need<HTMLButtonElement>('btn-file-new'),
+    renameButton: need<HTMLButtonElement>('btn-file-rename'),
+    deleteButton: need<HTMLButtonElement>('btn-file-delete'),
+    onSelect(name) {
+      workspace.select(name);
+      openActiveFile();
+      autosaver.schedule('workspace');
+      syncControls();
+    },
+    onCreate(name) {
+      const error = workspace.put(name, new Uint8Array());
+      if (error !== null) return notices.show(error);
+      workspace.select(name);
+      autosaver.schedule('workspace');
+      autosaver.flush();
+      openActiveFile();
+      syncControls();
+    },
+    onRename(from, to) {
+      const error = workspace.rename(from, to);
+      if (error !== null) return notices.show(error);
+      autosaver.schedule('workspace');
+      autosaver.flush();
+      openActiveFile();
+      syncControls();
+    },
+    onDelete(name) {
+      workspace.remove(name);
+      autosaver.schedule('workspace');
+      autosaver.flush();
+      openActiveFile();
+      syncControls();
+    },
+  });
+
   // FR-501 – FR-504 / FR-512: cycling color-mode control (after Symbols).
   bindThemeControl(need<HTMLButtonElement>('btn-theme'), view, storage);
 
-  // FR-010: Reset.
+  // FR-010: reset the complete classroom workspace.
   need<HTMLButtonElement>('btn-reset').addEventListener('click', () => {
     if (!window.confirm(RESET_CONFIRM)) return;
-    setDoc(view, STARTER_PROGRAM);
-    autosaver.schedule(STARTER_PROGRAM);
+    workspace.reset();
+    autosaver.schedule('workspace');
     autosaver.flush();
+    openActiveFile();
     view.focus();
   });
+
+  function openActiveFile(): void {
+    const name = workspace.activeFile;
+    const bytes = name === null ? null : workspace.get(name);
+    const text = bytes === null ? '' : decodeText(bytes);
+    suppressEditorChange = true;
+    setDoc(view, text ?? `Binary file: ${name ?? ''} (${bytes?.length ?? 0} bytes)`);
+    suppressEditorChange = false;
+    setEditorReadOnly(view, text === null);
+    activeFileName.textContent = name ?? 'No file selected';
+    filePane.render(workspace);
+    refreshRunPresentation();
+    if (name?.endsWith('.py') && text !== null) linter?.lintNow(text);
+    else {
+      applyDiagnostics(view, []);
+      panel?.render([]);
+    }
+  }
+
+  function applyFsMutation(mutation: FsMutation): void {
+    let error: string | null = null;
+    switch (mutation.kind) {
+      case 'replace':
+        error = workspace.put(mutation.name, mutation.data);
+        break;
+      case 'write': {
+        const previous = workspace.get(mutation.name) ?? new Uint8Array();
+        const next = new Uint8Array(Math.max(previous.length, mutation.offset + mutation.data.length));
+        next.set(previous);
+        next.set(mutation.data, mutation.offset);
+        error = workspace.put(mutation.name, next);
+        break;
+      }
+      case 'truncate': {
+        const previous = workspace.get(mutation.name) ?? new Uint8Array();
+        const next = new Uint8Array(mutation.size);
+        next.set(previous.subarray(0, mutation.size));
+        error = workspace.put(mutation.name, next);
+        break;
+      }
+      case 'rename':
+        error = workspace.rename(mutation.name, mutation.to);
+        break;
+      case 'delete':
+        workspace.remove(mutation.name);
+        break;
+    }
+    if (error !== null) notices.show(error);
+    autosaver.schedule('workspace');
+    openActiveFile(); // Python deliberately wins an overlapping editor change.
+  }
 
   // --- Lint and format (FR-035 – FR-046, FR-058, FR-059, FR-067) ---------
   const formatBtn = need<HTMLButtonElement>('btn-format');
@@ -298,6 +425,8 @@ function boot(): void {
   let engine: RuffEngine | null = null;
   let linter: Linter | null = null;
 
+  openActiveFile();
+
   /**
    * FR-043 – FR-045, FR-067: reformat the editor. It never consults the
    * runtime, so a program already running is untouched — it executes the
@@ -306,7 +435,9 @@ function boot(): void {
   function runFormat(): void {
     // FR-058: inert by pointer, by keyboard and via the FR-009 shortcut when
     // the engine never loaded.
-    if (engine === null || isInert(formatBtn)) return;
+    const active = workspace.activeFile;
+    const bytes = active === null ? null : workspace.get(active);
+    if (engine === null || isInert(formatBtn) || !active?.endsWith('.py') || bytes === null || !isText(bytes)) return;
     if (formatDocument(view, engine) === 'syntax-error') notices.show(CANNOT_FORMAT);
   }
 
@@ -322,7 +453,8 @@ function boot(): void {
         panel.render(diagnostics); // FR-038 / FR-040
         applyDiagnostics(view, diagnostics); // FR-036 / FR-037
       });
-      linter.lintNow(view.state.doc.toString());
+      if (workspace.activeFile?.endsWith('.py')) linter.lintNow(view.state.doc.toString());
+      filePane.render(workspace);
     },
     () => {
       // FR-046 / FR-058 / BR-009: the linter alone degrades — editing, Run,
@@ -337,6 +469,8 @@ function boot(): void {
   const statusBar = need('status-bar');
   const banner = need('coi-banner');
   const runBtn = need<HTMLButtonElement>('btn-run');
+  const runAction = need('run-action');
+  const runFileName = need('run-file-name');
   const stopBtn = need<HTMLButtonElement>('btn-stop');
 
   // FR-026: Clear console removes every console line and leaves the editor
@@ -348,6 +482,10 @@ function boot(): void {
   let ready = false;
   let running = false;
   let restarting = false;
+  /** Immutable target of the run in flight; it survives a file-tree selection. */
+  let runTarget: string | null = null;
+  /** Session-only history: deliberately not added to workspace persistence. */
+  let lastRunFile: string | null = null;
 
   /**
    * FR-065: the status the bar returns to once the runtime is idle again —
@@ -366,12 +504,40 @@ function boot(): void {
     if (ready && !restarting) statusBar.textContent = steadyStatus;
   }
 
+  /** A Python source is an editable UTF-8 `.py` file in the active workspace. */
+  function activeRunnableFile(): string | null {
+    const name = workspace.activeFile;
+    if (name === null || !name.endsWith('.py')) return null;
+    const bytes = workspace.get(name);
+    return bytes !== null && isText(bytes) ? name : null;
+  }
+
+  function setRunLabel(action: string, filename: string | null, title: string): void {
+    runAction.textContent = action;
+    runFileName.textContent = filename ?? '';
+    runBtn.title = title;
+  }
+
+  /** Keep the run target explicit in both the toolbar and the Files tree. */
+  function syncRunPresentation(): void {
+    if (running && runTarget !== null) {
+      setRunLabel(RUNNING_LABEL, `${runTarget}…`, `${RUNNING_LABEL} ${runTarget}`);
+    } else {
+      const active = activeRunnableFile();
+      if (active !== null) setRunLabel(RUN_LABEL, active, `${RUN_LABEL} ${active}`);
+      else setRunLabel(RUN_LABEL, RUN_PYTHON_FILE_LABEL, 'Open a Python (.py) file to run it');
+    }
+    filePane.setRunState(running ? runTarget : null, lastRunFile);
+  }
+
+  refreshRunPresentation = syncRunPresentation;
+
   /**
    * FR-017 / FR-054 / FR-064: Run only when idle, ready and not recovering;
    * Stop enabled if and only if a program is currently running.
    */
   function syncControls(): void {
-    setInert(runBtn, !ready || running || restarting);
+    setInert(runBtn, !ready || running || restarting || activeRunnableFile() === null);
     setInert(stopBtn, !running);
   }
 
@@ -443,11 +609,20 @@ function boot(): void {
 
   function startRun(): void {
     if (isInert(runBtn)) return;
-    // BR-006: the executed bytes are the buffer as it stands right now.
-    const code = view.state.doc.toString();
+    const entryFile = activeRunnableFile();
+    if (entryFile === null) return;
+    // BR-006: the worker receives an immutable whole-workspace snapshot.
+    autosaver.flush();
     stdinIdle();
-    if (runtime.run(code) === null) return;
-    consoleView.meta(formatRunSeparator(new Date())); // FR-018
+    runTarget = entryFile;
+    if (runtime.run(workspace.snapshot().files, entryFile) === null) {
+      runTarget = null;
+      syncRunPresentation();
+      return;
+    }
+    lastRunFile = entryFile;
+    syncRunPresentation();
+    consoleView.meta(formatRunSeparator(entryFile, new Date())); // FR-018
     syncControls();
   }
 
@@ -456,25 +631,25 @@ function boot(): void {
       if (ready) return;
       const label = formatLoading(percent);
       statusBar.textContent = label; // FR-065
-      runBtn.textContent = `Run ${Math.round(percent)}%`; // FR-012
+      setRunLabel(RUN_LABEL, `${Math.round(percent)}%`, label); // FR-012
       runBtn.dataset.progress = String(Math.round(percent));
     },
     onReady(pythonVersion) {
       ready = true;
-      runBtn.textContent = 'Run';
       delete runBtn.dataset.progress;
       statusBar.textContent = steadyStatus;
       consoleView.meta(formatReady(pythonVersion)); // FR-013
+      syncRunPresentation();
       syncControls();
     },
     onInitError(message) {
       // FR-014: Run stays disabled, status and console explain the failure.
       ready = false;
-      runBtn.textContent = 'Run';
       delete runBtn.dataset.progress;
       statusBar.textContent = STATUS_PYTHON_UNAVAILABLE;
       consoleView.errorText(RUNTIME_FAILED);
       consoleView.errorText(message);
+      syncRunPresentation();
       syncControls();
     },
     onStdout(text) {
@@ -487,6 +662,17 @@ function boot(): void {
       stdinIdle();
       consoleView.stderr(text); // FR-020
     },
+    onFsMutation(mutation) {
+      applyFsMutation(mutation);
+      syncControls();
+    },
+    onWorkspaceSnapshot(files: WorkspaceFile[]) {
+      const error = workspace.replaceFiles(files);
+      if (error !== null) notices.show(error);
+      autosaver.schedule('workspace');
+      openActiveFile();
+      syncControls();
+    },
     onStdinRequest(prompt, mode) {
       // FR-030: written exactly once, from the message, before the field is
       // enabled — the worker's hook keeps it out of the stdout stream.
@@ -494,11 +680,13 @@ function boot(): void {
       stdinPending(mode); // FR-029
     },
     onDone(durationMs) {
+      autosaver.flush();
       stdinIdle();
       consoleView.endRun(); // FR-056: settle any half-truncated line first.
       consoleView.meta(formatFinished(durationMs)); // FR-022
     },
     onError(traceback) {
+      autosaver.flush();
       // FR-021: the complete CPython traceback, then the notice.
       stdinIdle();
       consoleView.endRun(); // FR-056
@@ -507,6 +695,8 @@ function boot(): void {
     },
     onRunStateChange(next) {
       running = next;
+      if (!next) runTarget = null;
+      syncRunPresentation();
       syncControls();
     },
     onStopped() {
@@ -514,8 +704,10 @@ function boot(): void {
       stdinIdle();
       consoleView.endRun(); // FR-056
       restarting = true;
+      if (runTarget !== null) lastRunFile = runTarget;
       statusBar.textContent = STATUS_RESTARTING; // FR-065
       consoleView.meta(PROGRAM_STOPPED);
+      autosaver.flush();
       syncControls();
     },
     onRecovered() {
@@ -532,6 +724,18 @@ function boot(): void {
   stopBtn.addEventListener('click', () => {
     if (isInert(stopBtn)) return;
     runtime.stop();
+  });
+
+  need<HTMLButtonElement>('btn-reset').addEventListener('click', () => {
+    if (!window.confirm(RESET_CONFIRM)) return;
+    if (runtime.isRunning) runtime.stop();
+    workspace.reset();
+    lastRunFile = null;
+    autosaver.schedule('workspace');
+    autosaver.flush();
+    openActiveFile();
+    syncControls();
+    view.focus();
   });
 
   // --- Offline precache and cross-origin isolation (FR-051 – FR-053) -----
@@ -555,6 +759,7 @@ function boot(): void {
     statusBar.textContent = STATUS_PYTHON_UNAVAILABLE;
   }
   syncControls();
+  syncRunPresentation();
 
   // FR-011: the editor is usable immediately, while the runtime downloads.
   document.documentElement.dataset.shellReady = 'true';

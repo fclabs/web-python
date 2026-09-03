@@ -1,10 +1,10 @@
 {
-  "commit": "8df7fa5",
+  "commit": "209d53e",
   "files": [
     "/_headers",
     "/assets/index-HASH.js",
     "/assets/index-HASH.css",
-    "/assets/pyodide.worker-CHqablbV.js",
+    "/assets/pyodide.worker-BS38krDl.js",
     "/index.html",
     "/precache-manifest.json",
     "/pyodide/pyodide-lock.json",
@@ -20,7 +20,7 @@
     "/",
     "/assets/index-HASH.js",
     "/assets/index-HASH.css",
-    "/assets/pyodide.worker-CHqablbV.js",
+    "/assets/pyodide.worker-BS38krDl.js",
     "/pyodide/pyodide-lock.json",
     "/pyodide/pyodide.asm.js",
     "/pyodide/pyodide.asm.wasm",
@@ -42,7 +42,10 @@
     "/ruff/ruff_wasm.js": "9dbb8d8d2aaa86a5f6a96a35556228d1c05b713e4e87b02a9db80731131053ef",
     "/ruff/ruff_wasm_bg.wasm": "cb88a5dd34d03e0c6b76ebe3e1b692c8878d34d88375da28085081ac6dd2e55f"
   },
-  "gzippedApp": 144295,
+  "gzippedApp": 154928,
   "gzippedVendored": 9263634,
-  "gzippedBy": "linux-arm64 zlib 1.3.2.1-motley-8002e91"
+  "gzippedBy": "linux-x64 zlib 1.3.2.1-motley-8002e91",
+  "gzippedAppBy": {
+    "linux-x64 zlib 1.3.2.1-motley-8002e91": 154928
+  }
 }

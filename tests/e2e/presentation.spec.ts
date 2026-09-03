@@ -70,7 +70,7 @@ test.describe('375 px viewport', () => {
     // A long line in the editor and a long line in the console: the two places
     // horizontal overflow can originate.
     await setProgram(page, `x = "${'y'.repeat(400)}"\nprint(x)\n`);
-    await page.getByRole('button', { name: 'Run' }).click();
+    await page.locator('#btn-run').click();
     await expect.poll(() => consoleText(page)).toContain('yyyy');
 
     // FR-047: no horizontal page scrolling, whatever the content.

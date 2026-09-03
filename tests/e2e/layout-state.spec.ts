@@ -178,7 +178,7 @@ test('VC-420 (FR-419, BR-401): the editor survives a switch each way intact', as
   await page.locator('.cm-content').press('ControlOrMeta+z');
   // `Mod-y` is CodeMirror's redo on Windows and Linux only; `Mod-Shift-z` is
   // bound on every platform, macOS included.
-  await page.locator('.cm-content').press('ControlOrMeta+Shift+z');
+  await page.locator('.cm-content').press('ControlOrMeta+Shift+Z');
   await expect
     .poll(async () => (await observeEditor(page)).doc)
     .toBe(program);
@@ -222,7 +222,7 @@ test('VC-420 (FR-419, BR-401): the editor survives a switch each way intact', as
   await page.locator('.cm-content').press('ControlOrMeta+z');
   const undone = await observeEditor(page);
   expect(undone.doc, 'Ctrl/Cmd+Z still undoes the same edit').not.toBe(program);
-  await page.locator('.cm-content').press('ControlOrMeta+Shift+z');
+  await page.locator('.cm-content').press('ControlOrMeta+Shift+Z');
   expect((await observeEditor(page)).doc, 'and redo restores it').toBe(program);
 });
 
@@ -551,16 +551,17 @@ test('VC-425 (FR-424, BR-401): no autosave reset, no worker message, no request'
         .__costs,
   );
 
-  // Only the layout key and the program key were written.
+  // Only the layout key and the workspace key were written.
   const layoutWrites = costs.writes.filter((w) => w.key === 'pyplay.layout.v2');
-  const programWrites = costs.writes.filter((w) => w.key === 'pyplay.program.v1');
+  const workspaceWrites = costs.writes.filter((w) => w.key === 'pyplay.workspace.v1');
   expect(costs.writes.map((w) => w.key).filter((k) => !k.startsWith('pyplay.'))).toEqual([]);
   expect(layoutWrites.length, 'one write per switch').toBe(2);
 
-  // FR-424: the switch neither started nor *reset* the debounce — the program
-  // write still landed 500 ms after the keystroke, not after the last switch.
-  expect(programWrites, 'the autosave write landed').toHaveLength(1);
-  const elapsed = programWrites[0]!.at - keystrokeAt;
+  // FR-424: the switch neither started nor *reset* the debounce — the
+  // autosave write still landed 500 ms after the keystroke, not after the
+  // last switch.
+  expect(workspaceWrites, 'the autosave write landed').toHaveLength(1);
+  const elapsed = workspaceWrites[0]!.at - keystrokeAt;
   expect(elapsed, 'not sooner than the 500 ms debounce').toBeGreaterThanOrEqual(500);
   expect(elapsed, 'and not pushed out by the switches').toBeLessThan(900);
 

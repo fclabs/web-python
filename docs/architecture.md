@@ -6,7 +6,7 @@ the implementation deliberately differs from the spec's *Data & Interfaces*.
 ```
 ┌──────────────────────────── main thread ────────────────────────────┐
 │  index.html + src/main.ts                                           │
-│    CodeMirror editor ── autosave → localStorage['pyplay.program.v1'] │
+│    flat file tree + CodeMirror ─ autosave → localStorage['pyplay.workspace.v1'] │
 │    color mode ── pyplay.theme.v1; editor darkTheme from effective   │
 │    layout ── pyplay.layout.v2; #app[data-layout] drives the grid    │
 │    console (rAF-batched, bounded)                                   │
@@ -39,8 +39,8 @@ types live in [`src/protocol.ts`](../src/protocol.ts).
 
 | `type` | Payload | Meaning |
 |---|---|---|
-| `init` | `{ stdinBuffer: SharedArrayBuffer }` | Boot Pyodide; adopt the shared buffer as this worker's stdin channel. Sent once per worker, immediately after it is spawned. |
-| `run` | `{ code: string, runId: number }` | Execute `code` as `__main__` in a brand-new namespace. |
+| `init` | `{ stdinBuffer, fsBuffer: SharedArrayBuffer }` | Boot Pyodide; adopt the stdin channel and filesystem-operation mailbox. Sent once per worker, immediately after it is spawned. |
+| `run` | `{ files, entryFile, runId }` | Hydrate the flat workspace and execute the selected UTF-8 `.py` file as `__main__` in a brand-new namespace. |
 
 **Stop is not a message.** It is `worker.terminate()` — see
 *Stop and replace* below.
@@ -53,6 +53,8 @@ types live in [`src/protocol.ts`](../src/protocol.ts).
 | `initError` | `{ message: string }` | The runtime failed to initialise. |
 | `stdout` | `{ runId, text }` | A chunk of `sys.stdout`. |
 | `stderr` | `{ runId, text }` | A chunk of `sys.stderr`. |
+| `fsMutationAvailable` | `{ runId, sequence }` | A Python filesystem operation is ready in the shared mailbox for the page to persist. |
+| `workspaceSnapshot` | `{ runId, files }` | The authoritative flat workspace after the run exits. |
 | `stdinRequest` | `{ runId, prompt, mode }` | The program is suspended on a blocking read. **`mode` is an addition — see below.** |
 | `done` | `{ runId, durationMs }` | Normal termination. |
 | `error` | `{ runId, traceback }` | Uncaught exception; `traceback` is the full CPython traceback with the runner's own frame stripped. |
@@ -83,9 +85,8 @@ message the worker is already sending, at the only moment when the answer is
 known. `'line'` covers `input()`/`readline()`; `'stream'` covers
 `read()`/`read(n)`.
 
-Nothing else in *Data & Interfaces* is changed. `init`, `run`, `ready`,
-`initError`, `stdout`, `stderr`, `done` and `error` carry exactly the payloads
-the spec lists.
+The workspace protocol extends the original single-file interface so Python
+can create and update local exercise files without cloud storage.
 
 ### Other implementation choices the spec leaves open
 
@@ -485,6 +486,7 @@ DOM contract also called it the toolbar's last child, but spec-03 had already
 shipped `Symbols` in that slot (VC-301); FR-401's own Given/When/Then says
 "immediately after `#btn-reset`", which is what ships. Recorded as an amendment
 in `specs/04-toogle-pane-aspect-frozen.md`.
+
 ## Color mode
 
 The color-mode control of spec-05 (`src/theme.ts`, `#btn-theme`) lets the
@@ -523,10 +525,21 @@ IndexedDB, no `sessionStorage`:
 
 | Store | Key | Contents |
 |---|---|---|
-| `localStorage` | `pyplay.program.v1` | the exact editor contents, UTF-8, no wrapper |
 | `localStorage` | `pyplay.layout.v2` | exactly `horizontal` (stacked) or `vertical` (two columns) — a bare string from a two-value enum, no JSON, no wrapper, no whitespace |
 | `localStorage` | `pyplay.theme.v1` | exactly `light`, `dark`, or `system` — raw string, no JSON |
+| `localStorage` | `pyplay.workspace.v1` | versioned flat workspace: active filename plus Base64 file bytes, capped at 2 MB |
 | Cache Storage | `pyplay-assets-v<build>` | the precached static assets; older buckets are deleted on activation |
+
+The workspace begins with the same friendly UTF-8 `main.py` used by the
+original playground: a welcome message, a name prompt and a short squares loop.
+It intentionally has no directories: names containing a path separator are
+rejected in both the interface and the Python filesystem bridge. `Run` is
+available only while the active file is UTF-8 and ends in `.py`; its name is
+captured with the workspace snapshot, shown while it runs, and retained as the
+Files panel's session-only `Last run` marker. Files written by Python are
+mirrored to the page operation-by-operation through a `SharedArrayBuffer`, so
+they appear in the tree and survive Stop; a final worker snapshot reconciles
+the complete workspace. Non-UTF-8 files are retained but opened read-only.
 
 Autosave is debounced 500 ms and additionally flushed **synchronously** on
 `pagehide` and on `visibilitychange → hidden`, so a fast navigation away can
@@ -534,6 +547,7 @@ never persist a half-typed prefix. A rejected write (quota, private browsing,
 storage disabled) shows one notice per page load and changes nothing else.
 Theme storage failure is quieter still: the in-memory preference and UI still
 cycle; no theme notice is shown (BR-504).
+A legacy `pyplay.program.v1` value migrates once into `main.py`.
 
 `pyplay.layout.v2` is written **synchronously on selection** — there is nothing
 to debounce, and a layout choice that survived only if the visitor waited half

@@ -363,7 +363,7 @@ test('VC-332 (FR-318): nothing but the toggle and Escape dismisses the pane', as
   // Stop to be genuinely enabled while the pane is inspected.
   await setProgram(page, 'while True: pass\n');
   await stillOpen('after replacing the program');
-  await page.getByRole('button', { name: 'Run' }).click();
+  await page.locator('#btn-run').click();
   await stillOpen('after Run');
   await expect(page.getByRole('button', { name: 'Stop' })).toBeEnabled();
   await page.getByRole('button', { name: 'Stop' }).click();
@@ -889,7 +889,7 @@ test.describe('wide layout keyboard model', () => {
     await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
 
     const visited: string[] = [];
-    for (let i = 0; i < 15; i++) {
+    for (let i = 0; i < 19; i++) {
       await page.keyboard.press('Tab');
       visited.push(
         await page.evaluate(() => {
@@ -897,6 +897,7 @@ test.describe('wide layout keyboard model', () => {
           if (!el || el === document.body) return '';
           if (el.classList.contains('symbol')) return 'pane';
           if (el.classList.contains('cm-content')) return 'editor';
+          if (el.classList.contains('file-tree-button')) return 'file-tree';
           // spec-04 FR-405: the layout radiogroup is one tab stop, whichever
           // of its two radios currently holds the roving `tabindex="0"`.
           if (el.closest('#layout-group')) return 'layout';
@@ -906,9 +907,12 @@ test.describe('wide layout keyboard model', () => {
     }
 
     expect(visited.filter((id) => id === 'pane')).toHaveLength(1);
-    // spec-04 VC-407: and the layout group likewise contributes exactly one.
+    // spec-04 VC-407: the layout group contributes exactly one tab stop.
     expect(visited.filter((id) => id === 'layout')).toHaveLength(1);
-    expect(visited.slice(0, 11)).toEqual([
+    // The files pane is open by default at this width (`FilePane`'s
+    // `syncLayout`); its own DOM position (after Diagnostics, per FR-317 and
+    // FR-410's fixed runs) puts its tab stops after the editor/stdin group.
+    expect(visited.slice(0, 19)).toEqual([
       '#btn-run',
       '#btn-stop',
       '#btn-clear',
@@ -917,10 +921,18 @@ test.describe('wide layout keyboard model', () => {
       '#btn-reset',
       // spec-04 FR-401: immediately after `Reset`, before `Symbols`.
       'layout',
+      '#btn-files',
       '#btn-symbols',
       '#btn-theme',
       'pane',
       'editor',
+      '#stdin-input',
+      '#btn-eof',
+      '#btn-file-new',
+      '#btn-file-rename',
+      '#btn-file-delete',
+      'file-tree',
+      '#file-resizer',
     ]);
   });
 
@@ -1025,7 +1037,7 @@ test('VC-316 (FR-310, BR-301): copying mid-run interrupts neither the run nor it
   await waitForPythonReady(page);
   await runProgram(page, 'import time\nfor i in range(20):\n    print(i)\n    time.sleep(0.2)\n');
 
-  const run = page.getByRole('button', { name: 'Run' });
+  const run = page.locator('#btn-run');
   const stop = page.getByRole('button', { name: 'Stop' });
   await expect(stop).toBeEnabled();
   await expect(run).toBeDisabled();
@@ -1137,19 +1149,19 @@ test('VC-320 (FR-312, BR-304): opening and copying persists nothing, and a reloa
   await expect.poll(() => storedProgram(page)).toBe('print("hi")');
 
   /*
-   * The keys that may legitimately be present: FR-002's autosave, spec-05's
-   * `pyplay.theme.v1`, and — under a spec-04 VC-433 run, which loads the
-   * parent suites with the layout preference pre-seeded — spec-04's
+   * The keys that may legitimately be present: the workspace autosave key,
+   * spec-05's `pyplay.theme.v1`, and — under a spec-04 VC-433 run, which loads
+   * the parent suites with the layout preference pre-seeded — spec-04's
    * `pyplay.layout.v2`. None is the pane's; what VC-320 asserts is that *the
    * pane* writes nothing, which is the unchanged-snapshot comparisons below,
    * plus the absence of any key outside this set.
    */
-  const ALLOWED_KEYS = ['pyplay.layout.v2', 'pyplay.program.v1', 'pyplay.theme.v1'];
+  const ALLOWED_KEYS = ['pyplay.layout.v2', 'pyplay.workspace.v1', 'pyplay.theme.v1'];
   const unexpectedKeys = (snapshot: { local: Record<string, string> }): string[] =>
     Object.keys(snapshot.local).filter((key) => !ALLOWED_KEYS.includes(key));
 
   const before = await storageSnapshot(page);
-  expect(Object.keys(before.local)).toContain('pyplay.program.v1');
+  expect(Object.keys(before.local)).toContain('pyplay.workspace.v1');
   expect(unexpectedKeys(before)).toEqual([]);
 
   await openSymbolPane(page);

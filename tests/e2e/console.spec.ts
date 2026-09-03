@@ -64,7 +64,7 @@ test('VC-027 (FR-026): Clear console empties the console and leaves the editor a
   expect(await editorText(page)).toBe('y = 1');
 
   // ...and the cleared console still works for the next run.
-  await page.getByRole('button', { name: 'Run' }).click();
+  await page.locator('#btn-run').click();
   await waitForTermination(page);
   expect(await consoleText(page)).toMatch(/Program finished in \d+\.\d{2} s/);
 });
@@ -206,7 +206,7 @@ test('VC-029 (FR-028): the console follows output only while it is at the bottom
   expect(repinned.top).toBeGreaterThan(during.top);
 
   await page.getByRole('button', { name: 'Stop' }).click();
-  await expect(page.getByRole('button', { name: 'Run' })).toBeEnabled({ timeout: 5_000 });
+  await expect(page.locator('#btn-run')).toBeEnabled({ timeout: 5_000 });
 });
 
 test('VC-054 (NFR-009): continuous output never blocks the main thread, and Stop still lands in 500 ms', async ({

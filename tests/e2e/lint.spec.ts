@@ -144,7 +144,7 @@ test('VC-044 (FR-042, BR-006): a warning never gates Run', async ({ page }) => {
     .poll(() => diagnosticEntries(page), { timeout: LINT_SETTLE_MS + 2000 })
     .toEqual(['1:8 · F401 · `os` imported but unused']);
 
-  const runBtn = page.getByRole('button', { name: 'Run' });
+  const runBtn = page.locator('#btn-run');
   await expect(runBtn).toBeEnabled();
   await runBtn.click();
 
@@ -168,7 +168,7 @@ test('VC-061 (FR-042, BR-006): an error-severity diagnostic never gates Run eith
     'error',
   );
 
-  const runBtn = page.getByRole('button', { name: 'Run' });
+  const runBtn = page.locator('#btn-run');
   await expect(runBtn).toBeEnabled();
   await runBtn.click();
 

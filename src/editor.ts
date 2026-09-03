@@ -45,9 +45,14 @@ const pyHighlight = HighlightStyle.define([
 
 /** Drive CodeMirror's dark-theme facet from the effective palette (BR-503). */
 const colorScheme = new Compartment();
+const editability = new Compartment();
 
 function colorSchemeExtensions(effective: 'light' | 'dark'): Extension[] {
   return effective === 'dark' ? [EditorView.darkTheme.of(true)] : [];
+}
+
+function editabilityExtensions(readOnly: boolean): Extension[] {
+  return [EditorState.readOnly.of(readOnly), EditorView.editable.of(!readOnly)];
 }
 
 export interface EditorOptions {
@@ -120,6 +125,7 @@ export function createEditor({
     }),
     EditorView.contentAttributes.of({ 'aria-label': 'Python program editor' }),
     colorScheme.of(colorSchemeExtensions(effectiveColorScheme)),
+    editability.of(editabilityExtensions(false)),
   ];
 
   return new EditorView({
@@ -144,6 +150,11 @@ export function setDoc(view: EditorView, doc: string): void {
     changes: { from: 0, to: view.state.doc.length, insert: doc },
     selection: { anchor: Math.min(doc.length, view.state.selection.main.anchor) },
   });
+}
+
+/** A binary workspace file is visible but deliberately cannot be rewritten as text. */
+export function setEditorReadOnly(view: EditorView, readOnly: boolean): void {
+  view.dispatch({ effects: editability.reconfigure(editabilityExtensions(readOnly)) });
 }
 
 /** FR-007: leave the editor contents selected so the visitor can copy manually. */

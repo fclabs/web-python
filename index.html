@@ -31,7 +31,7 @@
   <body>
     <div id="app" class="app">
       <header class="toolbar" role="toolbar" aria-label="Playground controls">
-        <button id="btn-run" class="btn btn--primary" type="button" tabindex="0" aria-disabled="true">Run</button>
+        <button id="btn-run" class="btn btn--primary" type="button" tabindex="0" aria-disabled="true"><span id="run-action">Run</span><span id="run-file-name">Python file</span></button>
         <button id="btn-stop" class="btn" type="button" tabindex="0" aria-disabled="true">Stop</button>
         <button id="btn-clear" class="btn" type="button">Clear console</button>
         <button id="btn-copy" class="btn" type="button">Copy code</button>
@@ -79,6 +79,7 @@
              `src/main.ts` writes it only while the narrow override is in
              force and clears it again on the way back up. -->
         <span id="layout-narrow-hint" class="visually-hidden"></span>
+        <button id="btn-files" class="btn" type="button" aria-expanded="false" aria-controls="file-pane">Files</button>
         <!-- FR-301: immediately before the color-mode control. It has no
              disabled state, so unlike Run/Stop/Format it is never routed
              through `setInert()`. -->
@@ -122,6 +123,7 @@
       </section>
 
       <section class="panel panel--editor" aria-label="Editor">
+        <h2 class="editor-heading">Editing: <span id="active-file-name">main.py</span></h2>
         <div id="editor" class="editor"></div>
       </section>
 
@@ -146,6 +148,35 @@
         </h2>
         <ul id="diagnostics-list" class="diagnostics-list"></ul>
         <p id="diagnostics-empty" class="diagnostics-empty">Linter unavailable.</p>
+      </section>
+
+      <!-- FR-317 pins `#symbol-pane` immediately after `#notices` and before
+           the console panel; FR-410 pins console/editor/stdin/diagnostics as
+           one uninterrupted run. The files pane sits here instead, after both
+           runs — its `.panel--files` grid-area places it visually without
+           moving it in the document. -->
+      <section id="file-pane" class="panel panel--files" aria-label="Files" hidden>
+        <div class="files-heading">
+          <h2 class="panel-title">Files</h2>
+          <div class="files-actions">
+            <button id="btn-file-new" class="btn btn--small" type="button">New</button>
+            <button id="btn-file-rename" class="btn btn--small" type="button" aria-disabled="true">Rename</button>
+            <button id="btn-file-delete" class="btn btn--small" type="button" aria-disabled="true">Delete</button>
+          </div>
+        </div>
+        <input id="file-name-input" class="file-name-input" type="text" hidden />
+        <ul id="file-tree" class="file-tree" role="tree" aria-label="Workspace files"></ul>
+        <div
+          id="file-resizer"
+          class="file-resizer"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize files panel"
+          aria-valuemin="160"
+          aria-valuemax="480"
+          aria-valuenow="260"
+          tabindex="0"
+        ></div>
       </section>
     </div>
     <script type="module" src="/src/main.ts"></script>

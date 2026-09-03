@@ -12,12 +12,18 @@ import {
 
 describe('formatRunSeparator (FR-018)', () => {
   it('renders a 24-hour local clock between the box-drawing rules', () => {
-    expect(formatRunSeparator(new Date(2026, 8, 1, 14, 5, 9))).toBe('─── Run at 14:05:09 ───');
+    expect(formatRunSeparator('exercise.py', new Date(2026, 8, 1, 14, 5, 9))).toBe(
+      '─── Running exercise.py at 14:05:09 ───',
+    );
   });
 
   it('never falls back to a 12-hour clock', () => {
-    expect(formatRunSeparator(new Date(2026, 8, 1, 0, 0, 0))).toBe('─── Run at 00:00:00 ───');
-    expect(formatRunSeparator(new Date(2026, 8, 1, 23, 59, 59))).toBe('─── Run at 23:59:59 ───');
+    expect(formatRunSeparator('main.py', new Date(2026, 8, 1, 0, 0, 0))).toBe(
+      '─── Running main.py at 00:00:00 ───',
+    );
+    expect(formatRunSeparator('main.py', new Date(2026, 8, 1, 23, 59, 59))).toBe(
+      '─── Running main.py at 23:59:59 ───',
+    );
   });
 });
 
