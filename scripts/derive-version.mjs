@@ -3,8 +3,8 @@
  * (spec 02-ci: FR-116, FR-117, BR-100, BR-101, BR-102).
  *
  * The bump comes from the commit *subject* alone, and the base version comes
- * from the highest `vX.Y.Z` tag — never from `package.json`, which FR-118
- * maintains as a mirror (BR-102). Everything below the CLI at the bottom is
+ * from the highest `vX.Y.Z` tag — never from `package.json`, which is a stale
+ * mirror (BR-102). Everything below the CLI at the bottom is
  * pure: no git, no filesystem, no environment, so every row of BR-100's table
  * is verifiable by a unit test rather than by performing a real merge.
  *

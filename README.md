@@ -161,11 +161,11 @@ subject**, and that subject decides the release:
 | `chore:` `docs:` `style:` `refactor:` `test:` `build:` `ci:` | no release |
 
 On merge, the release pipeline re-runs the whole gate against `main` and then,
-if the bump is not *none*, writes the version to `package.json`, commits it as
-`chore(release): vX.Y.Z [skip ci]`, creates the annotated tag `vX.Y.Z`, and
-publishes a GitHub Release with generated notes and one asset,
-`pyplay-X.Y.Z.tar.gz`. The version's source of truth is the highest `vX.Y.Z`
-git tag, not `package.json`.
+if the bump is not *none*, creates the annotated tag `vX.Y.Z` on that merge
+commit and publishes a GitHub Release with generated notes and one asset,
+`pyplay-X.Y.Z.tar.gz`. It does not push a version commit to `main` (the branch
+ruleset requires a pull request). The version's source of truth is the highest
+`vX.Y.Z` git tag, not `package.json`.
 
 No CI job deploys anything — Netlify deploys from its own git integration.
 

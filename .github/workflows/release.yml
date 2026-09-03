@@ -2,8 +2,9 @@
 #
 # A push to `main` re-runs the same gate the pull request passed (FR-115), then
 # derives a Semantic Versioning bump from the pushed commit's subject and, when
-# that bump is not *none*, writes the version, tags it, and publishes a GitHub
-# Release with the build this very run tested attached (BR-107).
+# that bump is not *none*, tags that commit and publishes a GitHub Release with
+# the build this very run tested attached (BR-107). It does not push a version
+# commit to `main`: the branch ruleset requires a pull request and Code Scanning.
 #
 # The five gate jobs are duplicated from `pr.yml` rather than extracted into a
 # reusable `workflow_call` workflow: the spec's added-files table lists exactly
@@ -32,9 +33,10 @@ jobs:
   # FR-102, re-run against the pushed commit.
   typecheck:
     name: typecheck
-    # BR-103's second guarantee: the version commit of FR-118 carries
-    # `[skip ci]`, so even a future trigger change cannot start a release loop.
-    # (The first guarantee is that a push made with GITHUB_TOKEN starts no run.)
+    # BR-103's second guarantee: a later `[skip ci]` commit cannot start a
+    # release loop even if the trigger changes. (The first guarantee is that a
+    # push made with GITHUB_TOKEN starts no run. This workflow no longer
+    # pushes commits to `main`, but the guard stays.)
     if: "!contains(github.event.head_commit.message, '[skip ci]')"
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -175,10 +177,11 @@ jobs:
 
   # FR-115 - FR-122. Nothing here runs until all five gates above are green.
   #
-  # The order is deliberate: the version commit lands, *then* the tag is pushed,
-  # *then* the Release is created. A run interrupted between two of those steps
-  # leaves a recoverable state, and a re-run hits FR-122's idempotency check
-  # rather than duplicating anything.
+  # The order is deliberate: the annotated tag is pushed, *then* the Release
+  # is created. A run interrupted between those steps leaves a recoverable
+  # state, and a re-run hits FR-122's idempotency check rather than
+  # duplicating anything. The tag is on the commit the gate tested — `main`
+  # forbids a follow-up version-mirror commit.
   publish:
     name: publish
     needs: [typecheck, unit, e2e-chromium, audit-contrast, audit-perf]
@@ -192,9 +195,9 @@ jobs:
           # will not do.
           fetch-depth: 0
           fetch-tags: true
-          # Keep the token in the local git config so the version commit and the
-          # tag can be pushed with it (BR-103's first guarantee: a push made
-          # with GITHUB_TOKEN starts no new workflow run).
+          # Keep the token in the local git config so the tag can be pushed
+          # with it (BR-103's first guarantee: a push made with GITHUB_TOKEN
+          # starts no new workflow run).
           persist-credentials: true
       - name: Activate Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -232,7 +235,7 @@ jobs:
       - name: Skip the release for a commit type that produces none
         if: steps.derive.outputs.release != 'true'
         run: |
-          echo "commit type produces no release; no tag, commit or Release created."
+          echo "commit type produces no release; no tag or Release created."
 
       - name: Check whether the derived version is already released
         id: existing
@@ -251,7 +254,7 @@ jobs:
             echo "already=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Write the version, tag it and push, retrying a stale base
+      - name: Tag the tested commit and push the tag, retrying a stale tag set
         id: push
         if: steps.derive.outputs.release == 'true' && steps.existing.outputs.already == 'false'
         env:
@@ -265,15 +268,19 @@ jobs:
           version="${VERSION}"
           tag="${TAG}"
 
-          # FR-125: at most three attempts. Each retry re-fetches main,
+          # The `main` ruleset requires a pull request and Code Scanning, so a
+          # version-mirror commit cannot be pushed there. Tag the commit this
+          # run tested instead. Tags remain the version source of truth
+          # (BR-102); package.json is left as a stale mirror.
+          #
+          # FR-125: at most three attempts. Each retry re-fetches tags,
           # re-reads the base version per BR-102 and re-derives from this run's
           # own triggering commit.
           for attempt in 1 2 3; do
-            echo "::group::Push attempt ${attempt} of 3"
+            echo "::group::Tag attempt ${attempt} of 3"
             if [ "${attempt}" -gt 1 ]; then
-              git fetch origin main --tags --force
-              git reset --hard "origin/main"
-              tags="$(git tag --list --merged origin/main | tr '\n' ' ')"
+              git fetch --tags --force origin
+              tags="$(git tag --list --merged "${GITHUB_SHA}" | tr '\n' ' ')"
               version="$(
                 node scripts/derive-version.mjs \
                   --tags "${tags}" \
@@ -286,25 +293,20 @@ jobs:
                 exit 0
               fi
               tag="v${version}"
-              if git rev-parse -q --verify "refs/tags/${tag}" >/dev/null; then
+              if git rev-parse -q --verify "refs/tags/${tag}" >/dev/null \
+                || [ -n "$(git ls-remote --tags origin "refs/tags/${tag}")" ]; then
                 echo "version already released: ${tag}"
                 echo "released=false" >> "$GITHUB_OUTPUT"
                 echo "::endgroup::"
                 exit 0
               fi
-              echo "Re-derived after fetching main: ${version}"
+              echo "Re-derived after fetching tags: ${version}"
             fi
 
-            # FR-118: package.json's version and package-lock.json only.
-            npm version "${version}" --no-git-tag-version --allow-same-version >/dev/null
-            npm install --package-lock-only --ignore-scripts >/dev/null
-            git add package.json package-lock.json
-            git commit -m "chore(release): ${tag} [skip ci]"
+            # FR-119: an annotated tag, on the commit the gate passed.
+            git tag --annotate "${tag}" --message "${tag}" "${GITHUB_SHA}"
 
-            # FR-119: an annotated tag, on the version commit.
-            git tag --annotate "${tag}" --message "${tag}"
-
-            if git push origin "HEAD:main" && git push origin "refs/tags/${tag}"; then
+            if git push origin "refs/tags/${tag}"; then
               echo "Pushed ${tag} on attempt ${attempt}."
               {
                 echo "released=true"
@@ -315,16 +317,14 @@ jobs:
               exit 0
             fi
 
-            echo "Push rejected on attempt ${attempt}."
-            # Undo the local attempt so the retry rebuilds it on the fetched base.
+            echo "Tag push rejected on attempt ${attempt}."
             git tag --delete "${tag}" || true
-            git reset --hard "HEAD~1"
             echo "::endgroup::"
           done
 
           # FR-125: fail the run after the third rejection, having created no
           # tag and no Release.
-          echo "Push rejected three times; failing with no tag and no Release created." >&2
+          echo "Tag push rejected three times; failing with no tag and no Release created." >&2
           exit 1
 
       - name: Build the site this run tested
@@ -338,9 +338,10 @@ jobs:
           VERSION: ${{ steps.push.outputs.version }}
         run: |
           set -euo pipefail
-          # FR-121, BR-107: built from this run's checkout of the tagged tree,
-          # never promoted from a pull request artifact. `-C dist .` so the
-          # extraction root is dist/'s contents (spec, "Tarball layout").
+          # FR-121, BR-107: built from this run's checkout of the tagged
+          # commit the gate passed, never promoted from a pull request
+          # artifact. `-C dist .` so the extraction root is dist/'s contents
+          # (spec, "Tarball layout").
           asset="pyplay-${VERSION}.tar.gz"
           tar -czf "${RUNNER_TEMP}/${asset}" -C dist .
           ls -l "${RUNNER_TEMP}/${asset}"
