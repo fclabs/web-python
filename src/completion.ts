@@ -49,8 +49,34 @@ export const PYTHON_HARD_KEYWORDS = [
 /** Python 3.13's `keyword.softkwlist`. */
 export const PYTHON_SOFT_KEYWORDS = ['_', 'case', 'match', 'type'] as const;
 
+/**
+ * Both keyword lists are fixed at module load, so their completion objects
+ * are built once here rather than on every completion request (every
+ * debounced keystroke, NFR-603's 200 ms/100 ms-longtask budget).
+ */
+const HARD_KEYWORD_COMPLETIONS: readonly Completion[] = PYTHON_HARD_KEYWORDS.map((label) => ({
+  label,
+  type: 'keyword',
+}));
+const SOFT_KEYWORD_COMPLETIONS: readonly Completion[] = PYTHON_SOFT_KEYWORDS.map((label) => ({
+  label,
+  type: 'keyword',
+}));
+
 const IDENTIFIER = /^[\p{ID_Start}_][\p{ID_Continue}_]*$/u;
 const IDENTIFIER_TAIL = /[\p{ID_Continue}_]+$/u;
+
+/**
+ * `@codemirror/lang-python` already self-suppresses `localCompletionSource`
+ * and `globalCompletion` on these four node names (its own private
+ * `dontComplete`, wrapped around `globalCompletion` with `ifNotIn` and
+ * checked inline by `localCompletionSource` — see its `dist/index.js`). Both
+ * are re-derived here, unexported, because this source also adds the Python
+ * keyword lists unconditionally (FR-602), so it must gate *itself* on the
+ * same four names rather than rely on the two upstream sources alone. Keep
+ * this set equal to upstream's if a future `@codemirror/lang-python` bump
+ * changes it.
+ */
 const SUPPRESSED_NODES = new Set(['Comment', 'String', 'FormatString', 'PropertyName']);
 
 function isSuppressed(context: CompletionContext, from: number): boolean {
@@ -105,15 +131,13 @@ export const pythonNameCompletionSource: CompletionSource = async (
   const options = new Map<string, Completion>();
 
   if (local) addUnique(options, local.options);
-  addUnique(
-    options,
-    PYTHON_HARD_KEYWORDS.map((label) => ({ label, type: 'keyword' })),
-  );
-  addUnique(
-    options,
-    PYTHON_SOFT_KEYWORDS.map((label) => ({ label, type: 'keyword' })),
-  );
+  addUnique(options, HARD_KEYWORD_COMPLETIONS);
   if (global) addUnique(options, global.options);
+  // Soft keywords (`type`, `match`, `case`, `_`) are ordinary identifiers
+  // outside their triggering syntax, so a same-named builtin from `global`
+  // above (`type`, the class) keeps its type; this only contributes the
+  // keyword label where nothing has already claimed it.
+  addUnique(options, SOFT_KEYWORD_COMPLETIONS);
 
   return {
     from,

@@ -416,11 +416,16 @@ body {
 }
 
 /* Name completion (spec-06) ---------------------------------------------- */
-.cm-editor .cm-tooltip-autocomplete {
+/* Shared tooltip chrome with `.cm-diagnostic-tooltip` below. */
+.cm-editor .cm-tooltip-autocomplete,
+.cm-tooltip .cm-diagnostic-tooltip {
   background: var(--bg-raised);
   border: 1px solid var(--border-strong);
   border-radius: 4px;
   color: var(--fg);
+}
+
+.cm-editor .cm-tooltip-autocomplete {
   max-width: min(32rem, calc(100vw - 16px));
   overflow: hidden;
 }
@@ -576,10 +581,6 @@ body {
 .cm-diagnostic-gutter-warning { color: var(--sev-warning); }
 
 .cm-tooltip .cm-diagnostic-tooltip {
-  background: var(--bg-raised);
-  border: 1px solid var(--border-strong);
-  border-radius: 4px;
-  color: var(--fg);
   font-family: var(--font-mono);
   max-width: 42em;
   padding: 4px 8px;

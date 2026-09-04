@@ -26,7 +26,7 @@ scripts/                   build-time and test-time tooling
   serve-plain.mjs          a non-isolated origin, for VC-015
   serve-deploy.mjs         a second deployment, for VC-063
   derive-version.mjs       the release bump derivation (pure; unit-tested)
-  record-baseline-build.mjs    pins a build's shape and size (VC-326, VC-429)
+  record-baseline-build.mjs    pins a build's shape and size (VC-326, VC-623)
   record-baseline-geometry.mjs pins the vertical layout's geometry (VC-408)
 tests/unit/                Vitest units
 tests/e2e/                 Playwright specs, one test per Verification Criterion
@@ -129,7 +129,7 @@ Four records pin what a build is compared against:
 | Record | Criterion | Pinned commit |
 |---|---|---|
 | `tests/e2e/baseline-build.json` | VC-326 (spec-03, build shape) | `8df7fa5` |
-| `tests/e2e/baseline-build-spec04.json` | VC-323 (≤ 4 KB) and VC-429 (≤ 2 KB) | `98ee032` |
+| `tests/e2e/baseline-build-completion.json` | VC-429 (shape only) and VC-623 (≤ 9 KB) | `3efb8be` |
 | `tests/e2e/baseline-build-theme.json` | VC-513 (spec-05, ≤ 4 KB) | `0a4194f` |
 | `tests/e2e/baseline-geometry.json` | VC-408 (spec-04, ±1 px) | `384cb70` |
 
@@ -159,7 +159,7 @@ One command records either, from a throwaway worktree it cleans up after:
 
 ```bash
 node scripts/record-baselines.mjs 384cb70 --geometry tests/e2e/baseline-geometry.json
-node scripts/record-baselines.mjs 98ee032 --build    tests/e2e/baseline-build-spec04.json
+node scripts/record-baselines.mjs 3efb8be --build    tests/e2e/baseline-build-completion.json
 ```
 
 Commit the result only when it is your own environment's record of a commit

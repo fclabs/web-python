@@ -55,6 +55,7 @@ always enabled. It neither reads from nor writes to the Pyodide/Ruff workers.
 | **NFR-603** | Automatic completion on a 500-line file. | Painted ≤ 200 ms after the final prefix keystroke; no main-thread task > 100 ms. |
 | **NFR-604** | Privacy and offline delivery. | Zero completion-triggered requests; total compressed cold load remains ≤ 15 MB; no new emitted asset URL. |
 | **NFR-605** | Accessibility. | The popup exposes one `listbox`, `option` children, and exactly one initially selected option. |
+| **NFR-606** | Bundle cost of the feature itself, over its `3efb8be` branch point. | ≤ 9 KB gzipped app-payload delta. Measured at ship: **7.49 KiB**. |
 
 ## Python 3.13 keyword data
 
@@ -82,7 +83,7 @@ The normative source is [CPython 3.13 `Lib/keyword.py`](https://github.com/pytho
 | **VC-619** | At 375 × 667 the popup stays within the viewport, the page does not overflow, and listbox/selected-option ARIA state is correct. |
 | **VC-621** | Record requests around explicit activation and acceptance; none occur and no source is transmitted. |
 | **VC-622** | Extend the existing rendered light/dark contrast audit to ordinary and selected completion options, border, and selected fill. |
-| **VC-623** | On 500 lines, measure final-keystroke-to-paint ≤ 200 ms, longest task ≤ 100 ms, and zero requests. Keep spec-01's ≤ 15 MB cold-load check and spec-03 VC-326's unchanged asset-set/manifest-count checks. |
+| **VC-623** | On 500 lines, measure final-keystroke-to-paint ≤ 200 ms, longest task ≤ 100 ms, zero requests, and (NFR-606) an app-size delta ≤ 9 KB gzipped against the `3efb8be` branch point. Keep spec-01's ≤ 15 MB cold-load check and spec-03 VC-326's unchanged asset-set/manifest-count checks. |
 | **VC-624** | Manually smoke-test automatic and explicit completion, navigation, acceptance, dismissal, Tab, and Run in the institution's real LockDown Browser exam flow on every supported student platform. |
 
 ## LockDown Browser deployment note

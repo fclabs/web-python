@@ -22,6 +22,7 @@ import {
   editorText,
   openPlayground,
   setProgram,
+  trackLongTasks,
   waitForLinter,
   waitForPythonReady,
 } from './helpers';
@@ -38,6 +39,13 @@ const dist = join(repoRoot, 'dist');
 
 /** NFR-004: 15 MB, measured over compressed transfer sizes. */
 const TRANSFER_BUDGET_BYTES = 15 * 1024 * 1024;
+
+/**
+ * VC-623 types this to trigger completion. The timing probe below starts its
+ * clock on the first keystroke of this exact string — keep the two in sync if
+ * either changes.
+ */
+const COMPLETION_PROBE = 'pri';
 
 /** A 500-line Python file, deliberately unformatted so Format has work to do. */
 const FIVE_HUNDRED_LINES = (() => {
@@ -241,10 +249,11 @@ interface BaselineBuild {
 }
 
 /**
- * `98ee032` — `384cb70` plus spec-03's pane and spec-05's color mode — is the
- * tree spec-04 sits on and the baseline VC-429 (NFR-405, <= 2 KB) measures
- * from. Spec-03 shipped at 2.18 KiB over its own pre-pane baseline `8df7fa5`;
- * that historical measurement is frozen and no longer re-run against later
+ * `3efb8be` — every feature through spec-05 plus the toolbar-jitter fix — is
+ * the tree spec-06 sits on and the baseline both VC-429 (NFR-405, shape only)
+ * and VC-623 (NFR-606, <= 9 KB) measure from. Spec-03 shipped at 2.18 KiB over
+ * its own pre-pane baseline `8df7fa5` and spec-04 at 1.62 KiB over `98ee032`;
+ * both historical measurements are frozen and no longer re-run against later
  * whole-app builds. See `specs/03-vertical-pane-frozen.md` (NFR-305) and
  * `specs/04-toogle-pane-aspect-frozen.md` (NFR-405).
  *
@@ -252,15 +261,59 @@ interface BaselineBuild {
  * list and a set of digests carry no compressor and no later feature's bytes,
  * so that comparison is unaffected by any of this.
  *
- * The record still provides the file-set, manifest, and vendored-asset
- * invariants below. Its shipped gzip measurement is historical; later child
- * features are covered by VC-053's live whole-app transfer budget.
+ * `gzipSync` is only as reproducible as the zlib Node was linked against, and
+ * the flavours disagree — Node 26 ships stock zlib on darwin and zlib-ng on
+ * linux. So CI records the baseline on the runner that does the comparing and
+ * points `PYPLAY_BASELINE_BUILD` at it, the committed record carries one entry
+ * per compressor for a local run, and an unrecorded compressor *skips* rather
+ * than spending half the budget on compressor noise.
  */
 const BUILD_RECORD =
   process.env.PYPLAY_BASELINE_BUILD ??
-  join(repoRoot, 'tests', 'e2e', 'baseline-build-spec04.json');
+  join(repoRoot, 'tests', 'e2e', 'baseline-build-completion.json');
 
 const branchPoint = JSON.parse(readFileSync(BUILD_RECORD, 'utf8')) as BaselineBuild;
+
+/** How this machine's `gzipSync` identifies itself, as the records key it. */
+const compressor = `${process.platform}-${process.arch} zlib ${process.versions.zlib}`;
+
+/** The branch point's app payload as *this* run compresses it, if recorded. */
+const branchPointApp =
+  branchPoint.gzippedAppBy?.[compressor] ??
+  (branchPoint.gzippedBy === compressor ? branchPoint.gzippedApp : undefined);
+
+/*
+ * A record CI pointed at is a different matter from an uncovered compressor:
+ * it was made by this run's own runner moments ago, so failing to cover it is
+ * a broken wiring, and skipping would take a merge-gating budget quietly out
+ * of the run. It stops the suite instead.
+ */
+if (process.env.PYPLAY_BASELINE_BUILD !== undefined && branchPointApp === undefined) {
+  throw new Error(
+    `${BUILD_RECORD} records no app size for "${compressor}" (it was gzipped by ` +
+      `"${branchPoint.gzippedBy}") — the run that recorded it is not the run comparing ` +
+      `against it. See the baseline step in .github/workflows/pr.yml.`,
+  );
+}
+
+/** The reason a size budget cannot be measured here, if there is one. */
+const uncoveredCompressor =
+  `no ${branchPoint.commit} baseline recorded for "${compressor}" — have: ` +
+  `${Object.keys(branchPoint.gzippedAppBy ?? {}).join(', ')}. Record one with: ` +
+  `node scripts/record-baselines.mjs ${branchPoint.commit} --build <out.json>`;
+
+/** NFR-606: at most 9 KB gzipped on top of the branch point's app payload. */
+const COMPLETION_SIZE_BUDGET_BYTES = 9 * 1024;
+
+/**
+ * NFR-606 is measured over the app's own output only, matching VC-323/VC-429's
+ * historical convention — `index.html`, the JS and CSS chunks, the worker
+ * chunk, `sw.js`, `precache-manifest.json` — and not over the vendored
+ * Pyodide and Ruff blobs, which are held to byte-identity by digest in
+ * VC-429 instead.
+ */
+const isVendored = (url: string): boolean =>
+  url.startsWith('/pyodide/') || url.startsWith('/ruff/');
 
 /* -------------------------------------------------------------------------
    spec-03 — VC-323 (NFR-304, NFR-305) and VC-326 (BR-304, NFR-305)
@@ -313,18 +366,10 @@ test('VC-323 (NFR-304, NFR-305): the pane is painted and copies within 100 ms wi
 
   // Long tasks from here on — that is, the ones the two interactions below
   // are responsible for (NFR-009, NFR-304).
-  await page.evaluate(() => {
-    const box = window as unknown as { __longTasks: number[] };
-    box.__longTasks = [];
-    new PerformanceObserver((list) => {
-      for (const entry of list.getEntries()) box.__longTasks.push(entry.duration);
-    }).observe({ entryTypes: ['longtask'] });
-  });
+  const longTaskTracker = await trackLongTasks(page);
   // Anything still queued from the load belongs to the load, not to the pane.
   await page.waitForTimeout(250);
-  await page.evaluate(() => {
-    (window as unknown as { __longTasks: number[] }).__longTasks.length = 0;
-  });
+  await longTaskTracker.reset();
 
   const openMs = await page.evaluate(
     () =>
@@ -362,9 +407,7 @@ test('VC-323 (NFR-304, NFR-305): the pane is painted and copies within 100 ms wi
 
   await page.waitForTimeout(500);
   page.off('request', record);
-  const longTasks = await page.evaluate(
-    () => (window as unknown as { __longTasks: number[] }).__longTasks,
-  );
+  const longTasks = await longTaskTracker.read();
 
   expect(openMs, 'NFR-304 Symbols to the pane being painted').toBeLessThanOrEqual(100);
   expect(copyMs, 'NFR-304 activation to `Copied #` being painted').toBeLessThanOrEqual(100);
@@ -382,7 +425,11 @@ test('VC-323 (NFR-304, NFR-305): the pane is painted and copies within 100 ms wi
   );
 });
 
-test('VC-623 (NFR-603): completion paints within 200 ms on 500 lines without a long task or request', async ({
+/* -------------------------------------------------------------------------
+   spec-06 — VC-623 (NFR-603, NFR-606)
+   ------------------------------------------------------------------------- */
+
+test('VC-623 (NFR-603, NFR-606): completion paints within 200 ms on 500 lines, without a long task or request, and costs <= 9 KB', async ({
   page,
 }) => {
   await openPlayground(page);
@@ -395,7 +442,7 @@ test('VC-623 (NFR-603): completion paints within 200 ms on 500 lines without a l
   const requests: string[] = [];
   const record = (request: Request): void => void requests.push(request.url());
   page.on('request', record);
-  await page.evaluate(() => {
+  await page.evaluate((firstChar) => {
     const box = window as unknown as {
       __completionMs: number | null;
       __completionStart: number;
@@ -404,8 +451,10 @@ test('VC-623 (NFR-603): completion paints within 200 ms on 500 lines without a l
     box.__completionMs = null;
     box.__completionStart = 0;
     box.__completionLongTasks = [];
+    // Starts the clock on the first character of COMPLETION_PROBE, whatever
+    // it is — this listener and the typed string below share one constant.
     document.querySelector('.cm-content')!.addEventListener('keydown', (event) => {
-      if ((event as KeyboardEvent).key === 'i') box.__completionStart = performance.now();
+      if ((event as KeyboardEvent).key === firstChar) box.__completionStart = performance.now();
     });
     new PerformanceObserver((list) => {
       for (const entry of list.getEntries()) box.__completionLongTasks.push(entry.duration);
@@ -417,9 +466,9 @@ test('VC-623 (NFR-603): completion paints within 200 ms on 500 lines without a l
         box.__completionMs = performance.now() - box.__completionStart;
       });
     }).observe(document.body, { childList: true, subtree: true });
-  });
+  }, COMPLETION_PROBE[0]);
 
-  await page.keyboard.type('pri');
+  await page.keyboard.type(COMPLETION_PROBE);
   await expect(page.locator('.cm-tooltip-autocomplete')).toBeVisible();
   await expect
     .poll(() =>
@@ -442,6 +491,36 @@ test('VC-623 (NFR-603): completion paints within 200 ms on 500 lines without a l
   expect(measurement.ms).toBeLessThanOrEqual(200);
   expect(measurement.longest).toBeLessThanOrEqual(100);
   expect(requests).toEqual([]);
+
+  // --- NFR-606: the compressed size delta against the branch point -------
+  // A missing record is reported as uncovered, never as a pass.
+  test.skip(branchPointApp === undefined, uncoveredCompressor);
+
+  const manifest = JSON.parse(readFileSync(join(dist, 'precache-manifest.json'), 'utf8')) as {
+    urls: string[];
+  };
+  let gzippedApp = 0;
+  for (const url of [...manifest.urls, '/index.html']) {
+    if (url === '/') continue; // the shell is counted once, as /index.html
+    if (isVendored(url)) continue; // pinned by digest in VC-429 instead
+    gzippedApp += gzipSync(readFileSync(join(dist, url.replace(/^\//, ''))), { level: 9 }).length;
+  }
+
+  const delta = gzippedApp - branchPointApp!;
+  expect(
+    delta,
+    `NFR-606 app size delta vs ${branchPoint.commit}: ${delta} B gzipped ` +
+      `(budget ${COMPLETION_SIZE_BUDGET_BYTES} B, compressor "${compressor}")`,
+  ).toBeLessThanOrEqual(COMPLETION_SIZE_BUDGET_BYTES);
+
+  console.log(
+    [
+      'VC-623 measurements:',
+      `  NFR-603 keystroke -> popup painted   ${measurement.ms.toFixed(0)} ms   (<= 200)`,
+      `  NFR-603 longest task                 ${measurement.longest.toFixed(0)} ms   (<= 100)`,
+      `  NFR-606 app size delta vs ${branchPoint.commit} ${(delta / 1024).toFixed(2)} KiB (<= 9.00)`,
+    ].join('\n'),
+  );
 });
 
 test('VC-326 (BR-304, NFR-305): the build shape is the baseline’s, bar first-party content hashes', async () => {
@@ -485,13 +564,13 @@ test('VC-326 (BR-304, NFR-305): the build shape is the baseline’s, bar first-p
    ------------------------------------------------------------------------- */
 
 /**
- * NFR-405 pins commit `384cb70`. Other features merged first, so a comparison
- * against `384cb70` would charge this one for their bytes as well as its own:
- * spec-03's special-character pane alone spends 2.18 KiB of the 2 KB budget
- * before spec-04 emits a line, and spec-05's color mode has since landed on
- * `main` too. NFR-405 asks what *this feature* adds, so the baseline is the
- * tree this branch sits on — `branchPoint` above, `98ee032`, which is
- * `384cb70` plus spec-03 plus spec-05. Recorded in the spec.
+ * NFR-405's own budget shipped at 1.62 KiB against `98ee032` and that
+ * measurement is now historical (frozen by spec-06's amendment — see
+ * `specs/04-toogle-pane-aspect-frozen.md`). What remains live is the build
+ * *shape*: `branchPoint` above now pins `3efb8be` instead, spec-06's own
+ * branch point, but the file set, vendored digests, manifest, and cache-name
+ * scheme are unchanged between the two commits, so this assertion is
+ * unaffected by which of them `branchPoint` names.
  */
 
 test('VC-429 (NFR-405, BR-403): the layout control keeps the recorded build shape', async () => {
@@ -554,17 +633,8 @@ test('VC-513 (NFR-501, NFR-505, BR-505): color-mode switches within 100 ms witho
   const record = (request: Request): void => void requests.push(request.url());
   page.on('request', record);
 
-  await page.evaluate(() => {
-    const box = window as unknown as { __longTasks: number[] };
-    box.__longTasks = [];
-    new PerformanceObserver((list) => {
-      for (const entry of list.getEntries()) box.__longTasks.push(entry.duration);
-    }).observe({ entryTypes: ['longtask'] });
-  });
+  await trackLongTasks(page);
   await page.waitForTimeout(250);
-  await page.evaluate(() => {
-    (window as unknown as { __longTasks: number[] }).__longTasks.length = 0;
-  });
 
   // Seed a known preference so the first click always lands on a forced flip
   // (light → dark) whose chrome and editor changes are observable.
@@ -574,17 +644,11 @@ test('VC-513 (NFR-501, NFR-505, BR-505): color-mode switches within 100 ms witho
   await page.reload();
   await waitForPythonReady(page);
   await waitForLinter(page);
-  await page.evaluate(() => {
-    const box = window as unknown as { __longTasks: number[] };
-    box.__longTasks = [];
-    new PerformanceObserver((list) => {
-      for (const entry of list.getEntries()) box.__longTasks.push(entry.duration);
-    }).observe({ entryTypes: ['longtask'] });
-  });
+  // A reload discards the tracker's in-page state, so it is started fresh
+  // rather than reset.
+  const longTaskTracker = await trackLongTasks(page);
   await page.waitForTimeout(250);
-  await page.evaluate(() => {
-    (window as unknown as { __longTasks: number[] }).__longTasks.length = 0;
-  });
+  await longTaskTracker.reset();
   requests.length = 0;
 
   const switchMs = await page.evaluate(
@@ -616,9 +680,7 @@ test('VC-513 (NFR-501, NFR-505, BR-505): color-mode switches within 100 ms witho
 
   await page.waitForTimeout(500);
   page.off('request', record);
-  const longTasks = await page.evaluate(
-    () => (window as unknown as { __longTasks: number[] }).__longTasks,
-  );
+  const longTasks = await longTaskTracker.read();
 
   expect(switchMs, 'NFR-501 theme switch to chrome+editor painted').toBeLessThanOrEqual(100);
   expect(Math.max(0, ...longTasks), 'NFR-501 longest main-thread task').toBeLessThanOrEqual(100);
