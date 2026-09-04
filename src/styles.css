@@ -352,6 +352,13 @@ body {
   white-space: nowrap;
 }
 
+/* FR-012 / Issue #17: progress changes from one to two digits during startup.
+   Reserve the full `NN%` width so those updates never move the toolbar. */
+#btn-run[data-progress] #run-file-name {
+  box-sizing: content-box;
+  inline-size: 3ch;
+}
+
 .file-resizer {
   display: none;
 }
