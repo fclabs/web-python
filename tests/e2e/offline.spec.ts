@@ -3,6 +3,7 @@ import { DEPLOY_BASE_URL } from '../../playwright.config';
 import {
   cacheBuckets,
   consoleText,
+  editorText,
   noticeTexts,
   precacheReport,
   programStdout,
@@ -12,6 +13,7 @@ import {
   statusText,
   storedProgram,
   submitStdin,
+  typeProgram,
   waitForLinter,
   waitForPythonReady,
   waitForStatus,
@@ -190,6 +192,10 @@ test('VC-056 (NFR-012): the full Run/input loop works offline after a first load
   await page.reload();
 
   await waitForPythonReady(page);
+  await typeProgram(page, 'pri');
+  await expect(page.locator('.cm-tooltip-autocomplete')).toBeVisible();
+  await page.keyboard.press('Enter');
+  expect(await editorText(page)).toBe('print');
   await runProgram(page, 'n = input("? ")\nprint(n)');
   await submitStdin(page, 'sin red');
 

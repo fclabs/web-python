@@ -6,7 +6,8 @@ the implementation deliberately differs from the spec's *Data & Interfaces*.
 ```
 ┌──────────────────────────── main thread ────────────────────────────┐
 │  index.html + src/main.ts                                           │
-│    flat file tree + CodeMirror ─ autosave → localStorage['pyplay.workspace.v1'] │
+│    flat file tree + CodeMirror + local name completion                │
+│      └─ autosave → localStorage['pyplay.workspace.v1']               │
 │    color mode ── pyplay.theme.v1; editor darkTheme from effective   │
 │    layout ── pyplay.layout.v2; #app[data-layout] drives the grid    │
 │    console (rAF-batched, bounded)                                   │
@@ -370,6 +371,35 @@ Characters that merely *look* like Python operators — `≤`, `≠`, `×`, `÷`
 typographic quotes, full-width parentheses — are forbidden, because a student
 who pastes `“` gets `SyntaxError: invalid character '“' (U+201C)` with no idea
 why. `VC-325` greps the compiled set for exactly those code points.
+
+---
+
+## Offline name completion
+
+`src/completion.ts` combines CodeMirror Python's scope-aware local source with
+its built-in globals and the complete CPython 3.13 hard/soft keyword lists.
+The merge is ordered: active-file locals enter first and win duplicate labels;
+keywords and globals follow. Each option keeps its type for the CodeMirror icon
+but is normalized to literal-label insertion with no snippet function, detail,
+signature, or documentation.
+
+The source walks the Lezer syntax tree before producing results. It suppresses
+comments, ordinary strings, the entire formatted-string subtree, and parsed
+property names. A direct character check before the identifier also suppresses
+temporarily incomplete member expressions after `.`.
+
+Completion is an editor extension only. It sends no worker message and has no
+reference to Pyodide, Ruff, the workspace store, or the service worker. An
+accepted option is a normal CodeMirror transaction, so the existing active-file
+autosave and lint listeners observe it. A run already in progress continues
+with the full workspace and entry-file snapshot captured by Run.
+
+`@codemirror/autocomplete` owns listbox semantics and its standard keymap:
+`Ctrl+Space`, arrows/page keys, `Enter`, and `Escape`. A guarded `Tab` binding
+calls CodeMirror's own acceptance command; when no completion is active it
+returns false, preserving the traversal described under *Inert controls*.
+Only the active editor document contributes local names; sibling files and
+imports are outside this syntactic feature.
 
 ---
 

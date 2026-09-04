@@ -425,3 +425,27 @@ export async function noticeTexts(page: Page): Promise<string[]> {
     ),
   );
 }
+
+/**
+ * Starts a `longtask` `PerformanceObserver` in-page (VC-323, VC-513): call
+ * `reset` once anything left over from page load has settled, and `read`
+ * after the interaction under test to collect only what it caused.
+ */
+export async function trackLongTasks(
+  page: Page,
+): Promise<{ reset: () => Promise<void>; read: () => Promise<number[]> }> {
+  await page.evaluate(() => {
+    const box = window as unknown as { __longTasks: number[] };
+    box.__longTasks = [];
+    new PerformanceObserver((list) => {
+      for (const entry of list.getEntries()) box.__longTasks.push(entry.duration);
+    }).observe({ entryTypes: ['longtask'] });
+  });
+  return {
+    reset: () =>
+      page.evaluate(() => {
+        (window as unknown as { __longTasks: number[] }).__longTasks.length = 0;
+      }),
+    read: () => page.evaluate(() => (window as unknown as { __longTasks: number[] }).__longTasks),
+  };
+}

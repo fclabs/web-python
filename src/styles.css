@@ -415,6 +415,45 @@ body {
   font-family: var(--font-mono);
 }
 
+/* Name completion (spec-06) ---------------------------------------------- */
+/* Shared tooltip chrome with `.cm-diagnostic-tooltip` below. */
+.cm-editor .cm-tooltip-autocomplete,
+.cm-tooltip .cm-diagnostic-tooltip {
+  background: var(--bg-raised);
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  color: var(--fg);
+}
+
+.cm-editor .cm-tooltip-autocomplete {
+  max-width: min(32rem, calc(100vw - 16px));
+  overflow: hidden;
+}
+
+.cm-editor .cm-tooltip-autocomplete > ul {
+  font-family: var(--font-mono);
+  max-height: min(16rem, 40vh);
+  max-width: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.cm-editor .cm-tooltip-autocomplete > ul > li {
+  color: var(--fg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cm-editor .cm-tooltip-autocomplete > ul > li[aria-selected='true'] {
+  background: var(--accent);
+  color: var(--accent-fg);
+}
+
+.cm-editor .cm-completionIcon {
+  color: currentColor;
+}
+
 .cm-editor .cm-gutters {
   background: var(--bg-sunken);
   border-right: 1px solid var(--border);
@@ -542,10 +581,6 @@ body {
 .cm-diagnostic-gutter-warning { color: var(--sev-warning); }
 
 .cm-tooltip .cm-diagnostic-tooltip {
-  background: var(--bg-raised);
-  border: 1px solid var(--border-strong);
-  border-radius: 4px;
-  color: var(--fg);
   font-family: var(--font-mono);
   max-width: 42em;
   padding: 4px 8px;

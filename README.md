@@ -5,7 +5,8 @@ workspace, runs `main.py`, watches `stdout`/`stderr` stream into a console, type
 into the running program, copies the program to the clipboard, picks Python
 punctuation out of a special-character pane, forces light or dark chrome (or
 follows the system), and gets inline Ruff lint diagnostics plus one-click PEP 8
-formatting.
+formatting. The editor also completes local
+names, Python built-ins, and Python 3.13 keywords entirely in the browser.
 
 Everything runs in the visitor's own browser:
 
@@ -13,6 +14,7 @@ Everything runs in the visitor's own browser:
 |---|---|
 | Python | [Pyodide](https://pyodide.org) 0.28.x — CPython 3.13 compiled to WebAssembly — inside a dedicated Web Worker, self-hosted from this site's own origin |
 | Editor | CodeMirror 6 with `@codemirror/lang-python` |
+| Completion | Name-only CodeMirror completion from the current file, built-ins, and Python 3.13 hard/soft keywords; no language server or network request |
 | Lint + format | `@astral-sh/ruff-wasm-web` 0.14.x, self-hosted, default rule selection |
 | Blocking `input()` | A `SharedArrayBuffer` + `Atomics.wait` channel between the page and the worker |
 | Offline + isolation | A **single** service worker that both injects COOP/COEP and precaches every asset the Run loop needs |
@@ -32,6 +34,7 @@ limited to 2 MB for classroom exercises.
 - Special-character pane: [`specs/03-vertical-pane-frozen.md`](specs/03-vertical-pane-frozen.md)
 - Layout control: [`specs/04-toogle-pane-aspect-frozen.md`](specs/04-toogle-pane-aspect-frozen.md)
 - Color mode: [`specs/05-dark-mode-frozen.md`](specs/05-dark-mode-frozen.md)
+- Offline name completion: [`specs/06-offline-completion.md`](specs/06-offline-completion.md)
 - Deploying it: [`docs/deployment.md`](docs/deployment.md)
 - How it works inside: [`docs/architecture.md`](docs/architecture.md)
 - Working on it: [`CONTRIBUTING.md`](CONTRIBUTING.md)
@@ -181,6 +184,11 @@ repository settings that live outside this repository:
 | Key | Action |
 |---|---|
 | `Ctrl`/`Cmd` + `Enter` | Run (from the editor) |
+| `Ctrl` + `Space` | Open Python name completion, including on a blank line |
+| `↑` / `↓`, `Page Up` / `Page Down` | Navigate an open completion list |
+| `Enter` or click/tap | Accept the selected completion |
+| `Tab` with completion open | Accept the selected completion |
+| `Escape` | Dismiss completion |
 | `Shift` + `Alt` + `F` | Format (from the editor) |
 | `Enter` in the input field | Submit a line to the running program |
 | `Ctrl` + `D` in the input field | Send EOF |
@@ -188,8 +196,9 @@ repository settings that live outside this repository:
 | `←` `→` `↑` `↓` in the layout control | Select the other layout — and apply it |
 | `Home` / `End` in the layout control | Select `Horizontal` / `Vertical` |
 
-`Tab` is deliberately **not** bound to indentation inside the editor: that
-would trap the tab sequence and break keyboard traversal of the page.
+`Tab` is deliberately **not** bound to indentation inside the editor. It
+accepts a selected completion while the list is open; otherwise it leaves the
+editor and continues normal keyboard traversal of the page.
 
 The **layout control** picks how the panels are divided, and both names
 describe **the divider**, the way `vim`'s `:split` and `:vsplit` do:

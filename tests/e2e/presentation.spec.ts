@@ -186,6 +186,12 @@ async function paintEverySurface(page: Page): Promise<void> {
   // makes the focus rings VC-071 samples visible.
   await page.keyboard.press('Enter');
   await expect(page.locator('#symbol-status')).toHaveText('Copied "');
+
+  // spec-06 NFR-602: keep the completion list and its selected option painted
+  // while both palette audits sample their rendered colours.
+  await page.locator('.cm-content').focus();
+  await page.keyboard.press('Control+Space');
+  await expect(page.locator('.cm-tooltip-autocomplete')).toBeVisible();
 }
 
 /** Every text surface NFR-010 lists, plus the syntax colours around them. */
@@ -235,6 +241,17 @@ const TEXT_SAMPLES: Sample[] = [
   },
   // spec-05 NFR-502: the color-mode control's glyph against the toolbar.
   { label: 'theme glyph', selector: '#btn-theme', prop: 'color' },
+  // spec-06 NFR-602: both ordinary and initially-selected completion text.
+  {
+    label: 'completion option',
+    selector: '.cm-tooltip-autocomplete [role="option"]:not([aria-selected="true"])',
+    prop: 'color',
+  },
+  {
+    label: 'selected completion option',
+    selector: '.cm-tooltip-autocomplete [role="option"][aria-selected="true"]',
+    prop: 'color',
+  },
 ];
 
 /** Every non-text component NFR-013 lists. */
@@ -255,6 +272,16 @@ const NON_TEXT_SAMPLES: Sample[] = [
   { label: 'control border (stdin field)', selector: '#stdin-input', prop: 'borderTopColor' },
   { label: 'panel border', selector: '.panel--console', prop: 'borderTopColor' },
   { label: 'status bar border', selector: '#status-bar', prop: 'borderTopColor' },
+  {
+    label: 'completion popup border',
+    selector: '.cm-tooltip-autocomplete',
+    prop: 'borderTopColor',
+  },
+  {
+    label: 'selected completion highlight',
+    selector: '.cm-tooltip-autocomplete [role="option"][aria-selected="true"]',
+    prop: 'backgroundColor',
+  },
   // FR-054 / FR-058: the disabled affordance is the control's boundary — its
   // border against the page behind it, which is what SC 1.4.11 measures.
   { label: 'disabled affordance (Stop border)', selector: '#btn-stop', prop: 'borderTopColor' },
@@ -334,7 +361,7 @@ for (const scheme of ['light', 'dark'] as const) {
   test.describe(`${scheme} palette`, () => {
     test.use({ colorScheme: scheme });
 
-    test(`VC-051 (FR-048, NFR-010): every text pair clears 4.5:1 — ${scheme}`, async ({ page }) => {
+    test(`VC-051, VC-622 (FR-048, NFR-010, NFR-602): every text pair clears 4.5:1 — ${scheme}`, async ({ page }) => {
       await paintEverySurface(page);
 
       const measured = await measureContrast(page, TEXT_SAMPLES);
@@ -349,7 +376,7 @@ for (const scheme of ['light', 'dark'] as const) {
       expect(failures(measured, 4.5)).toEqual([]);
     });
 
-    test(`VC-071 (NFR-013): every non-text pair clears 3:1 — ${scheme}`, async ({ page }) => {
+    test(`VC-071, VC-622 (NFR-013, NFR-602): every non-text pair clears 3:1 — ${scheme}`, async ({ page }) => {
       await paintEverySurface(page);
 
       const measured = await measureContrast(page, NON_TEXT_SAMPLES);
