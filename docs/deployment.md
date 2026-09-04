@@ -282,8 +282,25 @@ The only new origin state is the optional `localStorage` key `pyplay.theme.v1`
 (see *Storage surface* in the architecture doc). Deployment of headers,
 `sw.js`, and the asset layout is a no-op relative to spec-01 / spec-03.
 
-`VC-513` asserts the gzipped app-payload delta against commit `0a4194f` stays
-≤ 4 KB and that the emitted file *set* gains no new runtime asset.
+The shipped color-mode delta remains recorded as 0.94 KiB. `VC-513` keeps its
+live latency/request checks and asserts that the emitted file set and manifest
+count gain no new runtime asset. Later features are governed by the live 15 MB
+whole-app gate instead of being charged to this historical measurement.
+
+## 5d. Completion and LockDown Browser
+
+Spec-06 completion is compiled into the existing main JavaScript bundle. It
+adds no worker, protocol message, runtime asset, request, or persisted state;
+accepted text follows the editor's existing active-file autosave path. The
+precache URL count and deployment headers therefore do not change.
+
+Respondus desktop clients are Chromium-based, but that alone is not a release
+qualification. Before linking this playground from an exam, smoke-test the
+actual exam with a student account on every supported student platform. The
+playground origin must also be permitted in the LockDown Browser exam settings
+when it is opened as an external domain. Follow the
+[Respondus system requirements](https://web.respondus.com/k12/lockdownbrowser/resources/)
+and [external-domain instructions](https://support.respondus.com/hc/en-us/articles/4409604275867-Accessing-external-web-domains-in-LockDown-Browser).
 
 ---
 

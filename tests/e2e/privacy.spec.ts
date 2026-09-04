@@ -63,6 +63,19 @@ test('VC-057 (BR-001, BR-005): every request is a same-origin static asset, and 
   await waitForPythonReady(page);
   await waitForLinter(page);
 
+  // spec-06 VC-621: asking for and accepting a completion is entirely local.
+  const completionRequests: string[] = [];
+  const recordCompletion = (request: Request): void => void completionRequests.push(request.url());
+  page.on('request', recordCompletion);
+  await setProgram(page, 'pri');
+  await page.locator('.cm-content').focus();
+  await page.keyboard.press('Control+Space');
+  await expect(page.locator('.cm-tooltip-autocomplete')).toBeVisible();
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(200);
+  page.off('request', recordCompletion);
+  expect(completionRequests, 'requests triggered by completion').toEqual([]);
+
   await runProgram(page, PROGRAM);
   await submitStdin(page, 'Ana');
   await expect.poll(() => consoleText(page)).toContain('hola Ana');

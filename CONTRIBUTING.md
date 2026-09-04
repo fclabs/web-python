@@ -8,6 +8,7 @@ src/                       application code (TypeScript, no framework)
   main.ts                  wiring: every FR is hooked up here
   controls.ts              the inert-but-focusable control pattern
   editor.ts                CodeMirror 6 setup
+  completion.ts            offline Python name completion source
   console.ts               console rendering; console-buffer.ts caps it
   runtime.ts               owns the Pyodide worker, runIds, stop-and-replace
   worker/pyodide.worker.ts the worker: Pyodide, the Python runner, the stdin shim
@@ -184,8 +185,8 @@ npm test                   # vitest run && playwright test
 ### Audits
 
 ```bash
-npm run audit:perf         # VC-053 + VC-323/326 + VC-513: latencies and size budgets
-npm run audit:contrast     # VC-051 / VC-071 / VC-514: text and non-text contrast
+npm run audit:perf         # runtime/pane/completion latency + the NFR-004 15 MB budget
+npm run audit:contrast     # page, pane, and completion contrast in light/dark palettes
 ```
 
 `audit:perf` prints every measurement next to its threshold. `audit:contrast`
@@ -220,10 +221,11 @@ for what each pinned name is actually mapped onto.
 
 - `RUN_LONG=1 npx playwright test --grep "VC-059"` runs the real six-minute
   no-timeout check (skipped by default).
-- Four criteria no script can assert: VC-056 (physically disconnect the
+- Five criteria no script can assert: VC-056 (physically disconnect the
   network and reload), VC-059 (a six-minute untouched run), VC-063 (deploy a
   second build and watch for the update notice) and VC-021's greyscale check
-  that the `[stderr] ` prefix survives without colour.
+  that the `[stderr] ` prefix survives without colour, plus spec-06 VC-624 in
+  the institution's real Respondus student exam flow.
 
 ## Node.js version
 

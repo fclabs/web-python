@@ -9,6 +9,7 @@ import {
   lineNumbers,
 } from '@codemirror/view';
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
+import { acceptCompletion, autocompletion } from '@codemirror/autocomplete';
 import {
   HighlightStyle,
   bracketMatching,
@@ -19,6 +20,7 @@ import {
 import { python } from '@codemirror/lang-python';
 import { tags as t } from '@lezer/highlight';
 import { diagnosticMarkers } from './lint/markers';
+import { pythonNameCompletionSource } from './completion';
 
 /**
  * Syntax highlighting mapped to stable class names so the palette lives in CSS
@@ -80,6 +82,12 @@ export function createEditor({
     Prec.highest(
       keymap.of([
         {
+          // FR-606: accept only while CodeMirror has an active completion.
+          // Returning false otherwise preserves native page traversal.
+          key: 'Tab',
+          run: acceptCompletion,
+        },
+        {
           key: 'Mod-Enter',
           preventDefault: true,
           run: () => {
@@ -110,13 +118,21 @@ export function createEditor({
     indentUnit.of('    '),
     syntaxHighlighting(pyHighlight),
     python(),
+    // FR-601 – FR-607: name-only completion is local and independent of the
+    // Python/Ruff workers. Tab is conditional above: it accepts an open
+    // completion and remains ordinary page traversal at all other times.
+    autocompletion({
+      activateOnTyping: true,
+      activateOnTypingDelay: 100,
+      selectOnOpen: true,
+      interactionDelay: 0,
+      override: [pythonNameCompletionSource],
+    }),
     // FR-036 / FR-037: diagnostic underlines, gutter icons and tooltips.
     diagnosticMarkers(),
-    // FR-049: `Tab` is deliberately NOT bound to indentation. CodeMirror's
-    // `indentWithTab` would trap the tab sequence inside the editor, and
-    // FR-049 requires `Tab` from page load to walk past the editor to the
-    // stdin field, Send EOF and the diagnostics entries. Indentation still
-    // comes from `indentOnInput`, `indentUnit` and the default keymap's
+    // FR-049: `Tab` is never bound to indentation. With no completion open it
+    // walks past the editor to stdin, Send EOF and diagnostics. Indentation
+    // still comes from `indentOnInput`, `indentUnit` and the default keymap's
     // `insertNewlineAndIndent`.
     keymap.of([...defaultKeymap, ...historyKeymap]),
     EditorView.lineWrapping,
