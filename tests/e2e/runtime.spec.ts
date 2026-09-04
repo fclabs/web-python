@@ -37,14 +37,18 @@ test('VC-012 (FR-012): Run is disabled and shows a rising progress value during 
 }) => {
   await slowPyodide(page, 4000);
   await page.addInitScript(() => {
-    const samples: { percent: number; disabled: boolean }[] = [];
+    const samples: { percent: number; disabled: boolean; width: number }[] = [];
     (window as unknown as { __progress: typeof samples }).__progress = samples;
     setInterval(() => {
       const run = document.getElementById('btn-run') as HTMLButtonElement | null;
       const percent = Number(run?.dataset.progress);
       // Inert controls carry `aria-disabled`, not `disabled` (src/controls.ts).
       if (run && Number.isFinite(percent))
-        samples.push({ percent, disabled: run.getAttribute('aria-disabled') === 'true' });
+        samples.push({
+          percent,
+          disabled: run.getAttribute('aria-disabled') === 'true',
+          width: run.getBoundingClientRect().width,
+        });
     }, 25);
   });
 
@@ -52,7 +56,12 @@ test('VC-012 (FR-012): Run is disabled and shows a rising progress value during 
   await waitForPythonReady(page);
 
   const samples = await page.evaluate(
-    () => (window as unknown as { __progress: { percent: number; disabled: boolean }[] }).__progress,
+    () =>
+      (
+        window as unknown as {
+          __progress: { percent: number; disabled: boolean; width: number }[];
+        }
+      ).__progress,
   );
   const percents = samples.map((s) => s.percent);
 
@@ -60,6 +69,7 @@ test('VC-012 (FR-012): Run is disabled and shows a rising progress value during 
   expect(samples.every((s) => s.disabled)).toBe(true); // disabled throughout init
   expect(new Set(percents).size).toBeGreaterThan(1); // the value increased at least once
   expect(percents).toEqual([...percents].sort((a, b) => a - b)); // monotonic
+  expect(new Set(samples.map((sample) => sample.width)).size).toBe(1); // Issue #17: no toolbar jitter
 });
 
 test('VC-013 (FR-013): ready enables Run and prints exactly one version line', async ({ page }) => {
