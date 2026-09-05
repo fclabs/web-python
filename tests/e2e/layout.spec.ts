@@ -1334,6 +1334,8 @@ test('VC-407 (FR-049 from spec-01, FR-405): Tab reaches every control once in bo
     'btn-symbols',
     // spec-05 FR-501: the color-mode control, immediately after Symbols.
     'btn-theme',
+    // spec-08 FR-801: About, immediately after theme.
+    'btn-about',
     'editor',
     'stdin-input',
     'btn-eof',

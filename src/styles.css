@@ -56,6 +56,8 @@
   --font-ui: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
   --files-width: 260px;
+  /* NFR-803: scrim vs --bg ≥ 3:1 (black alpha; transparent mixes toward black). */
+  --about-backdrop: color-mix(in srgb, #000000 50%, transparent);
 }
 
 [data-theme="dark"],
@@ -100,6 +102,8 @@
   --disabled-fg: #a7aeba;
   --disabled-bg: #23272e;
   --disabled-border: #767d8a;
+  /* NFR-803: darken-on-dark fails 3:1; lighten the page under the modal instead. */
+  --about-backdrop: color-mix(in srgb, #ffffff 42%, transparent);
 }
 
 * {
@@ -155,13 +159,80 @@ body {
 /* FR-501 / NFR-504: icon-only color-mode control; ≥ 32×32 hit area; no
    adjacent mode-name text. Focus ring comes from the shared :focus-visible. */
 #btn-theme,
-.btn--theme {
+.btn--theme,
+/* FR-801 / NFR-804: icon-only About control; same hit-area floor as theme. */
+#btn-about,
+.btn--about {
   box-sizing: border-box;
   min-width: 32px;
   min-height: 32px;
   padding: 6px;
   line-height: 1;
   text-align: center;
+}
+
+/* FR-805 / FR-818 / FR-819: About modal — custom overlay (not <dialog>), so
+   `#about-backdrop` is an explicit dismiss layer that swallows chrome clicks. */
+.about-backdrop {
+  background: var(--about-backdrop);
+  inset: 0;
+  position: fixed;
+  z-index: 40;
+}
+
+.about-dialog {
+  background: var(--bg-raised);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  box-shadow: 0 8px 32px color-mix(in srgb, var(--fg) 25%, transparent);
+  color: var(--fg);
+  left: 50%;
+  max-height: min(90vh, 480px);
+  max-width: min(92vw, 360px);
+  overflow: auto;
+  padding: 16px 20px;
+  position: fixed;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 100%;
+  z-index: 41;
+}
+
+.about-dialog__title {
+  font: inherit;
+  font-size: 1.125rem;
+  font-weight: 600;
+  margin: 0 0 12px;
+}
+
+.about-dialog__fields {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 16px;
+}
+
+.about-dialog__row {
+  display: grid;
+  gap: 2px 12px;
+  grid-template-columns: minmax(4.5rem, auto) 1fr;
+  margin: 0;
+}
+
+.about-dialog__label {
+  color: var(--fg-muted);
+  font-weight: 500;
+  margin: 0;
+}
+
+.about-dialog__value {
+  font-family: var(--font-mono);
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.about-dialog__close {
+  display: block;
+  margin-inline-start: auto;
 }
 
 /* FR-054 / FR-058: visibly disabled and non-activatable, yet still in the tab
@@ -961,6 +1032,28 @@ body {
  * paint a layout the resolver did not choose.
  */
 @media (min-width: 900px) {
+  /*
+   * FR-701 / FR-705 / BR-702 / FR-801: at ≥ 900 px, push #btn-symbols (and
+   * the following #btn-theme + #btn-about) to the toolbar's inline-end edge.
+   * Auto margin on the first of the cluster collects all free space on the
+   * flex line between #btn-files and #btn-symbols; below 900 px these rules
+   * do not apply so the row packs (and wraps) as today (FR-705). Logical
+   * property only — no margin-left/right or left/right (BR-702).
+   *
+   * `flex-wrap: nowrap` keeps the cluster on one line: with wrap, a tight
+   * 900 px row (wider OS fonts) can fit #btn-symbols after the leading
+   * cluster but drop a trailing icon alone onto the next line, breaking
+   * FR-701 flush. Flex shrink absorbs a few pixels of font variance instead
+   * of wrapping.
+   */
+  .toolbar {
+    flex-wrap: nowrap;
+  }
+
+  #btn-symbols {
+    margin-inline-start: auto;
+  }
+
   /*
    * FR-408: four full-width rows above a two-column split — the editor alone
    * on the inline-start side, spanning the full block height, and the console,
