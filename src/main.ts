@@ -56,6 +56,9 @@ import {
   type WorkspaceFile,
 } from './workspace';
 import { applyDocumentTheme, bindThemeControl, loadPreference } from './theme';
+// BR-801: pull the Vite-injected About metadata into the app shell so the
+// four field strings are present in the bundle (About UI binds them later).
+import './build-meta';
 
 const AUTOSAVE_UNAVAILABLE = 'Autosave unavailable — your workspace will not survive a reload';
 const COPY_FAILED = "Couldn't copy — select the code and press Ctrl/Cmd+C";

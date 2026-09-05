@@ -106,3 +106,23 @@ export const THEME_GLYPHS = {
 export function formatThemeAccessibleName(label: string): string {
   return `Color mode: ${label}`;
 }
+
+/* --- About control (spec 08-about-button; BR-807) --- */
+
+/** FR-803: visible glyph of `#btn-about` (U+0069). */
+export const ABOUT_GLYPH = 'i';
+
+/** FR-804 / FR-805: control tooltip, accessible name, and dialog heading. */
+export const ABOUT_LABEL = 'About';
+
+/** FR-805: dialog field labels, in display order. */
+export const ABOUT_VERSION_LABEL = 'Version';
+export const ABOUT_BRANCH_LABEL = 'Branch';
+export const ABOUT_COMMIT_LABEL = 'Commit';
+export const ABOUT_BUILT_LABEL = 'Built';
+
+/** FR-807: Close control visible label and accessible name. */
+export const ABOUT_CLOSE_LABEL = 'Close';
+
+/** BR-802: per-field fallback when build-time input is missing. */
+export const UNKNOWN = 'unknown';
