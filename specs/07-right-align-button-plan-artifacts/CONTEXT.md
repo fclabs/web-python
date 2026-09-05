@@ -1,6 +1,6 @@
 # CONTEXT — Spec 07 right-align toolbar (living)
 
-Last updated: Iteration 1 (CSS rule and logical-property gate)
+Last updated: Iteration 2 (placement, tab order, and behaviour e2e)
 
 ## Purpose of this change
 
@@ -15,29 +15,49 @@ placement are unchanged. No JavaScript.
 
 | Path | Role |
 |---|---|
-| `src/styles.css` | **Changed (Iter 1).** Inside `@media (min-width: 900px)` (opens ~line 955), new rule `#btn-symbols { margin-inline-start: auto; }` with FR-701 / FR-705 / BR-702 comment. Unscoped `.toolbar` (~line 133) still only `display: flex; flex-wrap: wrap; gap: 6px` — no auto margin there. No `#btn-files` rule added. |
-| `tests/unit/toolbar-align.test.ts` | **New (Iter 1).** VC-706 grep-style gate: reads `src/styles.css`, extracts `#btn-symbols` body from the min-width 900 block, asserts `margin-inline-start` present and no `margin-left` / `margin-right` / `left:` / `right:`; also asserts the unscoped prefix has no `#btn-symbols` auto-margin rule. |
-| `index.html` | Untouched (BR-701). Toolbar DOM order unchanged. |
-| `src/*.ts` | Untouched this iteration. |
+| `src/styles.css` | **Unchanged this iteration.** Inside `@media (min-width: 900px)`, `#btn-symbols { margin-inline-start: auto; }` (Iter 1). |
+| `tests/unit/toolbar-align.test.ts` | **Unchanged.** VC-706 grep-style gate (Iter 1). |
+| `tests/e2e/toolbar-align.spec.ts` | **New (Iter 2).** Playwright discharges VC-701–705, VC-707, VC-708. Helpers local to the file: layout/theme seeding, content-box flush measurement (D-002), same-line gap walk, editor undo/doc snapshot. |
+| `index.html` | Untouched (BR-701). |
+| `src/*.ts` | Untouched. |
 | `docs/architecture.md` | Still describes toolbar as a packed flex row; update deferred to Iteration 3. |
-| `tests/e2e/*` | No toolbar-align e2e yet — Iteration 2. |
+| `tests/e2e/helpers.ts` | Used via `openPlayground` only; no new shared helpers this iteration. |
 
 ## Public interfaces / shipped surface
 
 - **CSS selector**: `#btn-symbols` under `@media (min-width: 900px)` only.
 - **Property**: `margin-inline-start: auto` (logical; BR-702).
-- **Flex assumption**: `.toolbar` remains `display: flex; flex-wrap: wrap; gap: 6px`, so the auto margin collects free space on the flex line between `#btn-files` and `#btn-symbols`; `#btn-theme` follows immediately after `#btn-symbols` in DOM order and rides with it.
-- **Breakpoint**: reuses the existing 900 px media query (`LAYOUT_MIN_WIDTH` twin in `src/layout.ts`). No third copy, no `max-width` mirror.
+- **Flex assumption**: `.toolbar` remains `display: flex; flex-wrap: wrap; gap: 6px`.
+- **Breakpoint**: existing 900 px media query / `LAYOUT_MIN_WIDTH`.
 - **Unit test path**: `tests/unit/toolbar-align.test.ts` (VC-706).
+- **E2e test path**: `tests/e2e/toolbar-align.spec.ts` (VC-701–705, VC-707–708).
+- **VC-701 measurement**: `#btn-theme` border-box `right` vs toolbar content-box
+  right = `getBoundingClientRect().right − paddingRight − borderRightWidth`
+  (D-002). Toolbar currently has no padding/border, so content-box ≈ border-box.
+- **VC-703 / VC-705 gap rule**: same-line pairs (shared `Math.round(top)`);
+  packed = `|gap − 6| ≤ 1`; oversized = not packed. Exactly one oversized gap
+  at 1280×800, between `#btn-files` and `#btn-symbols`.
+
+## Iter-1 / Iter-2 `dist/` JS byte baseline (for NFR-704 / VC-709)
+
+Recorded after `npm run build` on this worktree (Iter 2, CSS already present):
+
+| File | Bytes |
+|---|---|
+| `dist/assets/index-C3k5xgdz.js` | 453495 |
+| `dist/assets/pyodide.worker-DDH34hLP.js` | 10527 |
+| `dist/sw.js` | 5105 |
+| **Sum (those three)** | **469127** |
+
+Hash suffixes may change if CSS/asset fingerprinting shifts; compare **byte
+counts of JS bundles**, not filenames. Iter 3 should prove JS byte count is
+identical to this baseline (NFR-704: 0 bytes of new JS).
 
 ## Known gaps (for later iterations)
 
-- Geometry / placement e2e not written: VC-701, VC-702, VC-703, VC-705.
-- Tab-order e2e not written: VC-704 (must match FR-704’s ten stops).
-- Behaviour-from-new-position e2e not written: VC-707, VC-708.
-- NFR sweep not run: VC-709 (geometry baseline, scrollWidth, contrast, perf / JS byte count).
+- NFR sweep not run: VC-709 (geometry baseline ±1 px, scrollWidth ≤ 375,
+  `npm run audit:contrast`, `npm run audit:perf`, JS bytes vs baseline above).
 - `docs/architecture.md` not yet updated to describe visual clustering.
-- Manual / Playwright visual confirmation deferred to Iteration 2 (plan: unit + file inspection suffice for Iter 1).
 
 ## Confirmed non-goals (do not regress)
 
