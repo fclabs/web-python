@@ -27,6 +27,24 @@
         document.documentElement.style.colorScheme = effective;
       })();
     </script>
+    <!-- FR-910: apply a canonical stored diagnostics height before CSS paint so
+         vertical layout never flashes the old fr share. Non-canonical / missing
+         → leave unset; CSS defaults the track to header-only (FR-901 / FR-911).
+         Regex matches src/diag-resize.ts isCanonicalDiagHeight. -->
+    <script>
+      (function () {
+        var KEY = 'pyplay.diagnostics-height.v1';
+        try {
+          var raw = localStorage.getItem(KEY);
+          if (raw && /^[1-9][0-9]*$/.test(raw)) {
+            document.documentElement.style.setProperty(
+              '--diagnostics-height',
+              raw + 'px',
+            );
+          }
+        } catch (e) {}
+      })();
+    </script>
   </head>
   <body>
     <div id="app" class="app">
@@ -126,6 +144,22 @@
         <h2 class="editor-heading">Editing: <span id="active-file-name">main.py</span></h2>
         <div id="editor" class="editor"></div>
       </section>
+
+      <!-- FR-913: non-panel sibling immediately after the editor, before stdin.
+           Visible only in vertical ≥ 900 px (CSS); Iteration 3 wires setInert
+           for FR-906. aria-value* placeholders until the resize controller
+           measures bounds. Label matches DIAG_RESIZER_LABEL (FR-903). -->
+      <div
+        id="diag-resizer"
+        class="diag-resizer"
+        role="separator"
+        aria-orientation="horizontal"
+        aria-label="Resize diagnostics panel"
+        aria-valuemin="1"
+        aria-valuemax="1"
+        aria-valuenow="1"
+        tabindex="0"
+      ></div>
 
       <section class="panel panel--stdin" aria-label="Standard input">
         <label class="stdin-label" for="stdin-input">Input</label>

@@ -363,6 +363,12 @@ body {
   display: none;
 }
 
+/* FR-906: hidden outside vertical ≥ 900; shown in the media block below.
+   Iteration 3 adds setInert() — CSS alone covers visibility this iteration. */
+.diag-resizer {
+  display: none;
+}
+
 .console {
   background: var(--console-bg);
   color: var(--console-fg);
@@ -754,6 +760,8 @@ body {
   .panel--editor { grid-area: editor; }
   .panel--stdin { grid-area: stdin; }
   .panel--diagnostics { grid-area: diag; }
+  /* FR-913: separator track; only placed in vertical template-areas below. */
+  .diag-resizer { grid-area: diagsep; }
 
   /* FR-311: a column 44–96 px wide, as tall as the console + editor region,
      with its buttons stacked so every visual row holds exactly one (FR-309). */
@@ -956,10 +964,12 @@ body {
   /*
    * FR-408: four full-width rows above a two-column split — the editor alone
    * on the inline-start side, spanning the full block height, and the console,
-   * stdin and diagnostics stacked in that order on the inline-end side.
+   * diagnostics separator, stdin and diagnostics stacked in that order on the
+   * inline-end side.
    *
    * FR-410 / BR-402: placement only. The document order stays console,
-   * editor, stdin, diagnostics; no element is moved, re-parented or
+   * editor, stdin, diagnostics; `#diag-resizer` is a non-panel sibling between
+   * editor and stdin (FR-913). No element is moved, re-parented or
    * re-created, so CodeMirror never re-measures from a DOM change and the
    * sequential focus order is identical in both layouts (BR-407).
    */
@@ -971,6 +981,7 @@ body {
       "status  status"
       "notices notices"
       "editor  console"
+      "editor  diagsep"
       "editor  stdin"
       "editor  diag";
     /*
@@ -982,14 +993,19 @@ body {
      */
     grid-template-columns: 58% minmax(0, 1fr);
     /*
-     * The right column's three rows. The console takes the free space the
-     * stdin row and the diagnostics panel do not, with FR-409's 80 px floor;
-     * `0.66fr` caps the diagnostics row at 0.66/1.66 = 39.8 % of that free
-     * space, which is below 40 % of the whole right column and so satisfies
-     * FR-409's cap at every viewport height without a percentage that would
-     * have to resolve against its own track.
+     * Right-column rows (spec-09 FR-901 / FR-902 / BR-902): console is the
+     * flexible track with FR-409's 80 px floor; `diagsep` is the separator hit
+     * target (NFR-901); stdin stays content-sized; diagnostics is a definite
+     * `--diagnostics-height` when stored (FR-910), otherwise `auto` so the
+     * panel's header-only intrinsic size (flex-collapsed body, D-02) wins —
+     * never an `fr` share of free space.
      */
-    grid-template-rows: auto auto auto auto minmax(80px, 1fr) auto minmax(0, 0.66fr);
+    grid-template-rows:
+      auto auto auto auto
+      minmax(80px, 1fr)
+      8px
+      auto
+      var(--diagnostics-height, auto);
   }
 
   /*
@@ -1006,6 +1022,7 @@ body {
       "status  status  status"
       "notices notices notices"
       "editor  console symbols"
+      "editor  diagsep symbols"
       "editor  stdin   symbols"
       "editor  diag    symbols";
     grid-template-columns: 58% minmax(0, 1fr) 72px;
@@ -1026,6 +1043,7 @@ body {
       "status  status  status"
       "notices notices notices"
       "files   editor  console"
+      "files   editor  diagsep"
       "files   editor  stdin"
       "files   editor  diag";
     grid-template-columns: minmax(160px, var(--files-width)) 58fr 42fr;
@@ -1038,20 +1056,59 @@ body {
       "status  status  status  status"
       "notices notices notices notices"
       "files   editor  console symbols"
+      "files   editor  diagsep symbols"
       "files   editor  stdin   symbols"
       "files   editor  diag    symbols";
     grid-template-columns: minmax(160px, var(--files-width)) 58fr 42fr 72px;
   }
 
   /*
-   * FR-409: in the inline-end column the cap is the 0.66fr track above, not
-   * the `25vh` the stacked layout keeps. The panel still scrolls its own overflow
-   * (`.panel--diagnostics { overflow: auto }`), so at short viewport heights
-   * the entries stay reachable by scrolling inside the right column rather
-   * than by scrolling the page (VC-435).
+   * FR-409 / FR-901: vertical diagnostics height is the `diag` track
+   * (`--diagnostics-height` or header-only auto), not the stacked layout's
+   * `25vh`. Overflow is clipped on the panel; the list scrolls when the track
+   * is taller than the header (VC-435). Flex-collapsed list/empty keep
+   * intrinsic height header-only when the track is `auto` (BR-901 / D-02).
+   * Bottom padding is folded into the title so a 0-height body sits flush with
+   * the panel's content edge and entry boxes do not intersect the client rect.
    */
   #app[data-layout='vertical'] .panel--diagnostics {
     max-height: none;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+    padding-bottom: 0;
+  }
+
+  #app[data-layout='vertical'] .panel--diagnostics .panel-title {
+    flex: 0 0 auto;
+    margin-bottom: 0;
+    padding-bottom: 4px;
+  }
+
+  /* BR-901: body stays in the document; flex-basis 0 + min-height 0 so it does
+     not inflate an `auto` track (FR-901) and fills leftover space when the
+     track has a definite `--diagnostics-height`. */
+  #app[data-layout='vertical'] .panel--diagnostics .diagnostics-list,
+  #app[data-layout='vertical'] .panel--diagnostics .diagnostics-empty {
+    flex: 1 1 0;
+    min-height: 0;
+    overflow: auto;
+  }
+
+  /* FR-903 / NFR-901: separator between console and stdin; ≥ 8 px hit target.
+     Resting/hover/focus mirror `.file-resizer` without coupling modules. */
+  #app[data-layout='vertical'] .diag-resizer {
+    background: var(--border);
+    cursor: row-resize;
+    display: block;
+    min-height: 8px;
+    outline-offset: 2px;
+  }
+
+  #app[data-layout='vertical'] .diag-resizer:hover,
+  #app[data-layout='vertical'] .diag-resizer:focus-visible {
+    background: var(--focus);
   }
 
   /* The two panels' flex ratios are the stacked column's; as grid items they
