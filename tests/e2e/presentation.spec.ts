@@ -44,6 +44,8 @@ const CONTROLS = [
   '#btn-symbols',
   // spec-05 FR-501: color-mode control after Symbols.
   '#btn-theme',
+  // spec-08 FR-801: About after theme.
+  '#btn-about',
   '.cm-content',
   '#stdin-input',
   '#btn-eof',
@@ -591,9 +593,9 @@ test('VC-052 (FR-049): Tab reaches every target, each with a visible ring', asyn
   }
 
   // FR-049's targets, in the order the document presents them, as amended by
-  // spec-03 / spec-05: `Symbols`, then color mode, then the pane as a single
-  // stop. spec-04 FR-405: `#layout-group` contributes exactly one stop,
-  // immediately after `Reset` and before `Symbols`.
+  // spec-03 / spec-05 / spec-08: `Symbols`, color mode, About, then the pane
+  // as a single stop. spec-04 FR-405: `#layout-group` contributes exactly one
+  // stop, immediately after `Reset` and before `Symbols`.
   const targets = [
     '#btn-run',
     '#btn-stop',
@@ -604,6 +606,7 @@ test('VC-052 (FR-049): Tab reaches every target, each with a visible ring', asyn
     '#layout-group',
     '#btn-symbols',
     '#btn-theme',
+    '#btn-about',
     '.symbol',
     '.cm-content',
     '#stdin-input',

@@ -55,10 +55,8 @@ import {
   saveWorkspace,
   type WorkspaceFile,
 } from './workspace';
+import { bindAboutControl } from './about';
 import { applyDocumentTheme, bindThemeControl, loadPreference } from './theme';
-// BR-801: pull the Vite-injected About metadata into the app shell so the
-// four field strings are present in the bundle (About UI binds them later).
-import './build-meta';
 
 const AUTOSAVE_UNAVAILABLE = 'Autosave unavailable — your workspace will not survive a reload';
 const COPY_FAILED = "Couldn't copy — select the code and press Ctrl/Cmd+C";
@@ -351,6 +349,9 @@ function boot(): void {
 
   // FR-501 – FR-504 / FR-512: cycling color-mode control (after Symbols).
   bindThemeControl(need<HTMLButtonElement>('btn-theme'), view, storage);
+
+  // FR-801 – FR-819: About control + modal (after theme; last toolbar control).
+  bindAboutControl(need<HTMLButtonElement>('btn-about'));
 
   // FR-010: reset the complete classroom workspace.
   need<HTMLButtonElement>('btn-reset').addEventListener('click', () => {

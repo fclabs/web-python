@@ -1,76 +1,74 @@
-# CONTEXT — About control (Iteration 1)
+# CONTEXT — About control (Iteration 2)
 
 Living snapshot for later iterations. Overwrite in place; do not append.
 
 ## Current state
 
-- Pure build-metadata formatters live in `scripts/build-metadata.mjs` and are unit-tested (VC-809–813, VC-825).
-- About user-visible strings are exported from `src/format.ts` (VC-819 / BR-807).
-- Vite `define` injects `__PYPLAY_BUILD_META__` at config load for both `dev` and `build` (BR-801); `src/build-meta.ts` re-exports it as `buildMeta` and retains the object via a `globalThis` side effect so Rollup does not drop the literals.
-- No About UI yet — `#btn-about` / dialog ids from the spec are still free.
-- NFR-805 branch-point (tip before About code): `e569b8119e6ce797d49930fddcfb9fbec5fbd578`.
+- Pure build-metadata formatters in `scripts/build-metadata.mjs` (unit-tested).
+- Vite `define` injects `__PYPLAY_BUILD_META__`; `src/build-meta.ts` exports `buildMeta`.
+- About strings live in `src/format.ts`.
+- **UI shipped**: `#btn-about` after `#btn-theme`; custom overlay modal (`#about-backdrop` + `#about-dialog`) wired by `bindAboutControl` in `src/about.ts`; bound from `src/main.ts` after theme.
+- Interaction e2e in `tests/e2e/about.spec.ts` (VC-801–806, 808, 818, 821, 823, 824).
+- Sibling theme/symbols/presentation/layout tab-order assertions amended for About-as-last.
+- NFR-805 branch-point (unchanged): `e569b8119e6ce797d49930fddcfb9fbec5fbd578`.
 
 ## File map
 
 | Path | Role |
 |---|---|
-| `scripts/build-metadata.mjs` | Pure formatters + `readBuildMetadata()` git/env collector |
-| `scripts/build-metadata.d.mts` | Type declarations for the `.mjs` module |
-| `scripts/derive-version.mjs` | Reused `highestVersion` / `BOOTSTRAP_VERSION` / `parseVersion` (do not fork) |
-| `src/format.ts` | About string constants (`ABOUT_*`, `UNKNOWN`) |
+| `scripts/build-metadata.mjs` | Pure formatters + `readBuildMetadata()` |
 | `src/build-meta.ts` | App-facing `buildMeta` from `__PYPLAY_BUILD_META__` |
-| `src/main.ts` | Side-effect `import './build-meta'` so the shell keeps the baked object |
-| `vite.config.ts` | Calls `readBuildMetadata()` and `define`s `__PYPLAY_BUILD_META__` |
-| `tests/unit/build-metadata.test.ts` | VC-809–813, VC-819, VC-825 |
+| `src/format.ts` | About string constants |
+| `src/about.ts` | `bindAboutControl(button)` — glyph, fields, open/close/trap/backdrop |
+| `src/main.ts` | Calls `bindAboutControl` after `bindThemeControl` |
+| `index.html` | `#btn-about` after `#btn-theme`; dialog + backdrop markup (start `hidden`) |
+| `src/styles.css` | `#btn-about` hit area; `.about-backdrop` / `.about-dialog` tokens |
+| `tests/e2e/about.spec.ts` | Iteration 2 interaction VCs |
+| `tests/e2e/theme.spec.ts` | Amended VC-501 / VC-511 / VC-519 |
+| `tests/e2e/symbols.spec.ts` | Amended VC-301 / VC-315 tab order |
+| `tests/e2e/presentation.spec.ts` | CONTROLS + VC-052 targets include `#btn-about` |
+| `tests/e2e/layout.spec.ts` | VC-407 enumeration includes `btn-about` |
+| `tests/unit/build-metadata.test.ts` | Iteration 1 units (unchanged) |
 
 ## Public interfaces
 
 ```ts
-// scripts/build-metadata.mjs
-shortSha(fullSha: string | null | undefined): string
-formatBuilt(isoOrDate: string | Date | null | undefined): string
-formatVersion({ tags, headSha, headExactVersionTag }): string
-resolveBranch({ gitBranch, envBranch }): string
-collectBuildMetadata(inputs?): { version: string; branch: string; commit: string; built: string }
-readBuildMetadata(options?: { cwd?: string }): { version; branch; commit; built }
+// src/about.ts
+export function bindAboutControl(button: HTMLButtonElement): void
 
 // src/build-meta.ts
 export type BuildMeta = { version: string; branch: string; commit: string; built: string }
-export const buildMeta: BuildMeta  // from Vite define __PYPLAY_BUILD_META__
+export const buildMeta: BuildMeta
 
-// src/format.ts (About)
-ABOUT_GLYPH = 'i'
-ABOUT_LABEL = 'About'
-ABOUT_VERSION_LABEL | ABOUT_BRANCH_LABEL | ABOUT_COMMIT_LABEL | ABOUT_BUILT_LABEL
-ABOUT_CLOSE_LABEL = 'Close'
-UNKNOWN = 'unknown'
+// DOM (index.html + about.ts fill)
+#btn-about, #about-backdrop, #about-dialog, #about-title, #about-close,
+#about-version, #about-branch, #about-commit, #about-built
+(+ label dts: #about-version-label … #about-built-label)
 ```
 
-Injected compile-time constant name: **`__PYPLAY_BUILD_META__`** (JSON object via Vite `define`).
+Injected constant: **`__PYPLAY_BUILD_META__`**.
 
 ## Conventions & invariants
 
-- Cite FR/BR/VC ids on non-obvious lines.
-- Visitor-facing copy only in `src/format.ts`, quoted from the spec.
-- Version semver order must keep using `highestVersion` from `derive-version.mjs`.
-- Missing git/host inputs → literal `unknown` (BR-802); never empty string.
-- Commit is plain text / never a URL (BR-803) — formatters must not invent links.
-- Do not add About UI, dialog markup, or toolbar button until Iteration 2.
+- Visitor-facing copy only from `src/format.ts` (BR-807).
+- Commit field is plain text — no `a[href]` (BR-803).
+- `#btn-about` never `disabled` / never `setInert` for About reasons (BR-806); still guards with `isInert()`.
+- About must not import `EditorView`, touch the worker, or write `#notices` (BR-804 / BR-805).
+- Custom overlay (not native `<dialog>`) — see DECISIONS D-003.
+- Geometric click on dimmed area → backdrop dismiss (FR-806); synthetic click on chrome under modal → swallowed, dialog stays open (FR-819).
 
 ## Commands
 
 ```bash
-npm ci
-npx vitest run tests/unit/build-metadata.test.ts
-npx vitest run tests/unit/
-npx tsc --noEmit
+export PW_PORT_BASE=4473   # worktree: avoid colliding with other checkouts
 npm run build
-# prove injection: grep dist/assets/*.js for this build's short SHA or version
+npx playwright test tests/e2e/about.spec.ts
+npx playwright test tests/e2e/theme.spec.ts tests/e2e/symbols.spec.ts
+npx vitest run
 ```
 
 ## Known gaps
 
-- About toolbar control and modal dialog (Iteration 2).
 - Offline / zero-request e2e (Iteration 3).
-- Contrast, geometry, payload delta vs branch-point (Iteration 4) — use SHA `e569b8119e6ce797d49930fddcfb9fbec5fbd578`.
+- Contrast, geometry, payload delta vs branch-point (Iteration 4) — SHA `e569b8119e6ce797d49930fddcfb9fbec5fbd578`.
 - Docs in `docs/deployment.md` / `docs/architecture.md` (Iteration 5).

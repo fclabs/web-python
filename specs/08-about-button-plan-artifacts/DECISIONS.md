@@ -21,3 +21,13 @@ Append-only. One entry per non-obvious choice.
 **Rejected**: Using merge-base with `main` instead of the worktree tip — plan says record HEAD at start of Iteration 1.
 
 **Consequences**: Iteration 4 must compare against this SHA; do not move the threshold without a dedicated commit.
+
+## D-003: Custom overlay modal (not native `<dialog>`)  (Iteration 2)
+
+**Context**: Spec requires distinct `#about-backdrop` and `#about-dialog` with FR-806 backdrop dismiss, FR-808 focus trap, and FR-819 swallow of chrome activations under the modal.
+
+**Decision**: Markup lives in `index.html` (start `hidden`). Behaviour in `src/about.ts` via `bindAboutControl(btn)`. Custom fixed overlay + sibling backdrop — not `HTMLDialogElement` / `showModal()`.
+
+**Rejected**: Native `<dialog>` — its UA backdrop is not the `#about-backdrop` element VC-804 clicks, and mixing `::backdrop` with an explicit id complicates FR-819 vs FR-806 (geometric click on dimmed chrome dismisses; synthetic activation of `#btn-run` must not dismiss).
+
+**Consequences**: Iteration 3+ keep calling `bindAboutControl`; do not switch to `<dialog>` without rewriting e2e that target `#about-backdrop`. Capture-phase document listener swallows non-backdrop chrome clicks while open.

@@ -91,11 +91,16 @@
           aria-expanded="false"
           aria-controls="symbol-pane"
         >Symbols</button>
-        <!-- FR-501: last toolbar control. Glyph / title / aria-label filled by
-             src/theme.ts. Never routed through `setInert()`. Explicit
+        <!-- FR-501: immediately after Symbols. Glyph / title / aria-label filled
+             by src/theme.ts. Never routed through `setInert()`. Explicit
              `tabindex="0"` matches Run/Stop/Format so WebKit keeps the control
              in the sequential focus navigation order (FR-513 / VC-511). -->
         <button id="btn-theme" class="btn btn--theme" type="button" tabindex="0"></button>
+        <!-- FR-801: last toolbar control, immediately after `#btn-theme`. Glyph /
+             title / aria-label filled by src/about.ts. Never routed through
+             `setInert()` (BR-806). Explicit `tabindex="0"` so WebKit keeps the
+             icon control in sequential focus (NFR-806). -->
+        <button id="btn-about" class="btn btn--about" type="button" tabindex="0"></button>
       </header>
 
       <p id="coi-banner" class="banner" role="status" hidden></p>
@@ -178,6 +183,39 @@
           tabindex="0"
         ></div>
       </section>
+
+      <!-- FR-805 / FR-818: About dialog + backdrop. Start hidden; chrome and
+           field texts are filled by src/about.ts from format.ts / buildMeta. -->
+      <div id="about-backdrop" class="about-backdrop" hidden></div>
+      <div
+        id="about-dialog"
+        class="about-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="about-title"
+        hidden
+      >
+        <h2 id="about-title" class="about-dialog__title"></h2>
+        <dl class="about-dialog__fields">
+          <div class="about-dialog__row">
+            <dt id="about-version-label" class="about-dialog__label"></dt>
+            <dd id="about-version" class="about-dialog__value"></dd>
+          </div>
+          <div class="about-dialog__row">
+            <dt id="about-branch-label" class="about-dialog__label"></dt>
+            <dd id="about-branch" class="about-dialog__value"></dd>
+          </div>
+          <div class="about-dialog__row">
+            <dt id="about-commit-label" class="about-dialog__label"></dt>
+            <dd id="about-commit" class="about-dialog__value"></dd>
+          </div>
+          <div class="about-dialog__row">
+            <dt id="about-built-label" class="about-dialog__label"></dt>
+            <dd id="about-built" class="about-dialog__value"></dd>
+          </div>
+        </dl>
+        <button id="about-close" class="btn about-dialog__close" type="button"></button>
+      </div>
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>

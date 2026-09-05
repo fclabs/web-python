@@ -8,7 +8,7 @@
  * VC-509 (FR-510, BR-502) — no prefers-color-scheme change listener.
  * VC-521 (FR-515) — first paint already matches the resolved palette.
  * VC-522 (FR-516, BR-506) — used color-scheme equals the effective palette.
- * VC-501 (FR-501) — `#btn-theme` last, after Symbols.
+ * VC-501 (FR-501) — `#btn-theme` after Symbols; `#btn-about` follows (spec-08).
  * VC-502 (FR-502, FR-512) — full cycle + storage.
  * VC-503 (FR-503, FR-504) — glyph / title / accessible name.
  * VC-511 (FR-513) — tab after Symbols; focus ring; Enter/Space.
@@ -368,21 +368,28 @@ test('VC-509 (FR-510, BR-502): no prefers-color-scheme change listener updates c
    Iteration 2 — toolbar control, cycle, persistence
    ------------------------------------------------------------------------- */
 
-test('VC-501 (FR-501): #btn-theme is last and immediately after Symbols', async ({ page }) => {
+test('VC-501 (FR-501): #btn-theme follows Symbols; #btn-about is last after theme', async ({
+  page,
+}) => {
   await openPlayground(page);
   const placement = await page.evaluate(() => {
     const controls = Array.from(document.querySelectorAll('.toolbar > button'));
     const symbols = document.getElementById('btn-symbols');
     const theme = document.getElementById('btn-theme');
+    const about = document.getElementById('btn-about');
     return {
       present: !!theme,
-      isLast: controls[controls.length - 1] === theme,
       afterSymbols: symbols?.nextElementSibling === theme,
+      aboutAfterTheme: theme?.nextElementSibling === about,
+      aboutIsLast: controls[controls.length - 1] === about,
+      themeIsLast: controls[controls.length - 1] === theme,
     };
   });
   expect(placement.present).toBe(true);
-  expect(placement.isLast).toBe(true);
   expect(placement.afterSymbols).toBe(true);
+  expect(placement.aboutAfterTheme).toBe(true);
+  expect(placement.aboutIsLast).toBe(true);
+  expect(placement.themeIsLast).toBe(false);
 });
 
 test.describe('cycle under OS light', () => {
@@ -442,7 +449,7 @@ test.describe('cycle under OS light', () => {
     }
   });
 
-  test('VC-511 (FR-513): Tab after Symbols; focus ring; Enter and Space cycle', async ({
+  test('VC-511 (FR-513): Tab after Symbols reaches theme then About; Enter/Space cycle theme', async ({
     page,
   }) => {
     await seedTheme(page, 'light');
@@ -459,6 +466,10 @@ test.describe('cycle under OS light', () => {
       if (id === 'btn-symbols') {
         await page.keyboard.press('Tab');
         expect(await page.evaluate(() => document.activeElement?.id)).toBe('btn-theme');
+        await page.keyboard.press('Tab');
+        expect(await page.evaluate(() => document.activeElement?.id)).toBe('btn-about');
+        // Return to theme for the cycle assertions below (spec-05 VC-511).
+        await page.locator('#btn-theme').focus();
         landed = true;
         break;
       }
@@ -571,18 +582,23 @@ test.describe('cycle under OS light', () => {
   });
 });
 
-test('VC-519: Symbols still opens and #btn-theme follows it', async ({ page }) => {
+test('VC-519: Symbols still opens; #btn-theme follows it; #btn-about is last', async ({
+  page,
+}) => {
   await openPlayground(page);
 
   const order = await page.evaluate(() => {
     const symbols = document.getElementById('btn-symbols')!;
     const theme = document.getElementById('btn-theme');
+    const about = document.getElementById('btn-about');
     return {
       after: symbols.nextElementSibling === theme,
-      last: document.querySelector('.toolbar > button:last-of-type') === theme,
+      aboutAfterTheme: theme?.nextElementSibling === about,
+      last: document.querySelector('.toolbar > button:last-of-type') === about,
     };
   });
   expect(order.after).toBe(true);
+  expect(order.aboutAfterTheme).toBe(true);
   expect(order.last).toBe(true);
 
   await page.getByRole('button', { name: 'Symbols' }).click();
