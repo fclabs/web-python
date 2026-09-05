@@ -1025,6 +1025,27 @@ body {
  */
 @media (min-width: 900px) {
   /*
+   * FR-701 / FR-705 / BR-702: at ≥ 900 px, push #btn-symbols (and the
+   * following #btn-theme) to the toolbar's inline-end edge. Auto margin on
+   * the first of the pair collects all free space on the flex line between
+   * #btn-files and #btn-symbols; below 900 px these rules do not apply so
+   * the row packs (and wraps) as today (FR-705). Logical property only — no
+   * margin-left/right or left/right (BR-702).
+   *
+   * `flex-wrap: nowrap` keeps the pair on one line: with wrap, a tight 900 px
+   * row (wider OS fonts) can fit #btn-symbols after the leading cluster but
+   * drop #btn-theme alone onto the next line, breaking FR-701 flush. Flex
+   * shrink absorbs a few pixels of font variance instead of wrapping.
+   */
+  .toolbar {
+    flex-wrap: nowrap;
+  }
+
+  #btn-symbols {
+    margin-inline-start: auto;
+  }
+
+  /*
    * FR-408: four full-width rows above a two-column split — the editor alone
    * on the inline-start side, spanning the full block height, and the console,
    * stdin and diagnostics stacked in that order on the inline-end side.

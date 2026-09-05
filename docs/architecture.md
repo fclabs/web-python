@@ -517,6 +517,36 @@ shipped `Symbols` in that slot (VC-301); FR-401's own Given/When/Then says
 "immediately after `#btn-reset`", which is what ships. Recorded as an amendment
 in `specs/04-toogle-pane-aspect-frozen.md`.
 
+### Toolbar presentation clustering
+
+At viewports ≥ 900 px the toolbar is still one `flex` row with a fixed DOM
+order, but it *looks* like two clusters: a leading action group (`#btn-run`
+through `#btn-files`, including `#layout-group`) packed at the inline-start
+edge, and a presentation pair (`#btn-symbols`, `#btn-theme`) flush with the
+inline-end edge. The split exists because six controls act on the visitor's
+program and only two act on how the page is presented; collecting free space
+between those groups keeps the presentation pair at a stable screen edge that
+does not shift when `#run-file-name` re-labels `Run`.
+
+The mechanism is presentational only: inside the same `@media (min-width:
+900px)` block that mirrors `LAYOUT_MIN_WIDTH`, the toolbar sets
+`flex-wrap: nowrap` and `#btn-symbols` gets `margin-inline-start: auto`. Flex
+then parks all slack on that line between `#btn-files` and `#btn-symbols`, so
+`#btn-theme` (the next sibling, still separated by the toolbar's `6px` gap)
+rides with it to the inline-end. Nowrap is required because a wrapped row at
+exactly 900 px can fit Symbols after the leading cluster but drop the
+color-mode control onto the next line alone when OS fonts run slightly wide;
+flex shrink absorbs that variance instead. The margin uses a logical property
+so the arrangement tracks writing direction the same way the layout switch
+does. `#btn-files` stays in the leading cluster because it is a workspace
+control, not a presentation control — only the named pair moves visually.
+
+Nothing is re-parented or reordered in the DOM, so tab order and assistive
+enumeration stay `#btn-run` … `#layout-group` … `#btn-files` … `#btn-symbols`
+… `#btn-theme`. Below 900 px neither rule applies: the toolbar keeps
+`flex-wrap: wrap` and packs every control on every line against the
+inline-start edge exactly as it did before.
+
 ## Color mode
 
 The color-mode control of spec-05 (`src/theme.ts`, `#btn-theme`) lets the
