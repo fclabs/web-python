@@ -529,21 +529,23 @@ between those groups keeps the presentation pair at a stable screen edge that
 does not shift when `#run-file-name` re-labels `Run`.
 
 The mechanism is presentational only: inside the same `@media (min-width:
-900px)` block that mirrors `LAYOUT_MIN_WIDTH`, `#btn-symbols` gets
-`margin-inline-start: auto`. Flex then parks all slack on that line between
-`#btn-files` and `#btn-symbols`, so `#btn-theme` (the next sibling, still
-separated by the toolbar's `6px` gap) rides with it to the inline-end. The
-rule uses a logical property so the arrangement tracks writing direction the
-same way the layout switch does. `#btn-files` stays in the leading cluster
-because it is a workspace control, not a presentation control — only the
-named pair moves visually.
+900px)` block that mirrors `LAYOUT_MIN_WIDTH`, the toolbar sets
+`flex-wrap: nowrap` and `#btn-symbols` gets `margin-inline-start: auto`. Flex
+then parks all slack on that line between `#btn-files` and `#btn-symbols`, so
+`#btn-theme` (the next sibling, still separated by the toolbar's `6px` gap)
+rides with it to the inline-end. Nowrap is required because a wrapped row at
+exactly 900 px can fit Symbols after the leading cluster but drop the
+color-mode control onto the next line alone when OS fonts run slightly wide;
+flex shrink absorbs that variance instead. The margin uses a logical property
+so the arrangement tracks writing direction the same way the layout switch
+does. `#btn-files` stays in the leading cluster because it is a workspace
+control, not a presentation control — only the named pair moves visually.
 
 Nothing is re-parented or reordered in the DOM, so tab order and assistive
 enumeration stay `#btn-run` … `#layout-group` … `#btn-files` … `#btn-symbols`
-… `#btn-theme`. Below 900 px the auto margin is not applied: an auto margin
-acts per flex line, and on a wrapped narrow toolbar it would strand the pair
-alone on a trailing line. Narrow viewports therefore pack every control on
-every line against the inline-start edge exactly as they did before.
+… `#btn-theme`. Below 900 px neither rule applies: the toolbar keeps
+`flex-wrap: wrap` and packs every control on every line against the
+inline-start edge exactly as it did before.
 
 ## Color mode
 
