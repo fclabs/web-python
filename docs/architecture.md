@@ -522,29 +522,31 @@ in `specs/04-toogle-pane-aspect-frozen.md`.
 At viewports ≥ 900 px the toolbar is still one `flex` row with a fixed DOM
 order, but it *looks* like two clusters: a leading action group (`#btn-run`
 through `#btn-files`, including `#layout-group`) packed at the inline-start
-edge, and a presentation pair (`#btn-symbols`, `#btn-theme`) flush with the
-inline-end edge. The split exists because six controls act on the visitor's
-program and only two act on how the page is presented; collecting free space
-between those groups keeps the presentation pair at a stable screen edge that
-does not shift when `#run-file-name` re-labels `Run`.
+edge, and a presentation cluster (`#btn-symbols`, `#btn-theme`, `#btn-about`)
+flush with the inline-end edge. The split exists because the leading controls
+act on the visitor's program / workspace while the trailing three act on how
+the page is presented or identified; collecting free space between those
+groups keeps the presentation cluster at a stable screen edge that does not
+shift when `#run-file-name` re-labels `Run`.
 
 The mechanism is presentational only: inside the same `@media (min-width:
 900px)` block that mirrors `LAYOUT_MIN_WIDTH`, the toolbar sets
 `flex-wrap: nowrap` and `#btn-symbols` gets `margin-inline-start: auto`. Flex
 then parks all slack on that line between `#btn-files` and `#btn-symbols`, so
-`#btn-theme` (the next sibling, still separated by the toolbar's `6px` gap)
-rides with it to the inline-end. Nowrap is required because a wrapped row at
-exactly 900 px can fit Symbols after the leading cluster but drop the
-color-mode control onto the next line alone when OS fonts run slightly wide;
-flex shrink absorbs that variance instead. The margin uses a logical property
-so the arrangement tracks writing direction the same way the layout switch
-does. `#btn-files` stays in the leading cluster because it is a workspace
-control, not a presentation control — only the named pair moves visually.
+`#btn-theme` and `#btn-about` (the next siblings, still separated by the
+toolbar's `6px` gap) ride with it to the inline-end. `#btn-about` is the
+flush edge (spec-08). Nowrap is required because a wrapped row at exactly
+900 px can fit Symbols after the leading cluster but drop a trailing icon
+onto the next line alone when OS fonts run slightly wide; flex shrink absorbs
+that variance instead. The margin uses a logical property so the arrangement
+tracks writing direction the same way the layout switch does. `#btn-files`
+stays in the leading cluster because it is a workspace control, not a
+presentation control — only the named cluster moves visually.
 
 Nothing is re-parented or reordered in the DOM, so tab order and assistive
 enumeration stay `#btn-run` … `#layout-group` … `#btn-files` … `#btn-symbols`
-… `#btn-theme`. Below 900 px neither rule applies: the toolbar keeps
-`flex-wrap: wrap` and packs every control on every line against the
+… `#btn-theme` … `#btn-about`. Below 900 px neither rule applies: the toolbar
+keeps `flex-wrap: wrap` and packs every control on every line against the
 inline-start edge exactly as it did before.
 
 ## Color mode
@@ -587,10 +589,13 @@ touch the editor, the worker, stdin, the console, or `#notices`.
 ### Toolbar placement and binding
 
 `#btn-about` is the **last** control in document order inside `header.toolbar`,
-immediately after `#btn-theme`. Its visible glyph is the Latin small letter
-`i`; the accessible name and `title` are `About`. Like `#btn-theme` it carries
-an explicit `tabindex="0"` so WebKit keeps the icon button in sequential
-focus, and it is never HTML-`disabled` / `setInert` for About-related reasons.
+immediately after `#btn-theme`. At ≥ 900 px it rides with Symbols and theme in
+the presentation cluster (see *Toolbar presentation clustering* above) and is
+the flush edge at the toolbar's inline-end. Its visible glyph is the Latin
+small letter `i`; the accessible name and `title` are `About`. Like
+`#btn-theme` it carries an explicit `tabindex="0"` so WebKit keeps the icon
+button in sequential focus, and it is never HTML-`disabled` / `setInert` for
+About-related reasons.
 
 `src/main.ts` calls `bindAboutControl` after `bindThemeControl`. The binder
 lives in `src/about.ts`: it fills the four field nodes from `buildMeta`, opens

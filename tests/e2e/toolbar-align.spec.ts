@@ -1,10 +1,13 @@
 /**
  * Spec 07 — right-align Symbols and color-mode on the toolbar.
+ * Spec 08 amendment — `#btn-about` joins the inline-end cluster and is the
+ * flush edge (FR-801 / assumption: Symbols → theme → About as a group).
  *
- * VC-701 (FR-701) — #btn-theme flush with toolbar content-box inline-end.
- * VC-702 (FR-702) — pair gap is 6 ± 1 px; nothing between them.
+ * VC-701 (FR-701, amended) — #btn-about flush with toolbar content-box inline-end.
+ * VC-702 (FR-702) — Symbols/theme gap is 6 ± 1 px; nothing between them.
  * VC-703 (FR-703, FR-706) — one oversized gap, between Files and Symbols.
- * VC-704 (FR-704, BR-701) — Tab order is the FR-704 ten-stop sequence.
+ * VC-704 (FR-704, BR-701, amended) — Tab order is the eleven-stop sequence
+ *   through `#btn-about`.
  * VC-705 (FR-705) — below 900 px no auto-margin; at 900 px VC-701 holds.
  * VC-707 (BR-703) — Symbols / theme still work from the new position.
  * VC-708 (BR-704, BR-301) — clicks do not touch the editor undo/doc.
@@ -32,9 +35,10 @@ const TOOLBAR_CONTROL_IDS = [
   'btn-files',
   'btn-symbols',
   'btn-theme',
+  'btn-about',
 ] as const;
 
-/** FR-704's exact Tab sequence from `#btn-run` through `#btn-theme`. */
+/** FR-704 Tab sequence from `#btn-run` through `#btn-about` (spec-08). */
 const FR704_STOPS = [
   'btn-run',
   'btn-stop',
@@ -46,6 +50,7 @@ const FR704_STOPS = [
   'btn-files',
   'btn-symbols',
   'btn-theme',
+  'btn-about',
 ] as const;
 
 type Layout = 'horizontal' | 'vertical';
@@ -82,26 +87,27 @@ async function renderedLayout(page: Page): Promise<string | undefined> {
 }
 
 /**
- * Toolbar content-box inline-end edge and `#btn-theme` border-box right.
+ * Toolbar content-box inline-end edge and `#btn-about` border-box right
+ * (spec-08: About is the last control in the presentation cluster).
  * Content-box = border-box right − border-right − padding-right (D-002).
  */
-async function themeFlushMeasurement(page: Page): Promise<{
-  themeRight: number;
+async function aboutFlushMeasurement(page: Page): Promise<{
+  aboutRight: number;
   toolbarContentRight: number;
   delta: number;
 }> {
   return page.evaluate(() => {
     const toolbar = document.querySelector('header.toolbar') as HTMLElement;
-    const theme = document.getElementById('btn-theme') as HTMLElement;
+    const about = document.getElementById('btn-about') as HTMLElement;
     const style = getComputedStyle(toolbar);
     const box = toolbar.getBoundingClientRect();
     const toolbarContentRight =
       box.right - parseFloat(style.paddingRight) - parseFloat(style.borderRightWidth);
-    const themeRight = theme.getBoundingClientRect().right;
+    const aboutRight = about.getBoundingClientRect().right;
     return {
-      themeRight,
+      aboutRight,
       toolbarContentRight,
-      delta: Math.abs(themeRight - toolbarContentRight),
+      delta: Math.abs(aboutRight - toolbarContentRight),
     };
   });
 }
@@ -190,7 +196,7 @@ async function editorDocAndUndo(page: Page): Promise<{ text: string; undoDepth: 
    ------------------------------------------------------------------------- */
 
 for (const layout of ['horizontal', 'vertical'] as const) {
-  test(`VC-701 (FR-701): #btn-theme flush with toolbar content-box end (${layout})`, async ({
+  test(`VC-701 (FR-701): #btn-about flush with toolbar content-box end (${layout})`, async ({
     page,
   }) => {
     await page.setViewportSize(WIDE);
@@ -198,8 +204,8 @@ for (const layout of ['horizontal', 'vertical'] as const) {
     await openPlayground(page, { seedLayout: false });
     expect(await renderedLayout(page)).toBe(layout);
 
-    const m = await themeFlushMeasurement(page);
-    expect(m.delta, `themeRight=${m.themeRight} toolbarContentRight=${m.toolbarContentRight}`).toBeLessThanOrEqual(
+    const m = await aboutFlushMeasurement(page);
+    expect(m.delta, `aboutRight=${m.aboutRight} toolbarContentRight=${m.toolbarContentRight}`).toBeLessThanOrEqual(
       1,
     );
   });
@@ -278,7 +284,7 @@ for (const layout of ['horizontal', 'vertical'] as const) {
     { theme: 'light', colorScheme: 'light' as const, effective: 'light' },
     { theme: 'dark', colorScheme: 'dark' as const, effective: 'dark' },
   ]) {
-    test(`VC-704 (FR-704): Tab ten stops ${layout} / effective ${palette.effective}`, async ({
+    test(`VC-704 (FR-704): Tab eleven stops ${layout} / effective ${palette.effective}`, async ({
       page,
     }) => {
       await page.emulateMedia({ colorScheme: palette.colorScheme });
@@ -358,8 +364,8 @@ test('VC-705 (FR-705): at 900×667 VC-701 flush still holds', async ({ page }) =
   await seedLayout(page, 'horizontal');
   await openPlayground(page, { seedLayout: false });
 
-  const m = await themeFlushMeasurement(page);
-  expect(m.delta, `themeRight=${m.themeRight} toolbarContentRight=${m.toolbarContentRight}`).toBeLessThanOrEqual(
+  const m = await aboutFlushMeasurement(page);
+  expect(m.delta, `aboutRight=${m.aboutRight} toolbarContentRight=${m.toolbarContentRight}`).toBeLessThanOrEqual(
     1,
   );
 });
