@@ -1,6 +1,7 @@
 /**
- * Iteration 2 — About toolbar control and modal dialog.
+ * About toolbar control and modal dialog.
  *
+ * Iteration 2:
  * VC-801 (FR-801) — `#btn-about` last, after theme.
  * VC-802 (FR-802, FR-805) — open by pointer; dialog contract + four fields.
  * VC-803 (FR-803, FR-804) — glyph `i`, title/name `About`.
@@ -12,14 +13,20 @@
  * VC-821 — theme still cycles; About follows it.
  * VC-823 (FR-818) — closed on cold load.
  * VC-824 (FR-819) — backdrop swallows chrome clicks.
+ *
+ * Iteration 3:
+ * VC-807 (FR-810, BR-801, NFR-807) — offline after precache; zero requests on open.
+ * VC-812 (BR-803) — real-build commit is plain text (all-`unknown` lives in units).
  */
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page, type Request } from '@playwright/test';
 import {
   consoleText,
   editorText,
   openPlayground,
+  precacheReport,
   setProgram,
   waitForPythonReady,
+  waitForStatus,
 } from './helpers';
 
 async function openAbout(page: Page): Promise<void> {
@@ -385,4 +392,102 @@ test('VC-824 (FR-819): backdrop swallows chrome activations under it', async ({ 
   await expect(page.locator('#about-dialog')).toBeVisible();
   expect(await consoleText(page)).toBe(before);
   await expect(page.getByRole('button', { name: 'Stop' })).toBeDisabled();
+});
+
+/**
+ * VC-812 split: units own all-`unknown` formatter + jsdom field mount
+ * (`tests/unit/build-metadata.test.ts`). E2e asserts the real build’s DOM —
+ * non-empty fields and commit never a link (BR-803).
+ */
+test('VC-812 (BR-803): real-build About fields are non-empty; commit is not a link', async ({
+  page,
+}) => {
+  await openPlayground(page);
+  await openAbout(page);
+
+  const snap = await page.evaluate(() => {
+    const commit = document.getElementById('about-commit')!;
+    return {
+      version: document.getElementById('about-version')!.textContent ?? '',
+      branch: document.getElementById('about-branch')!.textContent ?? '',
+      commit: commit.textContent ?? '',
+      built: document.getElementById('about-built')!.textContent ?? '',
+      commitLinks: commit.querySelectorAll('a[href]').length,
+      commitHtml: commit.innerHTML,
+    };
+  });
+
+  expect(snap.version.length).toBeGreaterThan(0);
+  expect(snap.branch.length).toBeGreaterThan(0);
+  expect(snap.commit.length).toBeGreaterThan(0);
+  expect(snap.built.length).toBeGreaterThan(0);
+  expect(snap.commitLinks).toBe(0);
+  expect(snap.commitHtml).not.toMatch(/<a\b/i);
+  expect(snap.commit).not.toMatch(/^https?:\/\//i);
+});
+
+/**
+ * Offline After precache — service worker must be allowed (same pattern as
+ * `offline.spec.ts` / privacy storage surface).
+ */
+test.describe('offline About metadata', () => {
+  test.use({ serviceWorkers: 'allow' });
+
+  test('VC-807 (FR-810, BR-801, NFR-807): offline About open shows baked fields with zero requests', async ({
+    page,
+    context,
+  }) => {
+    test.setTimeout(120_000);
+
+    await page.goto('/');
+    await waitForPythonReady(page);
+    await waitForStatus(page, 'Offline ready');
+
+    const report = await precacheReport(page);
+    expect(report.missing).toEqual([]);
+
+    await context.setOffline(true);
+
+    // FR-810: open must not consult storage for metadata.
+    await page.evaluate(() => {
+      const box = window as unknown as { __aboutStorageReads: string[] };
+      box.__aboutStorageReads = [];
+      const wrap = (store: Storage, label: string): void => {
+        const orig = store.getItem.bind(store);
+        store.getItem = (key: string): string | null => {
+          box.__aboutStorageReads.push(`${label}:${key}`);
+          return orig(key);
+        };
+      };
+      wrap(window.localStorage, 'localStorage');
+      wrap(window.sessionStorage, 'sessionStorage');
+    });
+
+    const requests: string[] = [];
+    const record = (request: Request): void => void requests.push(request.url());
+    page.on('request', record);
+
+    await openAbout(page);
+
+    // Let any deferred network settle so a late request is not missed.
+    await page.waitForTimeout(300);
+    page.off('request', record);
+
+    const values = await page.evaluate(() => ({
+      version: document.getElementById('about-version')!.textContent ?? '',
+      branch: document.getElementById('about-branch')!.textContent ?? '',
+      commit: document.getElementById('about-commit')!.textContent ?? '',
+      built: document.getElementById('about-built')!.textContent ?? '',
+      storageReads: (window as unknown as { __aboutStorageReads: string[] }).__aboutStorageReads,
+    }));
+
+    expect(values.version.length).toBeGreaterThan(0);
+    expect(values.branch.length).toBeGreaterThan(0);
+    expect(values.commit.length).toBeGreaterThan(0);
+    expect(values.built.length).toBeGreaterThan(0);
+    expect(requests, 'FR-810 / VC-807 requests attributable to About open').toEqual([]);
+    expect(values.storageReads, 'FR-810: no localStorage/sessionStorage on About open').toEqual(
+      [],
+    );
+  });
 });

@@ -31,3 +31,13 @@ Append-only. One entry per non-obvious choice.
 **Rejected**: Native `<dialog>` — its UA backdrop is not the `#about-backdrop` element VC-804 clicks, and mixing `::backdrop` with an explicit id complicates FR-819 vs FR-806 (geometric click on dimmed chrome dismisses; synthetic activation of `#btn-run` must not dismiss).
 
 **Consequences**: Iteration 3+ keep calling `bindAboutControl`; do not switch to `<dialog>` without rewriting e2e that target `#about-backdrop`. Capture-phase document listener swallows non-backdrop chrome clicks while open.
+
+## D-004: VC-812 coverage split (units + real-build e2e)  (Iteration 3)
+
+**Context**: VC-812 requires all-`unknown` when git/host inputs are missing, and `#about-commit` with no `a[href]`. A production build on this machine has real git metadata, so e2e cannot force all-`unknown` without a test-double injection path.
+
+**Decision**: Keep formatter + jsdom field-mount coverage of all-`unknown` in `tests/unit/build-metadata.test.ts`. Playwright `VC-812` asserts non-empty fields and plain-text commit on the real build. No query-flag / stub module for e2e.
+
+**Rejected**: Runtime query flag or stub module to force `unknown` in Playwright — would add production surface area for a case already proven by pure units and the same `textContent` assignment path `about.ts` uses.
+
+**Consequences**: Iteration 4+ must not drop the unit DOM mount case when claiming VC-812; the e2e title alone is not sufficient for all-`unknown`.

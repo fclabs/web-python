@@ -79,6 +79,37 @@ describe('VC-812 (FR-815–FR-817, BR-802, BR-803): all inputs missing', () => {
     expect(meta.commit).not.toContain('github.com');
     expect(meta.commit).not.toContain('/');
   });
+
+  /**
+   * DOM half of VC-812: mount field nodes the way `bindAboutControl` does
+   * (`textContent = …`) from all-unknown formatter output — no `a[href]`.
+   */
+  it('mounts all-unknown fields as plain-text DOM nodes (no link)', () => {
+    const meta = collectBuildMetadata({});
+    document.body.innerHTML = `
+      <dd id="about-version"></dd>
+      <dd id="about-branch"></dd>
+      <dd id="about-commit"></dd>
+      <dd id="about-built"></dd>
+    `;
+    const version = document.getElementById('about-version')!;
+    const branch = document.getElementById('about-branch')!;
+    const commit = document.getElementById('about-commit')!;
+    const built = document.getElementById('about-built')!;
+    // Same assignment path as src/about.ts (BR-803: textContent, never href).
+    version.textContent = meta.version;
+    branch.textContent = meta.branch;
+    commit.textContent = meta.commit;
+    built.textContent = meta.built;
+
+    expect(version.textContent).toBe('unknown');
+    expect(branch.textContent).toBe('unknown');
+    expect(commit.textContent).toBe('unknown');
+    expect(built.textContent).toBe('unknown');
+    expect(commit.querySelectorAll('a[href]').length).toBe(0);
+    expect(commit.innerHTML).not.toMatch(/<a\b/i);
+    expect(commit.textContent).not.toMatch(/^https?:\/\//i);
+  });
 });
 
 describe('VC-813 (FR-816, FR-817): branch and Built when known', () => {
