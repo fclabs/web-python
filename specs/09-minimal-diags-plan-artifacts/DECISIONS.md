@@ -68,3 +68,43 @@ FR-913 keeps document order with the control after the editor. NFR-901 needs
 adds `setInert()`.
 
 **Supersedes:** nothing.
+
+## D-04 — Controller entrypoint `mountDiagResizer` (Iteration 3)
+
+**Choice:** Export `mountDiagResizer(options): { sync() }` from
+`src/diag-resize.ts`. `main.ts` assigns the handle and calls `sync()` at the
+end of `renderLayout` (layout switch + 900 px media change). The mount also
+listens to `window.resize` and `document.fonts.ready`.
+
+**Why:** Keeps pointer/keyboard/persist beside the pure helpers (plan allows
+`diag-resize.ts` and/or `main.ts`) while leaving layout radios unchanged.
+`sync` is the single re-measure path for FR-903 aria refresh and FR-908
+clamp-without-rewrite.
+
+**Supersedes:** nothing.
+
+## D-05 — Header-only min selectors (Iteration 3)
+
+**Choice:** Measure `.panel--diagnostics .panel-title` height via
+`getBoundingClientRect()`, plus `paddingTop` / `paddingBottom` from
+`getComputedStyle(.panel--diagnostics)`, through `minDiagHeightFromMeasurements`
+(ceil, floor at 1).
+
+**Why:** FR-901 / FR-907 require a content-derived minimum (title row + panel
+padding), not a hard-coded px constant, so font inflation cannot clip the
+count. Matches D-02's vertical padding fold (panel `padding-bottom: 0`, title
+carries the former title margin as padding).
+
+**Supersedes:** nothing.
+
+## D-06 — Pin-to-min before measuring right-column max (Iteration 3)
+
+**Choice:** In `sync`, temporarily set `--diagnostics-height` to the measured
+min, then compute `maxDiagHeight(console.top → diagnostics.bottom)`, then
+apply the clamped preferred height.
+
+**Why:** An oversize bootstrap value would otherwise inflate the column
+measure and weaken the FR-908 40 % / console-floor caps (VC-908). Same-turn
+style writes do not paint the intermediate min.
+
+**Supersedes:** nothing.

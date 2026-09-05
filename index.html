@@ -146,9 +146,9 @@
       </section>
 
       <!-- FR-913: non-panel sibling immediately after the editor, before stdin.
-           Visible only in vertical ≥ 900 px (CSS); Iteration 3 wires setInert
-           for FR-906. aria-value* placeholders until the resize controller
-           measures bounds. Label matches DIAG_RESIZER_LABEL (FR-903). -->
+           Visible only in vertical ≥ 900 px (CSS + hidden); mountDiagResizer
+           applies setInert for FR-906. aria-value* filled by the controller
+           after measure. Label matches DIAG_RESIZER_LABEL (FR-903). -->
       <div
         id="diag-resizer"
         class="diag-resizer"

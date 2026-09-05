@@ -9,6 +9,7 @@ import {
   isCanonicalDiagHeight,
   loadDiagHeight,
   maxDiagHeight,
+  minDiagHeightFromMeasurements,
   saveDiagHeight,
 } from '../../src/diag-resize';
 import { DIAG_HEIGHT_SAVE_FAILED, DIAG_RESIZER_LABEL } from '../../src/format';
@@ -216,5 +217,31 @@ describe('maxDiagHeight (FR-908)', () => {
     expect(maxDiagHeight(99)).toBe(19);
     // 50 * 0.4 = 20; 50 - 80 = -30 → 0
     expect(maxDiagHeight(50)).toBe(0);
+  });
+});
+
+describe('minDiagHeightFromMeasurements (FR-901 / FR-907)', () => {
+  it('sums title height and panel padding, ceil, and never below 1', () => {
+    expect(
+      minDiagHeightFromMeasurements({
+        titleHeight: 20,
+        panelPaddingTop: 6,
+        panelPaddingBottom: 0,
+      }),
+    ).toBe(26);
+    expect(
+      minDiagHeightFromMeasurements({
+        titleHeight: 20.2,
+        panelPaddingTop: 6.4,
+        panelPaddingBottom: 0,
+      }),
+    ).toBe(27);
+    expect(
+      minDiagHeightFromMeasurements({
+        titleHeight: 0,
+        panelPaddingTop: 0,
+        panelPaddingBottom: 0,
+      }),
+    ).toBe(1);
   });
 });
