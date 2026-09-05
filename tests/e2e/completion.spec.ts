@@ -110,7 +110,10 @@ test('VC-611 (FR-608): acceptance is one undoable edit observed by autosave and 
 
   await page.keyboard.press('ControlOrMeta+z');
   expect(await editorText(page)).toBe('ret');
-  await page.keyboard.press('ControlOrMeta+y');
+  // historyKeymap: Mod-y on Win/Linux, Mod-Shift-z on macOS (see @codemirror/commands).
+  await page.keyboard.press(
+    process.platform === 'darwin' ? 'Meta+Shift+z' : 'ControlOrMeta+y',
+  );
   expect(await editorText(page)).toBe('return');
 
   await expect.poll(() => storedProgram(page)).toBe('return');

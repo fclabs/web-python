@@ -7,6 +7,8 @@
  * VC-052 (FR-049) — every control reachable by `Tab`, with a visible ring.
  * VC-514 (NFR-502, NFR-503) — forced Light/Dark against the opposite OS.
  * VC-515 (NFR-504) — `#btn-theme` hit area at 375 × 667.
+ * VC-815 (NFR-802, NFR-803) — About glyph / dialog / focus ring contrast.
+ * VC-816 (NFR-804) — `#btn-about` hit area at 375 × 667.
  */
 import { expect, test, type Page } from '@playwright/test';
 import { failures, measureContrast, type Sample } from './contrast';
@@ -243,6 +245,9 @@ const TEXT_SAMPLES: Sample[] = [
   },
   // spec-05 NFR-502: the color-mode control's glyph against the toolbar.
   { label: 'theme glyph', selector: '#btn-theme', prop: 'color' },
+  // spec-08 NFR-802: the About control's glyph against the toolbar (dialog
+  // surfaces are sampled separately once the modal is open — see ABOUT_*).
+  { label: 'about glyph', selector: '#btn-about', prop: 'color' },
   // spec-06 NFR-602: both ordinary and initially-selected completion text.
   {
     label: 'completion option',
@@ -344,7 +349,49 @@ const NON_TEXT_SAMPLES: Sample[] = [
     prop: 'outlineColor',
     focus: true,
   },
+  // spec-08 NFR-803: About control focus ring (dialog chrome sampled after open).
+  {
+    label: 'focus ring (about)',
+    selector: '#btn-about',
+    prop: 'outlineColor',
+    focus: true,
+  },
 ];
+
+/**
+ * spec-08 VC-815: dialog text and labels — only measurable with the modal open.
+ * Opened after the parent sample set so the backdrop cannot hide other surfaces.
+ */
+const ABOUT_TEXT_SAMPLES: Sample[] = [
+  { label: 'about dialog title', selector: '#about-title', prop: 'color' },
+  { label: 'about field label', selector: '#about-version-label', prop: 'color' },
+  { label: 'about field value', selector: '#about-version', prop: 'color' },
+  { label: 'about Close label', selector: '#about-close', prop: 'color' },
+];
+
+/** spec-08 VC-815: dialog border, backdrop distinction, Close focus ring. */
+const ABOUT_NON_TEXT_SAMPLES: Sample[] = [
+  { label: 'about dialog border', selector: '#about-dialog', prop: 'borderTopColor' },
+  {
+    label: 'about backdrop distinction',
+    selector: '#about-backdrop',
+    prop: 'backgroundColor',
+  },
+  {
+    label: 'focus ring (about Close)',
+    selector: '#about-close',
+    prop: 'outlineColor',
+    focus: true,
+  },
+];
+
+/** Open About via keyboard so focus-visible modality stays active for rings. */
+async function openAboutDialog(page: Page): Promise<void> {
+  await page.locator('#btn-about').focus();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#about-dialog')).toBeVisible();
+  await expect(page.locator('#about-backdrop')).toBeVisible();
+}
 
 /** The notice strip, which only exists once something has gone wrong. */
 const NOTICE_SAMPLES: Sample[] = [
@@ -363,22 +410,26 @@ for (const scheme of ['light', 'dark'] as const) {
   test.describe(`${scheme} palette`, () => {
     test.use({ colorScheme: scheme });
 
-    test(`VC-051, VC-622 (FR-048, NFR-010, NFR-602): every text pair clears 4.5:1 — ${scheme}`, async ({ page }) => {
+    test(`VC-051, VC-622, VC-815 (FR-048, NFR-010, NFR-602, NFR-802): every text pair clears 4.5:1 — ${scheme}`, async ({ page }) => {
       await paintEverySurface(page);
 
       const measured = await measureContrast(page, TEXT_SAMPLES);
       await paintNotice(page);
       measured.push(...(await measureContrast(page, [NOTICE_SAMPLES[0]!])));
 
+      // spec-08 VC-815: dialog text only exists once About is open.
+      await openAboutDialog(page);
+      measured.push(...(await measureContrast(page, ABOUT_TEXT_SAMPLES)));
+
       // FR-048: dark mode really is a different palette, not the light one.
       const bodyBg = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
       expect(bodyBg).toBe(scheme === 'dark' ? 'rgb(20, 22, 26)' : 'rgb(255, 255, 255)');
 
-      expect(measured).toHaveLength(TEXT_SAMPLES.length + 1);
+      expect(measured).toHaveLength(TEXT_SAMPLES.length + 1 + ABOUT_TEXT_SAMPLES.length);
       expect(failures(measured, 4.5)).toEqual([]);
     });
 
-    test(`VC-071, VC-622 (NFR-013, NFR-602): every non-text pair clears 3:1 — ${scheme}`, async ({ page }) => {
+    test(`VC-071, VC-622, VC-815 (NFR-013, NFR-602, NFR-803): every non-text pair clears 3:1 — ${scheme}`, async ({ page }) => {
       await paintEverySurface(page);
 
       const measured = await measureContrast(page, NON_TEXT_SAMPLES);
@@ -414,7 +465,11 @@ for (const scheme of ['light', 'dark'] as const) {
         ])),
       );
 
-      expect(measured).toHaveLength(NON_TEXT_SAMPLES.length + 3);
+      // spec-08 VC-815: dialog border / backdrop / Close ring with modal open.
+      await openAboutDialog(page);
+      measured.push(...(await measureContrast(page, ABOUT_NON_TEXT_SAMPLES)));
+
+      expect(measured).toHaveLength(NON_TEXT_SAMPLES.length + 3 + ABOUT_NON_TEXT_SAMPLES.length);
       expect(failures(measured, 3)).toEqual([]);
     });
   });
@@ -447,13 +502,15 @@ for (const forced of [
   test.describe(`VC-514 forced ${forced.preference} under OS ${forced.os}`, () => {
     test.use({ colorScheme: forced.os });
 
-    test(`VC-514 (NFR-502): text contrast under forced ${forced.preference}`, async ({ page }) => {
+    test(`VC-514, VC-815 (NFR-502, NFR-802): text contrast under forced ${forced.preference}`, async ({ page }) => {
       await seedTheme(page, forced.preference);
       await paintEverySurface(page);
 
       const measured = await measureContrast(page, TEXT_SAMPLES);
       await paintNotice(page);
       measured.push(...(await measureContrast(page, [NOTICE_SAMPLES[0]!])));
+      await openAboutDialog(page);
+      measured.push(...(await measureContrast(page, ABOUT_TEXT_SAMPLES)));
 
       const bodyBg = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
       expect(bodyBg).toBe(forced.bodyBg);
@@ -461,11 +518,11 @@ for (const forced of [
         forced.preference,
       );
 
-      expect(measured).toHaveLength(TEXT_SAMPLES.length + 1);
+      expect(measured).toHaveLength(TEXT_SAMPLES.length + 1 + ABOUT_TEXT_SAMPLES.length);
       expect(failures(measured, 4.5)).toEqual([]);
     });
 
-    test(`VC-514 (NFR-503): non-text contrast under forced ${forced.preference}`, async ({
+    test(`VC-514, VC-815 (NFR-503, NFR-803): non-text contrast under forced ${forced.preference}`, async ({
       page,
     }) => {
       await seedTheme(page, forced.preference);
@@ -493,7 +550,10 @@ for (const forced of [
         ])),
       );
 
-      expect(measured).toHaveLength(NON_TEXT_SAMPLES.length + 3);
+      await openAboutDialog(page);
+      measured.push(...(await measureContrast(page, ABOUT_NON_TEXT_SAMPLES)));
+
+      expect(measured).toHaveLength(NON_TEXT_SAMPLES.length + 3 + ABOUT_NON_TEXT_SAMPLES.length);
       expect(failures(measured, 3)).toEqual([]);
     });
   });
@@ -501,9 +561,10 @@ for (const forced of [
 
 /* -------------------------------------------------------------------------
    VC-515 (NFR-504) — `#btn-theme` at 375 × 667
+   VC-816 (NFR-804) — `#btn-about` at 375 × 667
    ------------------------------------------------------------------------- */
 
-test.describe('VC-515 theme control at 375 px', () => {
+test.describe('VC-515 / VC-816 icon controls at 375 px', () => {
   test.use({ viewport: NARROW });
 
   test('VC-515 (NFR-504): #btn-theme is unclipped with a >= 32 × 32 hit box', async ({
@@ -533,6 +594,59 @@ test.describe('VC-515 theme control at 375 px', () => {
     expect(layout.right).toBeLessThanOrEqual(NARROW.width + 1);
     expect(layout.top).toBeGreaterThanOrEqual(0);
     expect(layout.bottom).toBeLessThanOrEqual(NARROW.height + 1);
+  });
+
+  test('VC-816 (NFR-804): #btn-about is unclipped >= 32×32; open dialog has no horizontal overflow', async ({
+    page,
+  }) => {
+    await openPlayground(page);
+    await waitForPythonReady(page);
+
+    const closed = await page.evaluate(() => {
+      const btn = document.getElementById('btn-about')!;
+      const box = btn.getBoundingClientRect();
+      return {
+        scrollWidth: document.documentElement.scrollWidth,
+        width: box.width,
+        height: box.height,
+        left: box.left,
+        right: box.right,
+        top: box.top,
+        bottom: box.bottom,
+      };
+    });
+
+    expect(closed.scrollWidth).toBeLessThanOrEqual(NARROW.width);
+    expect(closed.width).toBeGreaterThanOrEqual(32);
+    expect(closed.height).toBeGreaterThanOrEqual(32);
+    expect(closed.left).toBeGreaterThanOrEqual(0);
+    expect(closed.right).toBeLessThanOrEqual(NARROW.width + 1);
+    expect(closed.top).toBeGreaterThanOrEqual(0);
+    expect(closed.bottom).toBeLessThanOrEqual(NARROW.height + 1);
+
+    await openAboutDialog(page);
+
+    const open = await page.evaluate(() => {
+      const dialog = document.getElementById('about-dialog')!;
+      const box = dialog.getBoundingClientRect();
+      return {
+        scrollWidth: document.documentElement.scrollWidth,
+        bodyScrollWidth: document.body.scrollWidth,
+        dialogLeft: box.left,
+        dialogRight: box.right,
+        dialogTop: box.top,
+        dialogBottom: box.bottom,
+        innerWidth: window.innerWidth,
+        innerHeight: window.innerHeight,
+      };
+    });
+
+    expect(open.scrollWidth).toBeLessThanOrEqual(NARROW.width);
+    expect(open.bodyScrollWidth).toBeLessThanOrEqual(NARROW.width);
+    expect(open.dialogLeft).toBeGreaterThanOrEqual(0);
+    expect(open.dialogRight).toBeLessThanOrEqual(open.innerWidth + 1);
+    expect(open.dialogTop).toBeGreaterThanOrEqual(0);
+    expect(open.dialogBottom).toBeLessThanOrEqual(open.innerHeight + 1);
   });
 });
 

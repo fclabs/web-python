@@ -705,3 +705,147 @@ test('VC-513 (NFR-501, NFR-505, BR-505): color-mode switches within 100 ms witho
     ].join('\n'),
   );
 });
+
+/* -------------------------------------------------------------------------
+   spec-08 — VC-814 (NFR-801, NFR-805, BR-801)
+   ------------------------------------------------------------------------- */
+
+/** The About feature's branch-point build (NFR-805 / CONTEXT D-002). */
+const ABOUT_BUILD_RECORD =
+  process.env.PYPLAY_BASELINE_BUILD_ABOUT ??
+  join(repoRoot, 'tests', 'e2e', 'baseline-build-about.json');
+
+const aboutBranchPoint = JSON.parse(readFileSync(ABOUT_BUILD_RECORD, 'utf8')) as BaselineBuild;
+
+const aboutBranchPointApp =
+  aboutBranchPoint.gzippedAppBy?.[compressor] ??
+  (aboutBranchPoint.gzippedBy === compressor ? aboutBranchPoint.gzippedApp : undefined);
+
+if (process.env.PYPLAY_BASELINE_BUILD_ABOUT !== undefined && aboutBranchPointApp === undefined) {
+  throw new Error(
+    `${ABOUT_BUILD_RECORD} records no app size for "${compressor}" (it was gzipped by ` +
+      `"${aboutBranchPoint.gzippedBy}") — the run that recorded it is not the run comparing ` +
+      `against it. See the baseline step in .github/workflows/pr.yml.`,
+  );
+}
+
+const aboutUncoveredCompressor =
+  `no ${aboutBranchPoint.commit} baseline recorded for "${compressor}" — have: ` +
+  `${Object.keys(aboutBranchPoint.gzippedAppBy ?? {}).join(', ')}. Record one with: ` +
+  `node scripts/record-baselines.mjs ${aboutBranchPoint.commit} --build <out.json>`;
+
+/** NFR-805: at most 4 KB gzipped on top of the About branch-point app payload. */
+const ABOUT_SIZE_BUDGET_BYTES = 4 * 1024;
+
+test('VC-814 (NFR-801, NFR-805, BR-801): About open/close within 100 ms, zero requests, <= 4 KB, no new precache URL', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+
+  await openPlayground(page);
+  await waitForPythonReady(page);
+  await waitForLinter(page);
+
+  const requests: string[] = [];
+  const record = (request: Request): void => void requests.push(request.url());
+  page.on('request', record);
+
+  const longTaskTracker = await trackLongTasks(page);
+  await page.waitForTimeout(250);
+  await longTaskTracker.reset();
+  requests.length = 0;
+
+  const openMs = await page.evaluate(
+    () =>
+      new Promise<number>((resolve, reject) => {
+        const btn = document.getElementById('btn-about') as HTMLButtonElement;
+        const start = performance.now();
+        const check = (): void => {
+          const dialog = document.getElementById('about-dialog');
+          if (dialog && !dialog.hasAttribute('hidden')) {
+            requestAnimationFrame(() => resolve(performance.now() - start));
+            return;
+          }
+          requestAnimationFrame(check);
+        };
+        setTimeout(() => reject(new Error('About dialog never opened')), 5_000);
+        btn.click();
+        requestAnimationFrame(check);
+      }),
+  );
+
+  await page.waitForTimeout(200);
+  const openLongTasks = await longTaskTracker.read();
+  const openRequests = [...requests];
+
+  await longTaskTracker.reset();
+  requests.length = 0;
+
+  const closeMs = await page.evaluate(
+    () =>
+      new Promise<number>((resolve, reject) => {
+        const close = document.getElementById('about-close') as HTMLButtonElement;
+        const start = performance.now();
+        const check = (): void => {
+          const dialog = document.getElementById('about-dialog');
+          const focused = document.activeElement?.id === 'btn-about';
+          if (dialog?.hasAttribute('hidden') && focused) {
+            requestAnimationFrame(() => resolve(performance.now() - start));
+            return;
+          }
+          requestAnimationFrame(check);
+        };
+        setTimeout(() => reject(new Error('About dialog never closed with focus restored')), 5_000);
+        close.click();
+        requestAnimationFrame(check);
+      }),
+  );
+
+  await page.waitForTimeout(200);
+  page.off('request', record);
+  const closeLongTasks = await longTaskTracker.read();
+  const closeRequests = [...requests];
+
+  expect(openMs, 'NFR-801 About open to dialog visible').toBeLessThanOrEqual(100);
+  expect(closeMs, 'NFR-801 About close to gone + focus restored').toBeLessThanOrEqual(100);
+  expect(Math.max(0, ...openLongTasks), 'NFR-801 open longest task').toBeLessThanOrEqual(100);
+  expect(Math.max(0, ...closeLongTasks), 'NFR-801 close longest task').toBeLessThanOrEqual(100);
+  expect(openRequests, 'NFR-805 / BR-801 requests on About open').toEqual([]);
+  expect(closeRequests, 'NFR-805 requests on About close').toEqual([]);
+
+  // --- NFR-805: compressed size delta + precache URL count ---------------
+  test.skip(aboutBranchPointApp === undefined, aboutUncoveredCompressor);
+
+  const manifest = JSON.parse(readFileSync(join(dist, 'precache-manifest.json'), 'utf8')) as {
+    urls: string[];
+  };
+  let gzippedApp = 0;
+  for (const url of [...manifest.urls, '/index.html']) {
+    if (url === '/') continue;
+    if (isVendored(url)) continue;
+    gzippedApp += gzipSync(readFileSync(join(dist, url.replace(/^\//, ''))), { level: 9 }).length;
+  }
+
+  const delta = gzippedApp - aboutBranchPointApp!;
+  expect(
+    delta,
+    `NFR-805 app size delta vs ${aboutBranchPoint.commit}: ${delta} B gzipped ` +
+      `(budget ${ABOUT_SIZE_BUDGET_BYTES} B, compressor "${compressor}")`,
+  ).toBeLessThanOrEqual(ABOUT_SIZE_BUDGET_BYTES);
+
+  expect(manifest.urls).toHaveLength(aboutBranchPoint.manifestUrlCount);
+  expect(manifest.urls).toHaveLength(13);
+
+  console.log(
+    [
+      'VC-814 measurements:',
+      `  NFR-801 open -> dialog visible       ${openMs.toFixed(0)} ms   (<= 100)`,
+      `  NFR-801 close -> gone+focus          ${closeMs.toFixed(0)} ms   (<= 100)`,
+      `  NFR-801 open longest task            ${Math.max(0, ...openLongTasks).toFixed(0)} ms   (<= 100)`,
+      `  NFR-801 close longest task           ${Math.max(0, ...closeLongTasks).toFixed(0)} ms   (<= 100)`,
+      '  NFR-805 open requests               0',
+      `  NFR-805 app size delta vs ${aboutBranchPoint.commit} ${delta} B (<= ${ABOUT_SIZE_BUDGET_BYTES})`,
+      `  NFR-805 precache URL count           ${manifest.urls.length} (unchanged)`,
+    ].join('\n'),
+  );
+});

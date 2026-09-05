@@ -41,3 +41,23 @@ Append-only. One entry per non-obvious choice.
 **Rejected**: Runtime query flag or stub module to force `unknown` in Playwright — would add production surface area for a case already proven by pure units and the same `textContent` assignment path `about.ts` uses.
 
 **Consequences**: Iteration 4+ must not drop the unit DOM mount case when claiming VC-812; the e2e title alone is not sufficient for all-`unknown`.
+
+## D-005: `--about-backdrop` palette tokens for NFR-803  (Iteration 4)
+
+**Context**: VC-815 measures backdrop distinction as the composited `#about-backdrop` `backgroundColor` against the page `--bg`. A single `color-mix(in srgb, var(--fg) 40%, transparent)` failed light (2.85:1) and collapsed in dark (~1.07:1) because mixing toward `transparent` darkens toward black.
+
+**Decision**: Per-palette `--about-backdrop`: light uses 50% black alpha (scrim darkens white ≥ 3:1); dark uses 42% white alpha (scrim *lightens* the near-black page ≥ 3:1). `.about-backdrop { background: var(--about-backdrop); }`.
+
+**Rejected**: Nesting the dialog inside the backdrop solely to measure dialog-vs-scrim adjacency — would change click-target geometry for FR-806/FR-819 without fixing the dark-mode scrim-vs-page measurement the audit actually samples.
+
+**Consequences**: Iteration 5 docs should mention the dual-token scrim if discussing About chrome; do not “simplify” back to one `var(--fg)` mix.
+
+## D-006: VC-817 matrix deferred on this host  (Iteration 4)
+
+**Context**: NFR-806 / VC-817 requires VC-802/804/805/806 on eight pinned browsers. This worktree’s Playwright reports no launchable engine for edge-141/140, firefox-145/144, safari-26.1/26.0 (NFR-011).
+
+**Decision**: Record VC-817 as **deferred** to maintainer `MATRIX=1` local runs. Chromium coverage of those four VCs remains green and is the CI stand-in.
+
+**Rejected**: Marking VC-817 PASS from Chromium-only results — plan forbids claiming matrix PASS without the eight projects or an explicit deferral note.
+
+**Consequences**: Iteration 5 / Final Verification may still cite Chromium; full matrix remains a local maintainer gate per `docs/architecture.md` browser-matrix notes.

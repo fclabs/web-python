@@ -56,6 +56,8 @@
   --font-ui: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
   --files-width: 260px;
+  /* NFR-803: scrim vs --bg ≥ 3:1 (black alpha; transparent mixes toward black). */
+  --about-backdrop: color-mix(in srgb, #000000 50%, transparent);
 }
 
 [data-theme="dark"],
@@ -100,6 +102,8 @@
   --disabled-fg: #a7aeba;
   --disabled-bg: #23272e;
   --disabled-border: #767d8a;
+  /* NFR-803: darken-on-dark fails 3:1; lighten the page under the modal instead. */
+  --about-backdrop: color-mix(in srgb, #ffffff 42%, transparent);
 }
 
 * {
@@ -170,7 +174,7 @@ body {
 /* FR-805 / FR-818 / FR-819: About modal — custom overlay (not <dialog>), so
    `#about-backdrop` is an explicit dismiss layer that swallows chrome clicks. */
 .about-backdrop {
-  background: color-mix(in srgb, var(--fg) 40%, transparent);
+  background: var(--about-backdrop);
   inset: 0;
   position: fixed;
   z-index: 40;
