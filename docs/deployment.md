@@ -302,6 +302,41 @@ when it is opened as an external domain. Follow the
 [Respondus system requirements](https://web.respondus.com/k12/lockdownbrowser/resources/)
 and [external-domain instructions](https://support.respondus.com/hc/en-us/articles/4409604275867-Accessing-external-web-domains-in-LockDown-Browser).
 
+## 5e. About dialog build metadata
+
+The toolbar **About** control opens a dialog that shows which build the visitor
+is looking at: **Version**, **Branch**, **Commit**, and **Built**. Those four
+strings are collected once when Vite loads (`npm run build` / `npm run dev`)
+and inlined into the JavaScript bundle. Opening the dialog never fetches them,
+never reads storage, and never needs a deploy-time environment variable for
+the page to load.
+
+### How each field is produced
+
+| Field | Preferred source at build time | Fallback |
+|---|---|---|
+| **Version** | Highest `vX.Y.Z` git tag (same semver order as the release pipeline's `highestVersion`), plus a short SHA suffix when HEAD is not exactly on that tag. When HEAD *is* exactly a `vX.Y.Z` tag, the value is that version with the `v` stripped and no suffix. | `unknown` when neither any version tag nor HEAD SHA can be resolved; otherwise bootstrap `0.1.0+{shortsha}` when tags are absent but SHA is known |
+| **Branch** | `git rev-parse --abbrev-ref HEAD`, unless the name is the detached literal `HEAD` | Host env `BRANCH`, then `HEAD` (Netlify's names); else `unknown` |
+| **Commit** | First 7 lowercase hex characters of `git rev-parse HEAD` | `unknown` |
+| **Built** | UTC clock at config load, formatted as ISO 8601 with second precision ending in `Z` (e.g. `2026-09-05T19:09:35Z`) | `unknown` if the timestamp cannot be formed |
+
+The collector lives in `scripts/build-metadata.mjs` (`readBuildMetadata`). Vite
+injects the result as `__PYPLAY_BUILD_META__`; the running page reads it from
+`src/build-meta.ts` synchronously. Missing git, a shallow clone without tags,
+or a host that omits branch env vars does **not** fail the build: each missing
+input becomes the literal string `unknown` for that field. You do not need to
+set any variable on Netlify (or elsewhere) for the site to serve — incomplete
+metadata only changes what the dialog displays.
+
+Commit is always plain text in the dialog (never a link). Version continues to
+treat git tags — not `package.json` — as the source of truth, matching the
+release pipeline.
+
+The About UI is main-thread chrome only. It adds **no** response header,
+**no** service-worker behaviour, **no** worker or protocol change, **no** new
+runtime asset URL, and **no** persisted origin state. The precache manifest
+URL count is unchanged; metadata rides inside the existing hashed app JS.
+
 ---
 
 ## 6. Checklist

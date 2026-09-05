@@ -522,29 +522,31 @@ in `specs/04-toogle-pane-aspect-frozen.md`.
 At viewports ≥ 900 px the toolbar is still one `flex` row with a fixed DOM
 order, but it *looks* like two clusters: a leading action group (`#btn-run`
 through `#btn-files`, including `#layout-group`) packed at the inline-start
-edge, and a presentation pair (`#btn-symbols`, `#btn-theme`) flush with the
-inline-end edge. The split exists because six controls act on the visitor's
-program and only two act on how the page is presented; collecting free space
-between those groups keeps the presentation pair at a stable screen edge that
-does not shift when `#run-file-name` re-labels `Run`.
+edge, and a presentation cluster (`#btn-symbols`, `#btn-theme`, `#btn-about`)
+flush with the inline-end edge. The split exists because the leading controls
+act on the visitor's program / workspace while the trailing three act on how
+the page is presented or identified; collecting free space between those
+groups keeps the presentation cluster at a stable screen edge that does not
+shift when `#run-file-name` re-labels `Run`.
 
 The mechanism is presentational only: inside the same `@media (min-width:
 900px)` block that mirrors `LAYOUT_MIN_WIDTH`, the toolbar sets
 `flex-wrap: nowrap` and `#btn-symbols` gets `margin-inline-start: auto`. Flex
 then parks all slack on that line between `#btn-files` and `#btn-symbols`, so
-`#btn-theme` (the next sibling, still separated by the toolbar's `6px` gap)
-rides with it to the inline-end. Nowrap is required because a wrapped row at
-exactly 900 px can fit Symbols after the leading cluster but drop the
-color-mode control onto the next line alone when OS fonts run slightly wide;
-flex shrink absorbs that variance instead. The margin uses a logical property
-so the arrangement tracks writing direction the same way the layout switch
-does. `#btn-files` stays in the leading cluster because it is a workspace
-control, not a presentation control — only the named pair moves visually.
+`#btn-theme` and `#btn-about` (the next siblings, still separated by the
+toolbar's `6px` gap) ride with it to the inline-end. `#btn-about` is the
+flush edge (spec-08). Nowrap is required because a wrapped row at exactly
+900 px can fit Symbols after the leading cluster but drop a trailing icon
+onto the next line alone when OS fonts run slightly wide; flex shrink absorbs
+that variance instead. The margin uses a logical property so the arrangement
+tracks writing direction the same way the layout switch does. `#btn-files`
+stays in the leading cluster because it is a workspace control, not a
+presentation control — only the named cluster moves visually.
 
 Nothing is re-parented or reordered in the DOM, so tab order and assistive
 enumeration stay `#btn-run` … `#layout-group` … `#btn-files` … `#btn-symbols`
-… `#btn-theme`. Below 900 px neither rule applies: the toolbar keeps
-`flex-wrap: wrap` and packs every control on every line against the
+… `#btn-theme` … `#btn-about`. Below 900 px neither rule applies: the toolbar
+keeps `flex-wrap: wrap` and packs every control on every line against the
 inline-start edge exactly as it did before.
 
 ## Color mode
@@ -575,6 +577,66 @@ attribute value; forced modes select tokens from `[data-theme="light"]` /
 System is **load-scoped** (BR-502): the OS sample taken at page load (and
 reused when a mid-session cycle lands on `system`) is never refreshed by a
 live `matchMedia` listener. A visitor who wants the new OS value reloads.
+
+---
+
+## About dialog
+
+The About control answers “which build is this?” without leaving the page or
+talking to a server. It is presentation-only: opening or closing it must not
+touch the editor, the worker, stdin, the console, or `#notices`.
+
+### Toolbar placement and binding
+
+`#btn-about` is the **last** control in document order inside `header.toolbar`,
+immediately after `#btn-theme`. At ≥ 900 px it rides with Symbols and theme in
+the presentation cluster (see *Toolbar presentation clustering* above) and is
+the flush edge at the toolbar's inline-end. Its visible glyph is the Latin
+small letter `i`; the accessible name and `title` are `About`. Like
+`#btn-theme` it carries an explicit `tabindex="0"` so WebKit keeps the icon
+button in sequential focus, and it is never HTML-`disabled` / `setInert` for
+About-related reasons.
+
+`src/main.ts` calls `bindAboutControl` after `bindThemeControl`. The binder
+lives in `src/about.ts`: it fills the four field nodes from `buildMeta`, opens
+on pointer / Enter / Space, traps focus while open, and dismisses on Escape,
+`#about-close`, or a click on `#about-backdrop`.
+
+### Custom overlay (not `<dialog>`)
+
+Markup for `#about-backdrop` and `#about-dialog` lives in `index.html` and
+starts `hidden`. Behaviour is a fixed overlay plus a sibling backdrop — not
+`HTMLDialogElement.showModal()`. That split exists so the dismiss layer is a
+real element the tests and visitors can click (`#about-backdrop`), while a
+synthetic activation of chrome under the dimmed area (e.g. `#btn-run`) is
+swallowed without treating it as a backdrop dismiss. Do not switch to native
+`<dialog>` without rewriting that contract.
+
+### Bundle-local metadata
+
+Version / Branch / Commit / Built are baked when Vite loads: `vite.config.ts`
+calls `readBuildMetadata()` once and injects the object via
+`define: { __PYPLAY_BUILD_META__: … }`. `src/build-meta.ts` exports
+`buildMeta` for the app. The running page never fetches those four strings and
+never reads them from `localStorage` / `sessionStorage` / cookies / IndexedDB
+— they must survive Cache Storage and airplane mode the same way the rest of
+the app shell does.
+
+Two rules maintainers must not undo:
+
+- **Commit is always plain text** — never an `<a href>`, never a GitHub URL.
+  Linking would pull an off-origin dependency into an offline product.
+- **Version comes from git tags** via the same `highestVersion` ordering as the
+  release pipeline (not `package.json`). The dialog only *displays* a
+  build-time snapshot; it does not retag or bump.
+
+Per-palette `--about-backdrop` tokens keep the scrim distinguishable from the
+page background under both effective themes (light darkens with black alpha;
+dark *lightens* with white alpha). Do not collapse them back to a single
+`color-mix` against `--fg` toward `transparent` — that fails contrast on dark.
+
+Visitor-facing copy (`About`, field labels, `Close`, the glyph, `unknown`)
+lives in `src/format.ts` with the rest of the chrome strings.
 
 ---
 

@@ -139,15 +139,17 @@ test('VC-301 (FR-301): the toolbar ends with a closed, correctly wired Symbols t
   await expect(toggle).toHaveAttribute('aria-expanded', 'false');
   await expect(toggle).toHaveAttribute('aria-controls', 'symbol-pane');
 
-  // It sits immediately before `#btn-theme` (spec-05 amendment) and has no
-  // disabled state.
+  // It sits immediately before `#btn-theme` (spec-05); `#btn-about` is last
+  // (spec-08 amendment). It has no disabled state.
   const wiring = await page.evaluate(() => {
     const controls = Array.from(document.querySelectorAll('.toolbar > button'));
     const toggle = document.getElementById('btn-symbols')!;
     const theme = document.getElementById('btn-theme');
+    const about = document.getElementById('btn-about');
     const target = document.getElementById(toggle.getAttribute('aria-controls')!);
     return {
       followedByTheme: toggle.nextElementSibling === theme,
+      aboutIsLast: controls[controls.length - 1] === about,
       themeIsLast: controls[controls.length - 1] === theme,
       resolves: target === document.getElementById('symbol-pane'),
       ariaDisabled: toggle.getAttribute('aria-disabled'),
@@ -155,7 +157,8 @@ test('VC-301 (FR-301): the toolbar ends with a closed, correctly wired Symbols t
     };
   });
   expect(wiring.followedByTheme).toBe(true);
-  expect(wiring.themeIsLast).toBe(true);
+  expect(wiring.aboutIsLast).toBe(true);
+  expect(wiring.themeIsLast).toBe(false);
   expect(wiring.resolves).toBe(true);
   expect(wiring.ariaDisabled).toBeNull();
   expect(wiring.hidden).toBe(true);
@@ -889,7 +892,7 @@ test.describe('wide layout keyboard model', () => {
     await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
 
     const visited: string[] = [];
-    for (let i = 0; i < 19; i++) {
+    for (let i = 0; i < 20; i++) {
       await page.keyboard.press('Tab');
       visited.push(
         await page.evaluate(() => {
@@ -912,7 +915,7 @@ test.describe('wide layout keyboard model', () => {
     // The files pane is open by default at this width (`FilePane`'s
     // `syncLayout`); its own DOM position (after Diagnostics, per FR-317 and
     // FR-410's fixed runs) puts its tab stops after the editor/stdin group.
-    expect(visited.slice(0, 19)).toEqual([
+    expect(visited.slice(0, 20)).toEqual([
       '#btn-run',
       '#btn-stop',
       '#btn-clear',
@@ -924,6 +927,8 @@ test.describe('wide layout keyboard model', () => {
       '#btn-files',
       '#btn-symbols',
       '#btn-theme',
+      // spec-08 FR-801: About is last toolbar control after theme.
+      '#btn-about',
       'pane',
       'editor',
       '#stdin-input',

@@ -55,6 +55,7 @@ import {
   saveWorkspace,
   type WorkspaceFile,
 } from './workspace';
+import { bindAboutControl } from './about';
 import { applyDocumentTheme, bindThemeControl, loadPreference } from './theme';
 
 const AUTOSAVE_UNAVAILABLE = 'Autosave unavailable — your workspace will not survive a reload';
@@ -348,6 +349,9 @@ function boot(): void {
 
   // FR-501 – FR-504 / FR-512: cycling color-mode control (after Symbols).
   bindThemeControl(need<HTMLButtonElement>('btn-theme'), view, storage);
+
+  // FR-801 – FR-819: About control + modal (after theme; last toolbar control).
+  bindAboutControl(need<HTMLButtonElement>('btn-about'));
 
   // FR-010: reset the complete classroom workspace.
   need<HTMLButtonElement>('btn-reset').addEventListener('click', () => {
