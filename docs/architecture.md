@@ -548,6 +548,63 @@ live `matchMedia` listener. A visitor who wants the new OS value reloads.
 
 ---
 
+## About dialog
+
+The About control answers “which build is this?” without leaving the page or
+talking to a server. It is presentation-only: opening or closing it must not
+touch the editor, the worker, stdin, the console, or `#notices`.
+
+### Toolbar placement and binding
+
+`#btn-about` is the **last** control in document order inside `header.toolbar`,
+immediately after `#btn-theme`. Its visible glyph is the Latin small letter
+`i`; the accessible name and `title` are `About`. Like `#btn-theme` it carries
+an explicit `tabindex="0"` so WebKit keeps the icon button in sequential
+focus, and it is never HTML-`disabled` / `setInert` for About-related reasons.
+
+`src/main.ts` calls `bindAboutControl` after `bindThemeControl`. The binder
+lives in `src/about.ts`: it fills the four field nodes from `buildMeta`, opens
+on pointer / Enter / Space, traps focus while open, and dismisses on Escape,
+`#about-close`, or a click on `#about-backdrop`.
+
+### Custom overlay (not `<dialog>`)
+
+Markup for `#about-backdrop` and `#about-dialog` lives in `index.html` and
+starts `hidden`. Behaviour is a fixed overlay plus a sibling backdrop — not
+`HTMLDialogElement.showModal()`. That split exists so the dismiss layer is a
+real element the tests and visitors can click (`#about-backdrop`), while a
+synthetic activation of chrome under the dimmed area (e.g. `#btn-run`) is
+swallowed without treating it as a backdrop dismiss. Do not switch to native
+`<dialog>` without rewriting that contract.
+
+### Bundle-local metadata
+
+Version / Branch / Commit / Built are baked when Vite loads: `vite.config.ts`
+calls `readBuildMetadata()` once and injects the object via
+`define: { __PYPLAY_BUILD_META__: … }`. `src/build-meta.ts` exports
+`buildMeta` for the app. The running page never fetches those four strings and
+never reads them from `localStorage` / `sessionStorage` / cookies / IndexedDB
+— they must survive Cache Storage and airplane mode the same way the rest of
+the app shell does.
+
+Two rules maintainers must not undo:
+
+- **Commit is always plain text** — never an `<a href>`, never a GitHub URL.
+  Linking would pull an off-origin dependency into an offline product.
+- **Version comes from git tags** via the same `highestVersion` ordering as the
+  release pipeline (not `package.json`). The dialog only *displays* a
+  build-time snapshot; it does not retag or bump.
+
+Per-palette `--about-backdrop` tokens keep the scrim distinguishable from the
+page background under both effective themes (light darkens with black alpha;
+dark *lightens* with white alpha). Do not collapse them back to a single
+`color-mix` against `--fg` toward `transparent` — that fails contrast on dark.
+
+Visitor-facing copy (`About`, field labels, `Close`, the glyph, `unknown`)
+lives in `src/format.ts` with the rest of the chrome strings.
+
+---
+
 ## Storage surface
 
 The origin holds exactly four things, and nothing else — no cookies, no

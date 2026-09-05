@@ -1,22 +1,28 @@
-# CONTEXT — About control (Iteration 4)
+# CONTEXT — About control (shipped)
 
-Living snapshot for later iterations. Overwrite in place; do not append.
+Final build snapshot after Iteration 5. Overwrite in place; do not append.
 
 ## Current state
 
-- Pure build-metadata formatters in `scripts/build-metadata.mjs` (unit-tested).
-- Vite `define` injects `__PYPLAY_BUILD_META__`; `src/build-meta.ts` exports `buildMeta`.
-- About strings live in `src/format.ts`.
-- **UI shipped**: `#btn-about` after `#btn-theme`; custom overlay modal (`#about-backdrop` + `#about-dialog`) wired by `bindAboutControl` in `src/about.ts`; bound from `src/main.ts` after theme.
-- Interaction + offline e2e in `tests/e2e/about.spec.ts` (VC-801–808, 812, 818, 821, 823, 824).
-- **NFR audits shipped (Iteration 4)**:
-  - VC-815: contrast samples for About glyph, focus ring, open-dialog text/labels/Close, dialog border, backdrop (via `--about-backdrop` tokens).
-  - VC-816: 375 × 667 geometry for `#btn-about` (≥ 32×32, unclipped) and open dialog (no horizontal page overflow).
-  - VC-814: open/close ≤ 100 ms, no long task > 100 ms, zero requests on open, gzipped app-payload delta vs branch-point, precache URL count unchanged at 13.
-- **Measured gzipped app-payload delta** vs branch-point `e569b8119e6ce797d49930fddcfb9fbec5fbd578`: **1266 B** (budget 4096 B) on `darwin-arm64 zlib 1.2.12` (see `tests/e2e/baseline-build-about.json`).
-- Precache manifest URL count: **13**.
-- **VC-817 matrix**: full eight pinned browsers **deferred** — engines for edge/firefox/safari pins unavailable on this host (NFR-011). Chromium coverage of VC-802/804/805/806 remains green; maintainer should run `MATRIX=1 npx playwright test --grep "VC-802|VC-804|VC-805|VC-806"` locally when engines are installed.
-- Docs in `docs/deployment.md` / `docs/architecture.md` still open (Iteration 5).
+About is **shipped**: toolbar `#btn-about` (glyph `i`) after `#btn-theme` opens a
+custom overlay modal showing Version / Branch / Commit / Built baked into the
+bundle at Vite config load. No runtime fetch; no deploy-time env var required;
+missing git/host inputs become the literal `unknown`.
+
+- Pure formatters + collector: `scripts/build-metadata.mjs` (`readBuildMetadata`).
+- Injection: Vite `define` `__PYPLAY_BUILD_META__` → `src/build-meta.ts` → `buildMeta`.
+- UI: `bindAboutControl` in `src/about.ts`; markup in `index.html`; strings in `src/format.ts`.
+- Maintainer docs: `docs/deployment.md` § *5e. About dialog build metadata*;
+  `docs/architecture.md` § *About dialog*.
+- Tests: unit formatters + jsdom; e2e interaction / offline / geometry; contrast
+  and perf audits include About samples and the ≤ 4 KB gzipped delta gate.
+- Measured gzipped app-payload delta vs branch-point
+  `e569b8119e6ce797d49930fddcfb9fbec5fbd578`: **1270 B** on final verification
+  (budget 4096 B; Iteration 4 recorded 1266 B on the same compressor);
+  precache URL count **13**.
+- Full eight-browser matrix for About interaction VCs is a **maintainer-local**
+  optional gate (`MATRIX=1`); Chromium is the CI stand-in. Do not claim matrix
+  PASS from Chromium alone.
 
 ## File map
 
@@ -28,13 +34,15 @@ Living snapshot for later iterations. Overwrite in place; do not append.
 | `src/about.ts` | `bindAboutControl(button)` — glyph, fields, open/close/trap/backdrop |
 | `src/main.ts` | Calls `bindAboutControl` after `bindThemeControl` |
 | `index.html` | `#btn-about` after `#btn-theme`; dialog + backdrop markup (start `hidden`) |
-| `src/styles.css` | `#btn-about` hit area; `.about-backdrop` / `.about-dialog`; `--about-backdrop` per palette |
-| `tests/e2e/about.spec.ts` | Interaction VCs + VC-807 offline + VC-812 real-build DOM |
-| `tests/e2e/presentation.spec.ts` | Contrast (VC-815) + 375 geometry (VC-816) + parent CONTROLS |
-| `tests/e2e/perf.spec.ts` | VC-814 open/close/size/precache; reads `baseline-build-about.json` |
-| `tests/e2e/baseline-build-about.json` | NFR-805 branch-point app size / shape for VC-814 |
-| `tests/unit/build-metadata.test.ts` | Formatter units + VC-812 jsdom mount + VC-819 |
-| `package.json` | `audit:perf` includes VC-814; `audit:contrast` includes VC-815 |
+| `src/styles.css` | `#btn-about` hit area; `.about-backdrop` / `.about-dialog`; `--about-backdrop` |
+| `vite.config.ts` | Calls `readBuildMetadata()`; `define` injects `__PYPLAY_BUILD_META__` |
+| `docs/deployment.md` | § 5e — field sources, `unknown` fallbacks, no required deploy env |
+| `docs/architecture.md` | § About dialog — placement, overlay, bundle-local meta, invariants |
+| `tests/e2e/about.spec.ts` | Interaction + offline + real-build plain-text commit |
+| `tests/e2e/presentation.spec.ts` | Contrast + 375 geometry + parent CONTROLS |
+| `tests/e2e/perf.spec.ts` | Open/close latency, zero-request, size/precache vs baseline |
+| `tests/e2e/baseline-build-about.json` | NFR-805 branch-point app size record |
+| `tests/unit/build-metadata.test.ts` | Formatter units + all-`unknown` jsdom mount + format exports |
 
 ## Public interfaces
 
@@ -46,7 +54,7 @@ export function bindAboutControl(button: HTMLButtonElement): void
 export type BuildMeta = { version: string; branch: string; commit: string; built: string }
 export const buildMeta: BuildMeta
 
-// DOM (index.html + about.ts fill)
+// DOM
 #btn-about, #about-backdrop, #about-dialog, #about-title, #about-close,
 #about-version, #about-branch, #about-commit, #about-built
 (+ label dts: #about-version-label … #about-built-label)
@@ -54,18 +62,19 @@ export const buildMeta: BuildMeta
 
 Injected constant: **`__PYPLAY_BUILD_META__`**.
 
-CSS tokens (NFR-803): **`--about-backdrop`** — light: 50% black alpha; dark: 42% white alpha (lighten-on-dark so scrim vs `--bg` clears 3:1).
+CSS tokens: **`--about-backdrop`** — light 50% black alpha; dark 42% white alpha.
 
 ## Conventions & invariants
 
-- Visitor-facing copy only from `src/format.ts` (BR-807).
-- Commit field is plain text — no `a[href]` (BR-803).
-- `#btn-about` never `disabled` / never `setInert` for About reasons (BR-806); still guards with `isInert()`.
-- About must not import `EditorView`, touch the worker, or write `#notices` (BR-804 / BR-805).
-- Custom overlay (not native `<dialog>`) — see DECISIONS D-003.
-- Metadata is bundle-local (BR-801 / FR-810): open About performs zero network and does not read storage for metadata.
-- Do not add About fields to the precache manifest (NFR-805). Do not relax NFR budgets.
-- NFR-805 branch-point SHA: `e569b8119e6ce797d49930fddcfb9fbec5fbd578` (D-002).
+- Visitor-facing copy only from `src/format.ts`.
+- Commit field is plain text — no `a[href]`.
+- `#btn-about` never `disabled` / never `setInert` for About reasons; still guards with `isInert()`.
+- About must not import `EditorView`, touch the worker, or write `#notices`.
+- Custom overlay (not native `<dialog>`).
+- Metadata is bundle-local: open About performs zero network and does not read storage for metadata.
+- Do not add About fields to the precache manifest. Do not relax NFR budgets.
+- Version display reuses `highestVersion` / tag ordering from the release pipeline — not `package.json`.
+- NFR-805 branch-point SHA: `e569b8119e6ce797d49930fddcfb9fbec5fbd578`.
 
 ## Commands
 
@@ -73,17 +82,14 @@ CSS tokens (NFR-803): **`--about-backdrop`** — light: 50% black alpha; dark: 4
 export PW_PORT_BASE=4473   # worktree: avoid colliding with other checkouts
 npm run build
 npx playwright test tests/e2e/about.spec.ts
-npm run audit:contrast   # includes VC-815
-npm run audit:perf       # includes VC-814
-npx playwright test --grep VC-816
-# Precache URL count spot-check (expect 13):
-node -e "console.log(require('./dist/precache-manifest.json').urls.length)"
-# Optional matrix (VC-817) when pinned engines exist:
+npm run audit:contrast
+npm run audit:perf
+# Optional matrix when pinned engines exist:
 MATRIX=1 npx playwright test --grep "VC-802|VC-804|VC-805|VC-806"
 ```
 
 ## Known gaps
 
-- Docs in `docs/deployment.md` / `docs/architecture.md` (Iteration 5).
-- VC-817 full eight-browser matrix deferred until pinned engines are available locally (Chromium stand-in green).
-- About NFR gaps from Iterations 1–3 are closed (contrast, geometry, payload).
+- Maintainer-local only: full eight-browser About matrix deferred until pinned
+  Edge/Firefox/Safari engines are available on the machine (Chromium stand-in
+  green). No product or docs gap.
