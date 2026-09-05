@@ -180,8 +180,11 @@
         <h2 class="panel-title">
           Problems <span id="diagnostics-count" class="count">0</span>
         </h2>
-        <ul id="diagnostics-list" class="diagnostics-list"></ul>
-        <p id="diagnostics-empty" class="diagnostics-empty">Linter unavailable.</p>
+        <!-- tabindex=-1: vertical layout sets overflow:auto on these for the
+             flex-collapsed body; Chromium would otherwise insert them into
+             sequential focus as scroll containers. Entry buttons stay tabbable. -->
+        <ul id="diagnostics-list" class="diagnostics-list" tabindex="-1"></ul>
+        <p id="diagnostics-empty" class="diagnostics-empty" tabindex="-1">Linter unavailable.</p>
       </section>
 
       <!-- FR-317 pins `#symbol-pane` immediately after `#notices` and before
