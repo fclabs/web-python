@@ -1,6 +1,6 @@
 # CONTEXT — Minimal Diagnostics Under Input
 
-Living state after Iteration 3. Rewrite each iteration; do not append.
+Living state after Iteration 4. Rewrite each iteration; do not append.
 
 ## Feature goal (reminder)
 
@@ -21,9 +21,13 @@ resize console ↔ diagnostics via `#diag-resizer`; height persists under
 | `src/styles.css` | Vertical grid: `diagsep` track + `var(--diagnostics-height, auto)`; header-only flex collapse (D-02); `.diag-resizer` chrome |
 | `src/layout.ts` | `LAYOUT_MIN_WIDTH` (900) — activity gate for the separator |
 | `src/storage.ts` | Unchanged — `StorageLike` reused |
+| `tests/e2e/diag-resize.spec.ts` | VC-901–VC-913 (NFR-901 / 903 / 904 in VC-912) |
+| `tests/e2e/baseline-build-diag-resize.json` | Merge-base `e569b81` app-payload baseline for NFR-904 |
+| `tests/e2e/layout.spec.ts` | VC-409 / VC-435 kept green; VC-407 / VC-431 / VC-435 adapted for header-only + resizer tab stop |
+| `tests/e2e/presentation.spec.ts` | NFR-902 separator resting / hover / focus in VC-071 / VC-514 |
+| `package.json` | `audit:perf` grep includes VC-912 |
 
-Not yet touched (later iterations): Playwright e2e suite / contrast / perf
-(Iteration 4); `docs/architecture.md` (Iteration 5).
+Not yet touched: `docs/architecture.md` (Iteration 5).
 
 ## Public interfaces shipped so far
 
@@ -34,14 +38,9 @@ From `src/diag-resize.ts`:
 - `DIAG_HEIGHT_STEP_LARGE` = `48`
 - `DIAG_HEIGHT_MAX_RATIO` = `0.4`
 - `DIAG_CONSOLE_MIN` = `80`
-- `isCanonicalDiagHeight(raw: string): boolean`
-- `loadDiagHeight(storage: StorageLike | null): number | null`
-- `saveDiagHeight(storage: StorageLike | null, height: number): boolean`
-- `clampDiagHeight(height: number, bounds: { min: number; max: number }): number`
-- `maxDiagHeight(rightColumnHeight: number, consoleMin?: number): number`
-- `minDiagHeightFromMeasurements({ titleHeight, panelPaddingTop, panelPaddingBottom }): number`
+- `isCanonicalDiagHeight` / `loadDiagHeight` / `saveDiagHeight` / `clampDiagHeight` / `maxDiagHeight`
+- `minDiagHeightFromMeasurements`
 - `mountDiagResizer(options): DiagResizerHandle` — `{ sync(): void }`
-- `DiagResizerOptions` / `DiagResizerHandle` / `DiagResizerNotices`
 
 From `src/format.ts`:
 
@@ -54,17 +53,12 @@ DOM / CSS:
 - `--diagnostics-height` on `document.documentElement`
 - Grid area `diagsep`
 
-Controller behaviour (Iteration 3):
+E2E (Iteration 4):
 
-- Active only when effective layout is `vertical` and viewport ≥ 900; otherwise
-  `hidden` + `setInert(true)` (never `disabled`)
-- Applies height via `--diagnostics-height` + `aria-valuemin` / `max` / `now`
-- Pointer: upward grows, downward shrinks; persist on pointerup/cancel only
-- Keyboard: ArrowUp/Down ±16, Shift ±48; persist when height changes
-- Viewport / layout clamp: in-memory + aria only — no storage rewrite
-- Persist failure: keep height; `DIAG_HEIGHT_SAVE_FAILED` at most once per load
+- Spec file: `tests/e2e/diag-resize.spec.ts`
+- NFR-904 merge-base commit: `e569b81` (recorded in `baseline-build-diag-resize.json`)
+- Contrast separator samples live in `presentation.spec.ts` (VC-071 / VC-514)
 
 ## Known gaps
 
-- No Playwright / contrast / perf coverage yet (Iteration 4)
 - `docs/architecture.md` still describes the old `0.66fr` track (Iteration 5)
