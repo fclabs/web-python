@@ -43,3 +43,17 @@ Append-only. Newest entries at the bottom.
   exceeds 6 ± 1”.
 - **Rejected**: Requiring all consecutive DOM gaps ≤ 7 regardless of line
   (breaks wrap). Using `offsetLeft` without line grouping.
+
+## D-004 — Architecture subsection under the layout control, not Color mode
+
+- **Iteration**: 3
+- **Choice**: Add `### Toolbar presentation clustering` immediately after
+  *The control* (layout radiogroup) and before `## Color mode` in
+  `docs/architecture.md`.
+- **Why**: The visual split is a toolbar flex concern that spans Symbols and
+  the color-mode button; placing it next to the DOM-order note about
+  `#layout-group` / `#btn-symbols` keeps “what sits where” in one place.
+  Color mode remains about preference writers and palettes.
+- **Rejected**: A bullet under Color mode alone (understates Symbols and the
+  Files-stays-leading rule). A new top-level `## Toolbar` section (heavier
+  than a single presentational rule warrants).
