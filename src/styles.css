@@ -507,8 +507,8 @@ body {
       circle at 50% 55%,
       color-mix(in srgb, var(--fg-muted) 55%, transparent) 20%,
       transparent 0
-    ) repeat-x;
-  background-position: 0 center;
+    ) no-repeat;
+  background-position: 50% center;
   background-size: 0.4em;
 }
 

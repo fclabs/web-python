@@ -70,7 +70,9 @@ function indentationDecorations(view: EditorView): DecorationSet {
     while (line.from <= to) {
       const indentation = /^[ \t]+/.exec(line.text)?.[0];
       if (indentation) {
-        ranges.push(indentationSpace.range(line.from, line.from + indentation.length));
+        for (let offset = 0; offset < indentation.length; offset += 1) {
+          ranges.push(indentationSpace.range(line.from + offset, line.from + offset + 1));
+        }
       }
       if (line.to >= to) break;
       line = view.state.doc.line(line.number + 1);

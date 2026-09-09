@@ -177,7 +177,7 @@ test('VC-1104 (FR-1104): whitespace dots and repeated indentation preserve grid 
 
   expect(after).toEqual(before);
   expect(await editorText(page)).toBe(`${' '.repeat(24)}${source}`);
-  await expect(page.locator('.cm-highlightIndent')).toHaveText(' '.repeat(24));
+  await expect(page.locator('.cm-highlightIndent')).toHaveCount(24);
 });
 
 test('VC-010 (FR-010): Reset replaces the buffer on confirm and leaves it on cancel', async ({
