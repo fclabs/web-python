@@ -5,10 +5,11 @@ import {
   highlightActiveLine,
   highlightActiveLineGutter,
   highlightSpecialChars,
+  highlightWhitespace,
   keymap,
   lineNumbers,
 } from '@codemirror/view';
-import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
+import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
 import { acceptCompletion, autocompletion } from '@codemirror/autocomplete';
 import {
   HighlightStyle,
@@ -87,7 +88,7 @@ export function createEditor({
       keymap.of([
         {
           // FR-606: accept only while CodeMirror has an active completion.
-          // Returning false otherwise preserves native page traversal.
+          // Returning false lets the lower-priority indentation binding run.
           key: 'Tab',
           run: acceptCompletion,
         },
@@ -115,6 +116,9 @@ export function createEditor({
     highlightActiveLineGutter(),
     highlightActiveLine(),
     highlightSpecialChars(),
+    // Issue #31: marks use background decorations, so visible whitespace
+    // never changes Python source bytes or CodeMirror's text geometry.
+    highlightWhitespace(),
     drawSelection(),
     history(),
     indentOnInput(),
@@ -141,8 +145,8 @@ export function createEditor({
         : [transaction, { changes: edits, sequential: true }];
     }),
     // FR-601 – FR-607: name-only completion is local and independent of the
-    // Python/Ruff workers. Tab is conditional above: it accepts an open
-    // completion and remains ordinary page traversal at all other times.
+    // Python/Ruff workers. Tab accepts an open completion before the
+    // lower-priority indentation binding handles it.
     autocompletion({
       activateOnTyping: true,
       activateOnTypingDelay: 100,
@@ -152,11 +156,10 @@ export function createEditor({
     }),
     // FR-036 / FR-037: diagnostic underlines, gutter icons and tooltips.
     diagnosticMarkers(),
-    // FR-049: `Tab` is never bound to indentation. With no completion open it
-    // walks past the editor to stdin, Send EOF and diagnostics. Indentation
-    // still comes from `indentOnInput`, `indentUnit` and the default keymap's
-    // `insertNewlineAndIndent`.
-    keymap.of([...defaultKeymap, ...historyKeymap]),
+    // Issue #31: CodeMirror's native binding indents and dedents whole lines
+    // with `indentUnit`, which is four ASCII spaces above. The default keymap
+    // keeps Ctrl+M (Shift+Alt+M on macOS) as the accessible Tab-focus escape.
+    keymap.of([indentWithTab, ...defaultKeymap, ...historyKeymap]),
     EditorView.lineWrapping,
     EditorView.updateListener.of((update) => {
       if (update.docChanged) onChange(update.state.doc.toString());
