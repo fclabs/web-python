@@ -505,8 +505,8 @@ body {
   background:
     radial-gradient(
       circle at 50% 55%,
-      color-mix(in srgb, var(--fg-muted) 55%, transparent) 20%,
-      transparent 0
+      color-mix(in srgb, var(--fg-muted) 32%, transparent) 14%,
+      transparent 30%
     ) no-repeat;
   background-position: 50% center;
   background-size: 0.4em;
