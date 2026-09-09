@@ -38,11 +38,12 @@ of the editor.
 
 **FR-1104 — Visible whitespace without layout changes (Must)**
 
-Every ASCII space in the editor is shown with a faint dot. The marker is purely
-visual: it does not alter editor text, selection, clipboard contents, line
-wrapping, editor dimensions, page dimensions, or the width allocated to the
-Files, Editor, and Console columns. Indentation that exceeds the available
-width remains within CodeMirror's scrollable area.
+Each leading indentation space in the editor is shown with a faint dot.
+Ordinary spaces inside Python expressions, strings, and comments are not
+marked. The marker is purely visual: it does not alter editor text, selection,
+clipboard contents, line wrapping, editor dimensions, page dimensions, or the
+width allocated to the Files, Editor, and Console columns. Indentation that
+exceeds the available width remains within CodeMirror's scrollable area.
 
 ## Interfaces
 

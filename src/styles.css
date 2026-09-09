@@ -498,17 +498,17 @@ body {
   font-family: var(--font-mono);
 }
 
-/* CodeMirror's native whitespace extension paints a faint dot as a background
-   on each space. It does not replace the character, so indentation keeps its
-   normal width and selection/clipboard contents stay byte-exact. */
-.cm-editor .cm-highlightSpace {
+/* Issue #31: only leading indentation receives a background marker. It does
+   not replace the character, so indentation keeps its normal width and
+   selection/clipboard contents stay byte-exact. */
+.cm-editor .cm-highlightIndent {
   background:
     radial-gradient(
       circle at 50% 55%,
       color-mix(in srgb, var(--fg-muted) 55%, transparent) 20%,
       transparent 0
-    ) no-repeat;
-  background-position: calc(min(50%, 0px)) center;
+    ) repeat-x;
+  background-position: 0 center;
   background-size: 0.4em;
 }
 

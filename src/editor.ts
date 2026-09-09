@@ -1,13 +1,15 @@
 import { Compartment, EditorState, Prec, type Extension } from '@codemirror/state';
 import {
+  Decoration,
   EditorView,
+  ViewPlugin,
   drawSelection,
   highlightActiveLine,
   highlightActiveLineGutter,
   highlightSpecialChars,
-  highlightWhitespace,
   keymap,
   lineNumbers,
+  type DecorationSet,
 } from '@codemirror/view';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
 import { acceptCompletion, autocompletion } from '@codemirror/autocomplete';
@@ -58,6 +60,42 @@ function colorSchemeExtensions(effective: 'light' | 'dark'): Extension[] {
 function editabilityExtensions(readOnly: boolean): Extension[] {
   return [EditorState.readOnly.of(readOnly), EditorView.editable.of(!readOnly)];
 }
+
+const indentationSpace = Decoration.mark({ class: 'cm-highlightIndent' });
+
+function indentationDecorations(view: EditorView): DecorationSet {
+  const ranges = [];
+  for (const { from, to } of view.visibleRanges) {
+    let line = view.state.doc.lineAt(from);
+    while (line.from <= to) {
+      const indentation = /^[ \t]+/.exec(line.text)?.[0];
+      if (indentation) {
+        ranges.push(indentationSpace.range(line.from, line.from + indentation.length));
+      }
+      if (line.to >= to) break;
+      line = view.state.doc.line(line.number + 1);
+    }
+  }
+  return Decoration.set(ranges, true);
+}
+
+/** Issue #31: show only indentation, never ordinary spaces inside Python code. */
+const highlightIndentation = ViewPlugin.fromClass(
+  class {
+    decorations: DecorationSet;
+
+    constructor(view: EditorView) {
+      this.decorations = indentationDecorations(view);
+    }
+
+    update(update: { docChanged: boolean; viewportChanged: boolean; view: EditorView }): void {
+      if (update.docChanged || update.viewportChanged) {
+        this.decorations = indentationDecorations(update.view);
+      }
+    }
+  },
+  { decorations: (plugin) => plugin.decorations },
+);
 
 export interface EditorOptions {
   parent: HTMLElement;
@@ -116,9 +154,7 @@ export function createEditor({
     highlightActiveLineGutter(),
     highlightActiveLine(),
     highlightSpecialChars(),
-    // Issue #31: marks use background decorations, so visible whitespace
-    // never changes Python source bytes or CodeMirror's text geometry.
-    highlightWhitespace(),
+    highlightIndentation,
     drawSelection(),
     history(),
     indentOnInput(),

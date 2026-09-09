@@ -134,7 +134,7 @@ test('VC-1104 (FR-1104): whitespace dots and repeated indentation preserve grid 
     document.documentElement.style.setProperty('--files-width', '480px');
   });
 
-  const source = 'print("Ejercicio_2")';
+  const source = 'print("inner spaces")';
   await setProgram(page, source);
   await page.locator('.cm-content').focus();
 
@@ -154,7 +154,7 @@ test('VC-1104 (FR-1104): whitespace dots and repeated indentation preserve grid 
     };
   });
 
-  await expect(page.locator('.cm-highlightSpace')).toHaveCount(0);
+  await expect(page.locator('.cm-highlightIndent')).toHaveCount(0);
   expect(await editorText(page)).toBe(source);
   await page.keyboard.press('Home');
   for (let index = 0; index < 6; index += 1) await page.keyboard.press('Tab');
@@ -177,7 +177,7 @@ test('VC-1104 (FR-1104): whitespace dots and repeated indentation preserve grid 
 
   expect(after).toEqual(before);
   expect(await editorText(page)).toBe(`${' '.repeat(24)}${source}`);
-  await expect(page.locator('.cm-highlightSpace')).toHaveCount(24);
+  await expect(page.locator('.cm-highlightIndent')).toHaveText(' '.repeat(24));
 });
 
 test('VC-010 (FR-010): Reset replaces the buffer on confirm and leaves it on cancel', async ({

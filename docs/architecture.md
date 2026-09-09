@@ -48,11 +48,12 @@ dedents one level. The default keymap's `Ctrl+M` (`Shift+Alt+M` on macOS)
 toggles Tab-focus mode, allowing browser focus navigation to leave the editor
 without a custom keyboard handler.
 
-The native whitespace highlighter paints a faint background dot for every
-space without replacing source characters. The editor panel and CodeMirror
-scroller cap their inline size, while the vertical Files/Editor/Console tracks
-use `minmax(0, …)` so indentation stays inside the editor's own scrolling area
-instead of redistributing the page columns.
+The indentation highlighter paints a faint background dot for each leading
+space without replacing source characters; spaces inside code and strings are
+left alone. The editor panel and CodeMirror scroller cap their inline size,
+while the vertical Files/Editor/Console tracks use `minmax(0, …)` so
+indentation stays inside the editor's own scrolling area instead of
+redistributing the page columns.
 
 ---
 

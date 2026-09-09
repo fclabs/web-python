@@ -207,8 +207,8 @@ repository settings that live outside this repository:
 indents with four ASCII spaces, including every selected line; `Shift` + `Tab`
 dedents by one level. No literal tab character is introduced by editor
 indentation. Use CodeMirror's Tab-focus mode when keyboard navigation needs to
-leave the editor. Spaces appear as faint dots inside the editor to make
-indentation visible.
+leave the editor. Leading indentation spaces appear as faint dots inside the
+editor.
 
 The **layout control** picks how the panels are divided, and both names
 describe **the divider**, the way `vim`'s `:split` and `:vsplit` do:
