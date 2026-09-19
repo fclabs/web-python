@@ -30,7 +30,15 @@ export default defineConfig({
     {
       name: 'strip-html-comments',
       apply: 'build',
-      transformIndexHtml: (html) => html.replace(/<!--[\s\S]*?-->/g, ''),
+      transformIndexHtml: (html) => {
+        let sanitized = html;
+        let previous: string;
+        do {
+          previous = sanitized;
+          sanitized = sanitized.replace(/<!--[\s\S]*?-->/g, '');
+        } while (sanitized !== previous);
+        return sanitized;
+      },
     },
     precachePlugin(),
   ],
