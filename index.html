@@ -27,22 +27,28 @@
         document.documentElement.style.colorScheme = effective;
       })();
     </script>
-    <!-- FR-910: apply a canonical stored diagnostics height before CSS paint so
-         vertical layout never flashes the old fr share. Non-canonical / missing
-         → leave unset; CSS defaults the track to the content-sized empty
-         minimum (FR-901 / FR-911). Regex matches src/diag-resize.ts
-         isCanonicalDiagHeight. -->
+    <!-- FR-910 / FR-1311: apply stored diagnostics height, Output visibility,
+         column width, and console height before CSS paint. Non-canonical /
+         missing → leave unset. Regex matches isCanonicalDiagHeight /
+         isCanonicalOutputWidth. -->
     <script>
       (function () {
-        var KEY = 'pyplay.diagnostics-height.v1';
+        var re = /^[1-9][0-9]*$/;
+        function px(key, prop, flag) {
+          try {
+            var raw = localStorage.getItem(key);
+            if (raw && re.test(raw)) {
+              document.documentElement.style.setProperty(prop, raw + 'px');
+              document.documentElement.dataset[flag] = '';
+            }
+          } catch (e) {}
+        }
+        px('pyplay.diagnostics-height.v1', '--diagnostics-height', 'diagSized');
+        px('pyplay.output-width.v1', '--output-width', 'outputSized');
+        px('pyplay.console-height.v1', '--console-height', 'consoleSized');
         try {
-          var raw = localStorage.getItem(KEY);
-          if (raw && /^[1-9][0-9]*$/.test(raw)) {
-            document.documentElement.style.setProperty(
-              '--diagnostics-height',
-              raw + 'px',
-            );
-          }
+          if (localStorage.getItem('pyplay.output-visible.v1') === 'hidden')
+            document.documentElement.dataset.output = 'hidden';
         } catch (e) {}
       })();
     </script>
@@ -99,6 +105,8 @@
              force and clears it again on the way back up. -->
         <span id="layout-narrow-hint" class="visually-hidden"></span>
         <button id="btn-files" class="btn" type="button" aria-expanded="false" aria-controls="file-pane">Files</button>
+        <!-- FR-1301 / FR-1303: after Files; aria-expanded is the preference, not stdin. -->
+        <button id="btn-output" class="btn" type="button" aria-expanded="true" aria-controls="console-pane stdin-pane diagnostics-pane">Output</button>
         <!-- FR-301: immediately before the color-mode control. It has no
              disabled state, so unlike Run/Stop/Format it is never routed
              through `setInert()`. -->
@@ -142,8 +150,10 @@
         <p id="symbol-status" class="symbol-status" role="status"></p>
       </section>
 
-      <section class="panel panel--console" aria-label="Console">
+      <section id="console-pane" class="panel panel--console" aria-label="Console">
         <div id="console" class="console"></div>
+        <!-- FR-1314: stacked height handle, inside the panel like `#file-resizer`. -->
+        <div id="console-resizer" class="console-resizer" role="separator" aria-orientation="horizontal" aria-label="Resize console panel" aria-valuemin="80" aria-valuemax="80" aria-valuenow="80" tabindex="0"></div>
       </section>
 
       <section class="panel panel--editor" aria-label="Editor">
@@ -152,6 +162,9 @@
           <p id="editor-running-hint" class="editor-running-hint" role="status" hidden></p>
         </div>
       </section>
+
+      <!-- FR-1305 / BR-1302: overlay on the output column start; not a grid track. -->
+      <div id="output-resizer" class="output-resizer" role="separator" aria-orientation="vertical" aria-label="Resize output pane" aria-valuemin="240" aria-valuemax="240" aria-valuenow="240" tabindex="0"></div>
 
       <!-- FR-913: non-panel sibling immediately after the editor, before stdin.
            Visible only in vertical ≥ 900 px (CSS + hidden); mountDiagResizer
@@ -169,7 +182,7 @@
         tabindex="0"
       ></div>
 
-      <section class="panel panel--stdin" aria-label="Standard input">
+      <section id="stdin-pane" class="panel panel--stdin" aria-label="Standard input">
         <label class="stdin-label" for="stdin-input">Input</label>
         <input
           id="stdin-input"
@@ -184,7 +197,7 @@
         <button id="btn-eof" class="btn" type="button" tabindex="0" aria-disabled="true">Send EOF</button>
       </section>
 
-      <section class="panel panel--diagnostics" aria-label="Diagnostics">
+      <section id="diagnostics-pane" class="panel panel--diagnostics" aria-label="Diagnostics">
         <h2 class="panel-title">
           Problems <span id="diagnostics-count" class="count">0</span>
         </h2>

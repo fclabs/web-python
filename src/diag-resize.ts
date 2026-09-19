@@ -166,9 +166,26 @@ export function mountDiagResizer(options: DiagResizerOptions): DiagResizerHandle
   let currentMin = 1;
   let currentMax = 1;
 
-  const isActive = (): boolean =>
+  const isVertical = (): boolean =>
     getEffectiveLayout() === 'vertical' &&
     window.matchMedia(`(min-width: ${LAYOUT_MIN_WIDTH}px)`).matches;
+
+  const isActive = (): boolean =>
+    // FR-1314: stacked layout also resizes Problems; vertical still needs ≥ 900.
+    !consolePanel.hidden && (isVertical() || getEffectiveLayout() === 'horizontal');
+
+  const clearHorizontalPlacement = (): void => {
+    resizer.style.cssText = '';
+  };
+
+  const placeOnDiagnosticsTop = (): void => {
+    const appRect = app.getBoundingClientRect();
+    const diagRect = diagnostics.getBoundingClientRect();
+    resizer.style.cssText =
+      `position:absolute;left:${diagRect.left - appRect.left}px;` +
+      `width:${diagRect.width}px;height:8px;` +
+      `top:${diagRect.top - appRect.top - 4}px;z-index:2;margin:0`;
+  };
 
   /**
    * Intrinsic height of the empty-state line. Stable whether findings are
@@ -211,6 +228,7 @@ export function mountDiagResizer(options: DiagResizerOptions): DiagResizerHandle
     currentHeight = clamped;
     // BR-902: only the diagnostics track; stdin stays content-sized.
     document.documentElement.style.setProperty('--diagnostics-height', `${clamped}px`);
+    document.documentElement.dataset.diagSized = '';
     resizer.setAttribute('aria-valuemin', String(currentMin));
     resizer.setAttribute('aria-valuemax', String(currentMax));
     resizer.setAttribute('aria-valuenow', String(clamped));
@@ -222,6 +240,7 @@ export function mountDiagResizer(options: DiagResizerOptions): DiagResizerHandle
         notices.show(DIAG_HEIGHT_SAVE_FAILED);
       }
     }
+    if (getEffectiveLayout() === 'horizontal' && isActive()) placeOnDiagnosticsTop();
   };
 
   const sync = (): void => {
@@ -229,9 +248,30 @@ export function mountDiagResizer(options: DiagResizerOptions): DiagResizerHandle
     // FR-906 / BR-905: hidden + setInert; never the HTML `disabled` attribute.
     resizer.hidden = !active;
     setInert(resizer, !active);
-    if (!active) return;
+    if (!active) {
+      clearHorizontalPlacement();
+      return;
+    }
 
     currentMin = measureMin();
+    const stacked = getEffectiveLayout() === 'horizontal';
+    if (stacked && preferredHeight === null) {
+      // Keep spec-01's 25vh default until the visitor commits a resize.
+      document.documentElement.style.removeProperty('--diagnostics-height');
+      delete document.documentElement.dataset.diagSized;
+      currentMax = maxDiagHeight(measureRightColumnHeight());
+      if (currentMin > currentMax) currentMin = currentMax;
+      currentHeight = clampDiagHeight(
+        Math.round(diagnostics.getBoundingClientRect().height),
+        { min: currentMin, max: currentMax },
+      );
+      resizer.setAttribute('aria-valuemin', String(currentMin));
+      resizer.setAttribute('aria-valuemax', String(currentMax));
+      resizer.setAttribute('aria-valuenow', String(currentHeight));
+      placeOnDiagnosticsTop();
+      return;
+    }
+
     // Pin to the content floor before measuring the column so an oversize
     // bootstrap `--diagnostics-height` cannot inflate the FR-908 max (VC-908).
     document.documentElement.style.setProperty('--diagnostics-height', `${currentMin}px`);
@@ -242,6 +282,8 @@ export function mountDiagResizer(options: DiagResizerOptions): DiagResizerHandle
         : clampDiagHeight(preferredHeight, { min: currentMin, max: currentMax });
     // FR-908: viewport / layout clamp updates memory + aria only — no storage rewrite.
     applyHeight(target, false);
+    if (stacked) placeOnDiagnosticsTop();
+    else clearHorizontalPlacement();
   };
 
   const startResize = (event: PointerEvent): void => {
