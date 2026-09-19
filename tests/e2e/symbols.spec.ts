@@ -907,6 +907,8 @@ test.describe('wide layout keyboard model', () => {
           if (el.closest('#layout-group')) return 'layout';
           return el.id ? `#${el.id}` : el.tagName.toLowerCase();
         });
+      // FR-1405: count one full traversal, not a partial second lap.
+      if (target === '#btn-run' && visited.length > 0) break;
       visited.push(target);
       // Issue #31: use CodeMirror's keyboard escape after reaching the editor.
       if (target === 'editor') await page.keyboard.press('Control+m');
@@ -931,9 +933,6 @@ test.describe('wide layout keyboard model', () => {
     const expected = [
       '#btn-run',
       '#btn-stop',
-      '#btn-clear',
-      '#btn-copy',
-      '#btn-format',
       '#btn-reset',
       // spec-04 FR-401: immediately after `Reset`, before `Symbols`.
       'layout',
@@ -944,7 +943,10 @@ test.describe('wide layout keyboard model', () => {
       // spec-08 FR-801: About is last toolbar control after theme.
       '#btn-about',
       'pane',
+      '#btn-clear',
       ...(consoleResizerVisible ? (['#console-resizer'] as const) : []),
+      '#btn-copy',
+      '#btn-format',
       'editor',
       ...afterEditor,
       '#btn-file-new',

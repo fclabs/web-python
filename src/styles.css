@@ -145,6 +145,14 @@ body {
   gap: 6px;
 }
 
+/* FR-1401: extra whitespace marks boundaries without wrappers or DOM reordering.
+   A logical end margin keeps a wrapped group start aligned to the toolbar edge. */
+#btn-stop,
+#btn-reset,
+#btn-output {
+  margin-inline-end: 10px;
+}
+
 .btn {
   background: var(--bg-raised);
   border: 1px solid var(--border-strong);
@@ -313,6 +321,7 @@ body {
 
 .panel--console {
   display: flex;
+  flex-direction: column;
   flex: 1 1 30%;
   position: relative;
 }
@@ -432,8 +441,9 @@ html[data-output='hidden'] #app[data-stdin='pending'] .panel--stdin {
   align-items: center;
   display: inline-flex;
   gap: 8px;
-  max-width: 100%;
-  min-width: 0;
+  /* FR-1402: reserve Stop and its group boundary on the same 375 px row. */
+  max-width: calc(100% - 48px);
+  min-width: 96px;
 }
 
 /* FR-1313 / VC-705: 12 px inline pad overflowed About by ~3 px at the 900 px
@@ -532,7 +542,7 @@ html[data-output='hidden'] #app:not([data-layout='vertical']) .diag-resizer {
   color: var(--console-fg);
   flex: 1;
   font-family: var(--font-mono);
-  min-height: 80px;
+  min-height: 0;
   overflow: auto;
   padding: 8px;
   white-space: pre;
@@ -1612,4 +1622,60 @@ html[data-diag-sized] #app:not([data-layout='vertical']) .panel--diagnostics {
 .panel {
   transition: none;
   animation: none;
+}
+
+/* FR-1402/1405: shared icon geometry and contextual panel actions. */
+.icon-button,
+#btn-output.icon-button {
+  align-items: center;
+  display: inline-flex;
+  flex: 0 0 auto;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 6px;
+}
+
+.control-icon {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+}
+
+.icon-check,
+#btn-copy[data-state='copied'] .icon-copy {
+  display: none;
+}
+
+#btn-copy[data-state='copied'] .icon-check {
+  display: block;
+}
+
+.panel-heading {
+  align-items: center;
+  background: var(--bg-sunken);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  flex: 0 0 auto;
+  gap: 8px;
+  justify-content: space-between;
+  min-width: 0;
+  padding: 4px 8px;
+}
+
+.panel-heading h2 {
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.panel-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 6px;
 }

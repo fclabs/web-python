@@ -24,7 +24,24 @@ export default defineConfig({
   define: {
     __PYPLAY_BUILD_META__: JSON.stringify(pyplayBuildMeta),
   },
-  plugins: [precachePlugin()],
+  plugins: [
+    // FR-1402: keep explanatory source comments out of the shipped icon shell
+    // so the richer controls stay within the existing compressed-size budgets.
+    {
+      name: 'strip-html-comments',
+      apply: 'build',
+      transformIndexHtml: (html) => {
+        let sanitized = html;
+        let previous: string;
+        do {
+          previous = sanitized;
+          sanitized = sanitized.replace(/<!--[\s\S]*?-->/g, '');
+        } while (sanitized !== previous);
+        return sanitized;
+      },
+    },
+    precachePlugin(),
+  ],
   server: {
     headers: coiHeaders,
     // Leading dot allows any subdomain — ngrok URLs change on every tunnel.

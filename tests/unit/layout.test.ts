@@ -51,9 +51,9 @@ describe('Constants (Data & Interfaces / Constants)', () => {
 describe('User-visible strings (Data & Interfaces / User-visible strings)', () => {
   it('quotes the five layout strings verbatim from the spec', () => {
     expect(LAYOUT_LABEL).toBe('Layout');
-    expect(LAYOUT_VERTICAL).toBe('Vertical');
-    expect(LAYOUT_HORIZONTAL).toBe('Horizontal');
-    expect(LAYOUT_NARROW_HINT).toBe('Vertical layout needs a window at least 900 px wide');
+    expect(LAYOUT_VERTICAL).toBe('Side by side');
+    expect(LAYOUT_HORIZONTAL).toBe('Stacked');
+    expect(LAYOUT_NARROW_HINT).toBe('Side-by-side layout needs a window at least 900 px wide');
     expect(LAYOUT_SAVE_FAILED).toBe("Layout preference won't be remembered");
   });
 });

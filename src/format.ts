@@ -10,6 +10,7 @@ export function formatRunSeparator(filename: string, at: Date): string {
 }
 
 /** Labels shared by the dynamic Run control and the Files execution state. */
+// FR-1403: Run keeps its visible label alongside the icon controls.
 export const RUN_LABEL = 'Run';
 export const RUNNING_LABEL = 'Running';
 export const LAST_RUN_LABEL = 'Last run';
@@ -82,11 +83,11 @@ export const SYMBOL_COPY_FAILED = "Couldn't copy — select the character and pr
 
 /** FR-401: the layout control's accessible name and its two radio labels. */
 export const LAYOUT_LABEL = 'Layout';
-export const LAYOUT_VERTICAL = 'Vertical';
-export const LAYOUT_HORIZONTAL = 'Horizontal';
+export const LAYOUT_VERTICAL = 'Side by side';
+export const LAYOUT_HORIZONTAL = 'Stacked';
 
 /** FR-406: why the two-column `vertical` layout is unavailable below 900 px. */
-export const LAYOUT_NARROW_HINT = 'Vertical layout needs a window at least 900 px wide';
+export const LAYOUT_NARROW_HINT = 'Side-by-side layout needs a window at least 900 px wide';
 
 /** FR-418: the preference write was rejected. */
 export const LAYOUT_SAVE_FAILED = "Layout preference won't be remembered";
@@ -155,3 +156,19 @@ export const ABOUT_CLOSE_LABEL = 'Close';
 
 /** BR-802: per-field fallback when build-time input is missing. */
 export const UNKNOWN = 'unknown';
+
+/** FR-1402/1405: icon tooltips and accessible labels, independent of placement. */
+export const ICON_CONTROL_LABELS = {
+  'btn-stop': 'Stop',
+  'btn-clear': 'Clear console',
+  'btn-copy': 'Copy code',
+  'btn-format': 'Format',
+  'btn-reset': 'Reset',
+  'btn-files': 'Files',
+  'btn-output': OUTPUT_LABEL,
+  'btn-symbols': 'Symbols',
+  'layout-horizontal': LAYOUT_HORIZONTAL,
+  'layout-vertical': LAYOUT_VERTICAL,
+} as const;
+export const COPIED_LABEL = 'Copied';
+export const CONSOLE_HEADING = 'Console';

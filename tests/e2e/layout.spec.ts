@@ -856,8 +856,8 @@ test.describe('the layout control', () => {
     await expect(radios).toHaveCount(2);
     // FR-401's order. `Horizontal` is first: it is spec-01's rendering and
     // the only layout below 900 px (BR-404), so it is the one `Home` reaches.
-    await expect(radios.nth(0)).toHaveAccessibleName('Horizontal');
-    await expect(radios.nth(1)).toHaveAccessibleName('Vertical');
+    await expect(radios.nth(0)).toHaveAccessibleName('Stacked');
+    await expect(radios.nth(1)).toHaveAccessibleName('Side by side');
   });
 
   test('VC-402 (FR-402): the checked radio is the effective layout, at both widths', async ({
@@ -988,7 +988,7 @@ test.describe('the layout control', () => {
     }
   });
 
-  test('VC-431 (BR-407): the left column precedes the right in tab order', async ({ page }) => {
+  test('VC-431 (BR-407, FR-1405): contextual controls follow stable panel DOM order', async ({ page }) => {
     await seedPreference(page, 'vertical');
     await openPlayground(page, { seedLayout: false });
     await waitForPythonReady(page);
@@ -1041,16 +1041,15 @@ test.describe('the layout control', () => {
       if (stop.target === 'editor') await page.keyboard.press('Control+m');
     }
 
-    // BR-407: no tab stop inside the console panel at all — which is what
-    // makes FR-410's fixed document order safe for WCAG SC 2.4.3.
-    expect(
-      stops.filter((stop) => stop.panel === 'Console'),
-      'the console holds no focusable element',
-    ).toEqual([]);
-
-    // The left column's stop precedes every right-column stop; the output then
-    // diagnostics resizers sit between editor and stdin (FR-1305 / FR-913).
+    // FR-1405 amends BR-407: Clear is now local to Console. No positive
+    // tabindex or layout-dependent DOM movement changes the reading order.
+    expect(stops.filter((stop) => stop.panel === 'Console')).toEqual([
+      { panel: 'Console', target: 'btn-clear' },
+    ]);
     expect(stops.map((stop) => stop.target)).toEqual([
+      'btn-clear',
+      'btn-copy',
+      'btn-format',
       'editor',
       'output-resizer',
       'diag-resizer',
@@ -1059,6 +1058,9 @@ test.describe('the layout control', () => {
       'diagnostic-entry',
     ]);
     expect(stops.map((stop) => stop.panel)).toEqual([
+      'Console',
+      'Editor',
+      'Editor',
       'Editor',
       '',
       '',
@@ -1337,9 +1339,6 @@ test('VC-407 (FR-049 from spec-01, FR-405): Tab reaches every control once in bo
   const TOOLBAR_STOPS = [
     'btn-run',
     'btn-stop',
-    'btn-clear',
-    'btn-copy',
-    'btn-format',
     'btn-reset',
     'layout-group',
     'btn-files',
@@ -1352,7 +1351,10 @@ test('VC-407 (FR-049 from spec-01, FR-405): Tab reaches every control once in bo
   /** Stacked: console height handle, then editor, then Problems handle, then stdin. */
   const EXPECTED_HORIZONTAL = [
     ...TOOLBAR_STOPS,
+    'btn-clear',
     'console-resizer',
+    'btn-copy',
+    'btn-format',
     'editor',
     'diag-resizer',
     'stdin-input',
@@ -1363,6 +1365,9 @@ test('VC-407 (FR-049 from spec-01, FR-405): Tab reaches every control once in bo
   /** Vertical ≥ 900: editor, column handle, Problems handle, stdin (FR-1305 / FR-913). */
   const EXPECTED_VERTICAL = [
     ...TOOLBAR_STOPS,
+    'btn-clear',
+    'btn-copy',
+    'btn-format',
     'editor',
     'output-resizer',
     'diag-resizer',

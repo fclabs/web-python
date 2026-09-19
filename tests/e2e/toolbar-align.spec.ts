@@ -5,15 +5,15 @@
  *
  * VC-701 (FR-701, amended) — #btn-about flush with toolbar content-box inline-end.
  * VC-702 (FR-702) — Symbols/theme gap is 6 ± 1 px; nothing between them.
- * VC-703 (FR-703, FR-706, FR-1313) — one oversized gap, between Output and Symbols.
- * VC-704 (FR-704, BR-701, amended) — Tab order is the twelve-stop sequence
+ * VC-703 (FR-1401 amendment) — explicit group gaps; auto space before Symbols.
+ * VC-704 (FR-704, BR-701, amended) — Tab order is the nine-stop sequence
  *   through `#btn-about`.
  * VC-705 (FR-705) — below 900 px no auto-margin; at 900 px VC-701 holds.
  * VC-707 (BR-703) — Symbols / theme still work from the new position.
  * VC-708 (BR-704, BR-301) — clicks do not touch the editor undo/doc.
  */
 import { expect, test, type Page } from '@playwright/test';
-import { openPlayground } from './helpers';
+import { openPlayground, waitForPythonReady } from './helpers';
 
 const LAYOUT_KEY = 'pyplay.layout.v2';
 const THEME_KEY = 'pyplay.theme.v1';
@@ -27,9 +27,6 @@ const NARROW = { width: 375, height: 667 };
 const TOOLBAR_CONTROL_IDS = [
   'btn-run',
   'btn-stop',
-  'btn-clear',
-  'btn-copy',
-  'btn-format',
   'btn-reset',
   'layout-group',
   'btn-files',
@@ -43,9 +40,6 @@ const TOOLBAR_CONTROL_IDS = [
 const FR704_STOPS = [
   'btn-run',
   'btn-stop',
-  'btn-clear',
-  'btn-copy',
-  'btn-format',
   'btn-reset',
   'layout-group',
   'btn-files',
@@ -140,7 +134,8 @@ async function visibleToolbarBoxes(page: Page): Promise<Box[]> {
 
 /**
  * Inter-control gaps on the same flex line (shared rounded top). A packed
- * gap is 6 ± 1; anything larger is the FR-703 whitespace span.
+ * gap is 6 ± 1; FR-1401 group boundaries are 16 ± 1 (or larger before
+ * Symbols at desktop widths).
  */
 function sameLineGaps(boxes: Box[]): { from: string; to: string; gap: number }[] {
   const gaps: { from: string; to: string; gap: number }[] = [];
@@ -256,7 +251,7 @@ test('VC-702 (FR-702): Symbols/theme gap is 6 ± 1 px with nothing between', asy
    VC-703 (FR-703, FR-706)
    ------------------------------------------------------------------------- */
 
-test('VC-703 (FR-703, FR-706, FR-1313): exactly one oversized gap, between Output and Symbols', async ({
+test('VC-703 (FR-703, FR-706, FR-1313): explicit group gaps with trailing utility alignment', async ({
   page,
 }) => {
   await page.setViewportSize(WIDE);
@@ -268,13 +263,13 @@ test('VC-703 (FR-703, FR-706, FR-1313): exactly one oversized gap, between Outpu
 
   const gaps = sameLineGaps(boxes);
   const oversized = gaps.filter((g) => !isPackedGap(g.gap));
-  expect(
-    oversized,
-    `gaps: ${gaps.map((g) => `${g.from}→${g.to}=${g.gap.toFixed(1)}`).join(', ')}`,
-  ).toHaveLength(1);
-  expect(oversized[0]!.from).toBe('btn-output');
-  expect(oversized[0]!.to).toBe('btn-symbols');
-  expect(oversized[0]!.gap).toBeGreaterThan(7);
+  expect(oversized.map(({ from }) => from)).toEqual([
+    'btn-stop', 'btn-reset', 'btn-output',
+  ]);
+  for (const gap of oversized) {
+    if (gap.from === 'btn-output') expect(gap.gap).toBeGreaterThanOrEqual(15);
+    else expect(Math.abs(gap.gap - 16)).toBeLessThanOrEqual(1);
+  }
 });
 
 /* -------------------------------------------------------------------------
@@ -286,7 +281,7 @@ for (const layout of ['horizontal', 'vertical'] as const) {
     { theme: 'light', colorScheme: 'light' as const, effective: 'light' },
     { theme: 'dark', colorScheme: 'dark' as const, effective: 'dark' },
   ]) {
-    test(`VC-704 (FR-704): Tab twelve stops ${layout} / effective ${palette.effective}`, async ({
+    test(`VC-704 (FR-704): Tab nine stops ${layout} / effective ${palette.effective}`, async ({
       page,
     }) => {
       await page.emulateMedia({ colorScheme: palette.colorScheme });
@@ -344,7 +339,7 @@ for (const layout of ['horizontal', 'vertical'] as const) {
    ------------------------------------------------------------------------- */
 
 for (const viewport of [JUST_BELOW, NARROW] as const) {
-  test(`VC-705 (FR-705): no oversized same-line gap at ${viewport.width}×${viewport.height}`, async ({
+  test(`VC-705 (FR-705): explicit same-line group spacing at ${viewport.width}×${viewport.height}`, async ({
     page,
   }) => {
     await page.setViewportSize(viewport);
@@ -353,11 +348,10 @@ for (const viewport of [JUST_BELOW, NARROW] as const) {
 
     const boxes = await visibleToolbarBoxes(page);
     const gaps = sameLineGaps(boxes);
-    const oversized = gaps.filter((g) => !isPackedGap(g.gap));
-    expect(
-      oversized,
-      `oversized at ${viewport.width}: ${oversized.map((g) => `${g.from}→${g.to}=${g.gap.toFixed(1)}`).join(', ')}`,
-    ).toEqual([]);
+    for (const gap of gaps) {
+      const grouped = ['btn-stop', 'btn-reset', 'btn-output'].includes(gap.from);
+      expect(Math.abs(gap.gap - (grouped ? 16 : 6)), JSON.stringify(gap)).toBeLessThanOrEqual(1);
+    }
   });
 }
 
@@ -444,3 +438,135 @@ test('VC-708 (BR-704): Symbols/theme clicks leave editor undo and doc unchanged'
   expect(after.text).toBe(before.text);
   expect(after.undoDepth).toBe(before.undoDepth);
 });
+
+/** FR-1401/1402: check rendered bounds, not just CSS declarations. */
+async function assertGroupedGeometry(page: Page, width: number): Promise<void> {
+  const boxes = await visibleToolbarBoxes(page);
+  expect(boxes.map(({ id }) => id)).toEqual([...TOOLBAR_CONTROL_IDS]);
+  for (const box of boxes) {
+    expect(box.left, box.id).toBeGreaterThanOrEqual(0);
+    expect(box.right, box.id).toBeLessThanOrEqual(width);
+    for (const other of boxes) {
+      if (box === other) continue;
+      const overlapX = Math.min(box.right, other.right) - Math.max(box.left, other.left);
+      const overlapY = Math.min(box.bottom, other.bottom) - Math.max(box.top, other.top);
+      expect(overlapX > 0 && overlapY > 0, `${box.id} overlaps ${other.id}`).toBe(false);
+    }
+  }
+  expect(boxes[0]!.top).toBe(boxes[1]!.top);
+  for (const gap of sameLineGaps(boxes)) {
+    const grouped = ['btn-stop', 'btn-reset', 'btn-output'].includes(gap.from);
+    if (width >= 900 && gap.from === 'btn-output') expect(gap.gap).toBeGreaterThanOrEqual(15);
+    else expect(Math.abs(gap.gap - (grouped ? 16 : 6)), JSON.stringify(gap)).toBeLessThanOrEqual(1);
+  }
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+  if (width >= 900) expect((await aboutFlushMeasurement(page)).delta).toBeLessThanOrEqual(1);
+}
+
+for (const theme of ['light', 'dark']) {
+  for (const width of [375, 899, 900, 1280]) {
+    test(`VC-1401 (FR-1401, FR-1402): groups ${width}px / ${theme}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 800 });
+      await seedTheme(page, theme);
+      await openPlayground(page);
+      await waitForPythonReady(page);
+      await assertGroupedGeometry(page, width);
+    });
+  }
+  for (const width of [375, 900, 1280]) {
+    test(`VC-1402 (FR-1402, FR-1403): loading, long filename and focus ${width}px / ${theme}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 800 });
+      await seedTheme(page, theme);
+      const name = 'long_runnable_filename_'.repeat(9) + '.py';
+      await page.addInitScript((name) => {
+        localStorage.setItem('pyplay.workspace.v1', JSON.stringify({
+          version: 1, activeFile: name,
+          files: [{ name, dataBase64: btoa('input("wait")') }],
+        }));
+      }, name);
+      let release!: () => void;
+      const held = new Promise<void>((resolve) => { release = resolve; });
+      await page.route('**/pyodide/python_stdlib.zip', async (route) => {
+        await held;
+        await route.continue();
+      });
+      await openPlayground(page);
+      await expect(page.locator('#btn-run')).toHaveAttribute('data-progress', /[0-9]+/);
+      try {
+        await assertGroupedGeometry(page, width);
+      } finally {
+        release();
+      }
+      await waitForPythonReady(page);
+      await expect(page.locator('#run-file-name')).toHaveText(name);
+      await assertGroupedGeometry(page, width);
+      await page.locator('#btn-run').focus();
+      await page.keyboard.press('Shift+Tab');
+      await page.keyboard.press('Tab');
+      for (const id of FR704_STOPS) {
+        const control = id === 'layout-group'
+          ? page.locator('#layout-group [tabindex="0"]') : page.locator(`#${id}`);
+        await expect(control).toBeFocused();
+        expect(await control.evaluate((el) => el.matches(':focus-visible'))).toBe(true);
+        expect(await control.evaluate((el) => parseFloat(getComputedStyle(el).outlineWidth))).toBeGreaterThan(0);
+        await page.keyboard.press('Tab');
+      }
+      await page.locator('#btn-run').click();
+      await expect(page.locator('#btn-stop')).toBeEnabled();
+      await assertGroupedGeometry(page, width);
+      await page.locator('#btn-stop').click();
+    });
+  }
+}
+
+for (const theme of ['light', 'dark']) {
+  test(`VC-1403 (FR-1402, FR-1404, FR-1405): contextual icons and labels / ${theme}`, async ({ page }) => {
+    await seedTheme(page, theme);
+    await openPlayground(page);
+    await waitForPythonReady(page);
+    const controls = {
+      'btn-stop': 'Stop', 'btn-clear': 'Clear console', 'btn-copy': 'Copy code',
+      'btn-format': 'Format', 'btn-reset': 'Reset', 'btn-files': 'Files',
+      'btn-output': 'Output', 'btn-symbols': 'Symbols',
+      'layout-horizontal': 'Stacked', 'layout-vertical': 'Side by side',
+    };
+    for (const [id, label] of Object.entries(controls)) {
+      const control = page.locator(`#${id}`);
+      await expect(control).toHaveAccessibleName(label);
+      await expect(control).toHaveAttribute('title', label);
+      await expect(control.locator('svg:visible')).toHaveCount(1);
+      await expect(control.locator('svg').first()).toHaveAttribute('aria-hidden', 'true');
+      const box = (await control.boundingBox())!;
+      expect(box.width).toBeGreaterThanOrEqual(32);
+      expect(box.height).toBeGreaterThanOrEqual(32);
+    }
+    await expect(page.locator('#console-pane #btn-clear')).toHaveCount(1);
+    await expect(page.locator('.editor-heading #btn-copy')).toHaveCount(1);
+    await expect(page.locator('.editor-heading #btn-format')).toHaveCount(1);
+    await expect(page.locator('.toolbar #btn-reset')).toHaveCount(1);
+    await page.locator('#btn-about').focus();
+    for (const id of ['btn-clear', 'btn-copy', 'btn-format']) {
+      await page.keyboard.press('Tab');
+      const control = page.locator(`#${id}`);
+      await expect(control).toBeFocused();
+      expect(await control.evaluate((el) => {
+        const style = getComputedStyle(el);
+        const ring = parseFloat(style.outlineWidth) + parseFloat(style.outlineOffset);
+        const box = el.getBoundingClientRect();
+        const heading = el.closest('.panel-heading')!.getBoundingClientRect();
+        return el.matches(':focus-visible') && ring > 0 &&
+          box.top - ring >= heading.top && box.bottom + ring <= heading.bottom;
+      }), `${id} has an unclipped focus ring`).toBe(true);
+    }
+    await page.locator('#btn-copy').click();
+    await expect(page.locator('#btn-copy')).toHaveAccessibleName('Copied');
+    await expect(page.locator('#btn-copy .icon-check')).toBeVisible();
+    await expect(page.locator('#btn-copy .icon-copy')).toBeHidden();
+    await expect(page.locator('#btn-copy')).toHaveAccessibleName('Copy code');
+    await expect(page.locator('#btn-copy .icon-copy')).toBeVisible();
+    await page.locator('#btn-output').click();
+    await expect(page.locator('#btn-clear')).toBeHidden();
+    await expect(page.locator('#btn-copy')).toBeVisible();
+    await expect(page.locator('#btn-format')).toBeVisible();
+  });
+}
