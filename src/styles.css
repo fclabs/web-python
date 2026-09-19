@@ -145,6 +145,15 @@ body {
   gap: 6px;
 }
 
+/* FR-1401: extra whitespace marks boundaries without wrappers or DOM reordering.
+   A logical end margin keeps a wrapped group start aligned to the toolbar edge. */
+#btn-stop,
+#btn-clear,
+#btn-reset,
+#btn-output {
+  margin-inline-end: 10px;
+}
+
 .btn {
   background: var(--bg-raised);
   border: 1px solid var(--border-strong);
@@ -432,8 +441,9 @@ html[data-output='hidden'] #app[data-stdin='pending'] .panel--stdin {
   align-items: center;
   display: inline-flex;
   gap: 8px;
-  max-width: 100%;
-  min-width: 0;
+  /* FR-1402: reserve Stop and its group boundary on the same 375 px row. */
+  max-width: calc(100% - 80px);
+  min-width: 96px;
 }
 
 /* FR-1313 / VC-705: 12 px inline pad overflowed About by ~3 px at the 900 px
@@ -1274,6 +1284,12 @@ html[data-diag-sized] #app:not([data-layout='vertical']) .panel--diagnostics {
     flex-wrap: nowrap;
   }
 
+  /* FR-1402: fit the added boundaries at the 900 px nowrap floor. The
+     filename can ellipsize and secondary labels can wrap inside their buttons. */
+  .toolbar > .btn:not(#btn-theme):not(#btn-about) {
+    padding-inline: 8px;
+  }
+
   #btn-symbols {
     margin-inline-start: auto;
   }
@@ -1612,4 +1628,13 @@ html[data-diag-sized] #app:not([data-layout='vertical']) .panel--diagnostics {
 .panel {
   transition: none;
   animation: none;
+}
+
+/* FR-1401/1402: compact padding at the tight desktop widths keeps all five
+   groups visible, including complete loading percentages and utility icons. */
+@media (min-width: 900px) and (max-width: 1100px) {
+  .toolbar > .btn:not(#btn-theme):not(#btn-about),
+  .toolbar .segment {
+    padding-inline: 6px;
+  }
 }

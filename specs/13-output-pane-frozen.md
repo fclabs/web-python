@@ -156,11 +156,13 @@ schedule no autosave and issue no network request.
 
 **FR-1313 — Toolbar cluster (Must)**
 
-At ≥ 900 px the leading cluster is `#btn-run` … `#btn-output` packed at the
-inline-start; the presentation cluster (`#btn-symbols`, `#btn-theme`,
+As amended by FR-1401 (spec-14), at ≥ 900 px the leading controls are
+`#btn-run` … `#btn-output`, separated into execution, clear, editing and view
+groups at the inline-start; the presentation cluster (`#btn-symbols`, `#btn-theme`,
 `#btn-about`) stays flush with the inline-end. The oversized flex gap is
 between `#btn-output` and `#btn-symbols`. Tab order inserts `#btn-output`
-after `#btn-files`. Below 900 px the row packs (and wraps) as today.
+after `#btn-files`. Below 900 px the row wraps with the explicit group spacing
+from FR-1401.
 
 ## Business Rules
 

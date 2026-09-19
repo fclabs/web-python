@@ -10,6 +10,7 @@ export function formatRunSeparator(filename: string, at: Date): string {
 }
 
 /** Labels shared by the dynamic Run control and the Files execution state. */
+// FR-1403: CSS grouping preserves these labels; no group labels are added.
 export const RUN_LABEL = 'Run';
 export const RUNNING_LABEL = 'Running';
 export const LAST_RUN_LABEL = 'Last run';
