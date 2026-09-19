@@ -148,7 +148,6 @@ body {
 /* FR-1401: extra whitespace marks boundaries without wrappers or DOM reordering.
    A logical end margin keeps a wrapped group start aligned to the toolbar edge. */
 #btn-stop,
-#btn-clear,
 #btn-reset,
 #btn-output {
   margin-inline-end: 10px;
@@ -322,6 +321,7 @@ body {
 
 .panel--console {
   display: flex;
+  flex-direction: column;
   flex: 1 1 30%;
   position: relative;
 }
@@ -442,7 +442,7 @@ html[data-output='hidden'] #app[data-stdin='pending'] .panel--stdin {
   display: inline-flex;
   gap: 8px;
   /* FR-1402: reserve Stop and its group boundary on the same 375 px row. */
-  max-width: calc(100% - 80px);
+  max-width: calc(100% - 48px);
   min-width: 96px;
 }
 
@@ -542,7 +542,7 @@ html[data-output='hidden'] #app:not([data-layout='vertical']) .diag-resizer {
   color: var(--console-fg);
   flex: 1;
   font-family: var(--font-mono);
-  min-height: 80px;
+  min-height: 0;
   overflow: auto;
   padding: 8px;
   white-space: pre;
@@ -1284,12 +1284,6 @@ html[data-diag-sized] #app:not([data-layout='vertical']) .panel--diagnostics {
     flex-wrap: nowrap;
   }
 
-  /* FR-1402: fit the added boundaries at the 900 px nowrap floor. The
-     filename can ellipsize and secondary labels can wrap inside their buttons. */
-  .toolbar > .btn:not(#btn-theme):not(#btn-about) {
-    padding-inline: 8px;
-  }
-
   #btn-symbols {
     margin-inline-start: auto;
   }
@@ -1630,11 +1624,58 @@ html[data-diag-sized] #app:not([data-layout='vertical']) .panel--diagnostics {
   animation: none;
 }
 
-/* FR-1401/1402: compact padding at the tight desktop widths keeps all five
-   groups visible, including complete loading percentages and utility icons. */
-@media (min-width: 900px) and (max-width: 1100px) {
-  .toolbar > .btn:not(#btn-theme):not(#btn-about),
-  .toolbar .segment {
-    padding-inline: 6px;
-  }
+/* FR-1402/1405: shared icon geometry and contextual panel actions. */
+.icon-button,
+#btn-output.icon-button {
+  align-items: center;
+  display: inline-flex;
+  flex: 0 0 auto;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 6px;
+}
+
+.control-icon {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+}
+
+.icon-check,
+#btn-copy[data-state='copied'] .icon-copy {
+  display: none;
+}
+
+#btn-copy[data-state='copied'] .icon-check {
+  display: block;
+}
+
+.panel-heading {
+  align-items: center;
+  background: var(--bg-sunken);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  flex: 0 0 auto;
+  gap: 8px;
+  justify-content: space-between;
+  min-width: 0;
+  padding: 4px 8px;
+}
+
+.panel-heading h2 {
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.panel-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 6px;
 }

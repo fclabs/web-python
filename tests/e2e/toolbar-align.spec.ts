@@ -6,7 +6,7 @@
  * VC-701 (FR-701, amended) — #btn-about flush with toolbar content-box inline-end.
  * VC-702 (FR-702) — Symbols/theme gap is 6 ± 1 px; nothing between them.
  * VC-703 (FR-1401 amendment) — explicit group gaps; auto space before Symbols.
- * VC-704 (FR-704, BR-701, amended) — Tab order is the twelve-stop sequence
+ * VC-704 (FR-704, BR-701, amended) — Tab order is the nine-stop sequence
  *   through `#btn-about`.
  * VC-705 (FR-705) — below 900 px no auto-margin; at 900 px VC-701 holds.
  * VC-707 (BR-703) — Symbols / theme still work from the new position.
@@ -27,9 +27,6 @@ const NARROW = { width: 375, height: 667 };
 const TOOLBAR_CONTROL_IDS = [
   'btn-run',
   'btn-stop',
-  'btn-clear',
-  'btn-copy',
-  'btn-format',
   'btn-reset',
   'layout-group',
   'btn-files',
@@ -43,9 +40,6 @@ const TOOLBAR_CONTROL_IDS = [
 const FR704_STOPS = [
   'btn-run',
   'btn-stop',
-  'btn-clear',
-  'btn-copy',
-  'btn-format',
   'btn-reset',
   'layout-group',
   'btn-files',
@@ -270,7 +264,7 @@ test('VC-703 (FR-703, FR-706, FR-1313): explicit group gaps with trailing utilit
   const gaps = sameLineGaps(boxes);
   const oversized = gaps.filter((g) => !isPackedGap(g.gap));
   expect(oversized.map(({ from }) => from)).toEqual([
-    'btn-stop', 'btn-clear', 'btn-reset', 'btn-output',
+    'btn-stop', 'btn-reset', 'btn-output',
   ]);
   for (const gap of oversized) {
     if (gap.from === 'btn-output') expect(gap.gap).toBeGreaterThanOrEqual(15);
@@ -287,7 +281,7 @@ for (const layout of ['horizontal', 'vertical'] as const) {
     { theme: 'light', colorScheme: 'light' as const, effective: 'light' },
     { theme: 'dark', colorScheme: 'dark' as const, effective: 'dark' },
   ]) {
-    test(`VC-704 (FR-704): Tab twelve stops ${layout} / effective ${palette.effective}`, async ({
+    test(`VC-704 (FR-704): Tab nine stops ${layout} / effective ${palette.effective}`, async ({
       page,
     }) => {
       await page.emulateMedia({ colorScheme: palette.colorScheme });
@@ -355,7 +349,7 @@ for (const viewport of [JUST_BELOW, NARROW] as const) {
     const boxes = await visibleToolbarBoxes(page);
     const gaps = sameLineGaps(boxes);
     for (const gap of gaps) {
-      const grouped = ['btn-stop', 'btn-clear', 'btn-reset', 'btn-output'].includes(gap.from);
+      const grouped = ['btn-stop', 'btn-reset', 'btn-output'].includes(gap.from);
       expect(Math.abs(gap.gap - (grouped ? 16 : 6)), JSON.stringify(gap)).toBeLessThanOrEqual(1);
     }
   });
@@ -461,7 +455,7 @@ async function assertGroupedGeometry(page: Page, width: number): Promise<void> {
   }
   expect(boxes[0]!.top).toBe(boxes[1]!.top);
   for (const gap of sameLineGaps(boxes)) {
-    const grouped = ['btn-stop', 'btn-clear', 'btn-reset', 'btn-output'].includes(gap.from);
+    const grouped = ['btn-stop', 'btn-reset', 'btn-output'].includes(gap.from);
     if (width >= 900 && gap.from === 'btn-output') expect(gap.gap).toBeGreaterThanOrEqual(15);
     else expect(Math.abs(gap.gap - (grouped ? 16 : 6)), JSON.stringify(gap)).toBeLessThanOrEqual(1);
   }
@@ -523,4 +517,56 @@ for (const theme of ['light', 'dark']) {
       await page.locator('#btn-stop').click();
     });
   }
+}
+
+for (const theme of ['light', 'dark']) {
+  test(`VC-1403 (FR-1402, FR-1404, FR-1405): contextual icons and labels / ${theme}`, async ({ page }) => {
+    await seedTheme(page, theme);
+    await openPlayground(page);
+    await waitForPythonReady(page);
+    const controls = {
+      'btn-stop': 'Stop', 'btn-clear': 'Clear console', 'btn-copy': 'Copy code',
+      'btn-format': 'Format', 'btn-reset': 'Reset', 'btn-files': 'Files',
+      'btn-output': 'Output', 'btn-symbols': 'Symbols',
+      'layout-horizontal': 'Stacked', 'layout-vertical': 'Side by side',
+    };
+    for (const [id, label] of Object.entries(controls)) {
+      const control = page.locator(`#${id}`);
+      await expect(control).toHaveAccessibleName(label);
+      await expect(control).toHaveAttribute('title', label);
+      await expect(control.locator('svg:visible')).toHaveCount(1);
+      await expect(control.locator('svg').first()).toHaveAttribute('aria-hidden', 'true');
+      const box = (await control.boundingBox())!;
+      expect(box.width).toBeGreaterThanOrEqual(32);
+      expect(box.height).toBeGreaterThanOrEqual(32);
+    }
+    await expect(page.locator('#console-pane #btn-clear')).toHaveCount(1);
+    await expect(page.locator('.editor-heading #btn-copy')).toHaveCount(1);
+    await expect(page.locator('.editor-heading #btn-format')).toHaveCount(1);
+    await expect(page.locator('.toolbar #btn-reset')).toHaveCount(1);
+    await page.locator('#btn-about').focus();
+    for (const id of ['btn-clear', 'btn-copy', 'btn-format']) {
+      await page.keyboard.press('Tab');
+      const control = page.locator(`#${id}`);
+      await expect(control).toBeFocused();
+      expect(await control.evaluate((el) => {
+        const style = getComputedStyle(el);
+        const ring = parseFloat(style.outlineWidth) + parseFloat(style.outlineOffset);
+        const box = el.getBoundingClientRect();
+        const heading = el.closest('.panel-heading')!.getBoundingClientRect();
+        return el.matches(':focus-visible') && ring > 0 &&
+          box.top - ring >= heading.top && box.bottom + ring <= heading.bottom;
+      }), `${id} has an unclipped focus ring`).toBe(true);
+    }
+    await page.locator('#btn-copy').click();
+    await expect(page.locator('#btn-copy')).toHaveAccessibleName('Copied');
+    await expect(page.locator('#btn-copy .icon-check')).toBeVisible();
+    await expect(page.locator('#btn-copy .icon-copy')).toBeHidden();
+    await expect(page.locator('#btn-copy')).toHaveAccessibleName('Copy code');
+    await expect(page.locator('#btn-copy .icon-copy')).toBeVisible();
+    await page.locator('#btn-output').click();
+    await expect(page.locator('#btn-clear')).toBeHidden();
+    await expect(page.locator('#btn-copy')).toBeVisible();
+    await expect(page.locator('#btn-format')).toBeVisible();
+  });
 }

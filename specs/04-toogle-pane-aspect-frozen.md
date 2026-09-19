@@ -1,5 +1,10 @@
 # Frozen: Horizontal / Vertical Pane Layout
 
+> Spec-14 FR-1404 amends the visible control: panel icons with accessible names
+> `Stacked` and `Side by side`. Internal values, IDs and persisted semantics
+> below remain unchanged. The narrow hint now says `Side-by-side layout needs
+> a window at least 900 px wide`.
+
 Source: `specs/04-toogle-pane-aspect.md` (v1.2.0)
 Status: SHIPPED
 Frozen: 2026-09-02

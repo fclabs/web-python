@@ -157,7 +157,7 @@ schedule no autosave and issue no network request.
 **FR-1313 — Toolbar cluster (Must)**
 
 As amended by FR-1401 (spec-14), at ≥ 900 px the leading controls are
-`#btn-run` … `#btn-output`, separated into execution, clear, editing and view
+`#btn-run` … `#btn-output`, separated into execution, reset and view
 groups at the inline-start; the presentation cluster (`#btn-symbols`, `#btn-theme`,
 `#btn-about`) stays flush with the inline-end. The oversized flex gap is
 between `#btn-output` and `#btn-symbols`. Tab order inserts `#btn-output`

@@ -24,7 +24,9 @@ import {
   formatRunSeparator,
   LAYOUT_NARROW_HINT,
   LAYOUT_SAVE_FAILED,
-  OUTPUT_LABEL,
+  ICON_CONTROL_LABELS,
+  COPIED_LABEL,
+  CONSOLE_HEADING,
   RUN_LABEL,
   RUNNING_LABEL,
   RUN_PYTHON_FILE_LABEL,
@@ -79,7 +81,17 @@ function need<T extends HTMLElement>(id: string): T {
 /** FR-411 / FR-412: the query that mirrors `LAYOUT_MIN_WIDTH` in the CSS. */
 const LAYOUT_QUERY = `(min-width: ${LAYOUT_MIN_WIDTH}px)`;
 
+/** FR-1403: feedback updates the label and tooltip without removing the icon. */
+function setControlLabel(control: HTMLElement, label: string): void {
+  control.querySelector('.control-label')!.textContent = label;
+  control.title = label;
+}
+
 function boot(): void {
+  for (const [id, label] of Object.entries(ICON_CONTROL_LABELS)) {
+    setControlLabel(need(id), label);
+  }
+  need('console-heading').textContent = CONSOLE_HEADING;
   const notices = new Notices(need('notices'));
   const storage = getWorkspaceStorage();
   const workspace = loadWorkspace(storage);
@@ -181,7 +193,6 @@ function boot(): void {
 
   // FR-1301 – FR-1312: Output toggle + vertical editor/output separator.
   const outputToggle = need<HTMLButtonElement>('btn-output');
-  outputToggle.textContent = OUTPUT_LABEL;
   outputPane = mountOutputPane({
     app,
     toggle: outputToggle,
@@ -329,11 +340,11 @@ function boot(): void {
       const code = view.state.doc.toString();
       const ok = await writeClipboard(code);
       if (ok) {
-        copyBtn.textContent = 'Copied';
+        setControlLabel(copyBtn, COPIED_LABEL);
         copyBtn.dataset.state = 'copied';
         if (copyTimer !== null) clearTimeout(copyTimer);
         copyTimer = setTimeout(() => {
-          copyBtn.textContent = 'Copy code';
+          setControlLabel(copyBtn, ICON_CONTROL_LABELS['btn-copy']);
           delete copyBtn.dataset.state;
           copyTimer = null;
         }, COPIED_MS);

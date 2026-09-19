@@ -453,7 +453,15 @@ Spec-04 adds one switch and nothing else: **`#app[data-layout]`**, set to
 attribute and the CSS keyed off it. No class is toggled, no element is moved,
 and the worker is never told the layout exists (BR-401).
 
-### What the two names mean
+Spec-14 uses inline SVG icons with no icon font, library, or asset requests. The
+production HTML build strips explanatory HTML comments to preserve the existing
+compressed-size budgets; source comments remain available to maintainers.
+
+Spec-14 presents this choice with panel icons named **Stacked** and **Side by
+side**, with matching tooltips. These names describe the result; the internal
+values and storage below keep their original divider semantics.
+
+### What the two internal names mean
 
 **Both name the orientation of the divider between the panels**, which is the
 convention `vim`'s `:split` / `:vsplit` uses:
@@ -514,13 +522,15 @@ things depend on the fixed panel order:
   focus and selection, which would break FR-419 outright. Because the element
   never moves, a switch costs one repaint and the `EditorView` is the same
   object afterwards — `VC-420` asserts object identity, not just equal state.
-- **WCAG SC 2.4.3.** Fixed panel order keeps reading order stable. When the
-  separator is active (two-column layout at ≥ 900 px) sequential focus visits
-  editor → separator → stdin → diagnostics; when it is inert it drops out of
-  the interactive path but stays in the DOM. That is only safe because **the
-  console panel contains no focusable element** (BR-407): focus still matches
-  visual order top to bottom. Any future change that puts a tab stop inside
-  the console has to re-verify SC 2.4.3 against this.
+- **Keyboard traversal (spec-14 FR-1405).** Clear console is now in the Console
+  heading, and Copy code / Format are in the editor heading. They follow the
+  existing panel DOM order: Clear → console resize handle when visible → Copy
+  → Format → editor → active separators → stdin → diagnostics. Hiding Output
+  hides Clear with its panel. This intentionally amends BR-407's former
+  no-focusable-console assumption: each action is named within its panel,
+  traversal remains stable across layouts, and no positive tabindex or
+  layout-dependent re-parenting is used. VC-407/VC-431 walk this order.
+
 
 The grid is shared with spec-03's pane, not competing with it. `.app` has two
 grid definitions, kept mutually exclusive by selector: spec-03's
