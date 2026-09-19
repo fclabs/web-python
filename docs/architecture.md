@@ -30,6 +30,16 @@ The visitor's program **never** runs on the main thread. That is what makes
 Stop unconditional: a runaway `while True: pass` can be killed with
 `worker.terminate()` because it was never holding the UI.
 
+While a run is active, the editor and every workspace-mutating control are
+read-only. The worker continues from the immutable workspace snapshot captured
+by Run, and Stop remains enabled so an interactive or mistaken execution can be
+abandoned immediately. Normal completion, failure, and Stop all release the
+editor lock; this prevents the post-run filesystem snapshot from overwriting
+concurrent user edits (issue #41). A status badge inside the editor explains
+the lock and points to Stop. The stdin placeholder separately tracks whether
+the running program is currently waiting for input, so it never contradicts
+the enabled field.
+
 Python paste cleanup is also main-thread-only and synchronous. A CodeMirror
 transaction filter inspects only native `input.paste` transactions for the
 active lowercase `.py` file. It parses the post-paste document twice: first to

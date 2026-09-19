@@ -27,6 +27,9 @@ import {
   RUN_LABEL,
   RUNNING_LABEL,
   RUN_PYTHON_FILE_LABEL,
+  EDITOR_RUNNING_HINT,
+  STDIN_IDLE_HINT,
+  STDIN_WAITING_HINT,
 } from './format';
 import { mountDiagResizer } from './diag-resize';
 import { CANNOT_FORMAT, formatDocument } from './lint/format-command';
@@ -80,6 +83,7 @@ function boot(): void {
   const workspace = loadWorkspace(storage);
   const activeFileName = need('active-file-name');
   let suppressEditorChange = false;
+  let running = false;
   // The files pane is available before the runtime controls are initialized.
   // It becomes the real renderer once those controls exist below.
   let refreshRunPresentation = (): void => {};
@@ -375,16 +379,6 @@ function boot(): void {
   // FR-801 – FR-819: About control + modal (after theme; last toolbar control).
   bindAboutControl(need<HTMLButtonElement>('btn-about'));
 
-  // FR-010: reset the complete classroom workspace.
-  need<HTMLButtonElement>('btn-reset').addEventListener('click', () => {
-    if (!window.confirm(RESET_CONFIRM)) return;
-    workspace.reset();
-    autosaver.schedule('workspace');
-    autosaver.flush();
-    openActiveFile();
-    view.focus();
-  });
-
   function openActiveFile(): void {
     const name = workspace.activeFile;
     const bytes = name === null ? null : workspace.get(name);
@@ -392,7 +386,8 @@ function boot(): void {
     suppressEditorChange = true;
     setDoc(view, text ?? `Binary file: ${name ?? ''} (${bytes?.length ?? 0} bytes)`);
     suppressEditorChange = false;
-    setEditorReadOnly(view, text === null);
+    // Issue #41: the execution snapshot must never race an editable buffer.
+    setEditorReadOnly(view, running || text === null);
     activeFileName.textContent = name ?? 'No file selected';
     filePane.render(workspace);
     refreshRunPresentation();
@@ -436,7 +431,7 @@ function boot(): void {
     openActiveFile(); // Python deliberately wins an overlapping editor change.
   }
 
-  // --- Lint and format (FR-035 – FR-046, FR-058, FR-059, FR-067) ---------
+  // --- Lint and format (FR-035 – FR-046, FR-058, FR-059) -----------------
   const formatBtn = need<HTMLButtonElement>('btn-format');
   const panel = new DiagnosticsPanel(
     {
@@ -453,11 +448,7 @@ function boot(): void {
 
   openActiveFile();
 
-  /**
-   * FR-043 – FR-045, FR-067: reformat the editor. It never consults the
-   * runtime, so a program already running is untouched — it executes the
-   * snapshot taken when Run was activated (BR-006).
-   */
+  /** FR-043 – FR-045: reformat the editor only while no program is running. */
   function runFormat(): void {
     // FR-058: inert by pointer, by keyboard and via the FR-009 shortcut when
     // the engine never loaded.
@@ -474,7 +465,7 @@ function boot(): void {
   void loadRuff().then(
     (loaded) => {
       engine = loaded;
-      setInert(formatBtn, false);
+      syncControls();
       linter = new Linter(loaded, (diagnostics) => {
         panel.render(diagnostics); // FR-038 / FR-040
         applyDiagnostics(view, diagnostics); // FR-036 / FR-037
@@ -498,6 +489,8 @@ function boot(): void {
   const runAction = need('run-action');
   const runFileName = need('run-file-name');
   const stopBtn = need<HTMLButtonElement>('btn-stop');
+  const resetBtn = need<HTMLButtonElement>('btn-reset');
+  const editorRunningHint = need('editor-running-hint');
 
   // FR-026: Clear console removes every console line and leaves the editor
   // completely untouched.
@@ -506,7 +499,6 @@ function boot(): void {
   });
 
   let ready = false;
-  let running = false;
   let restarting = false;
   /** Immutable target of the run in flight; it survives a file-tree selection. */
   let runTarget: string | null = null;
@@ -565,6 +557,16 @@ function boot(): void {
   function syncControls(): void {
     setInert(runBtn, !ready || running || restarting || activeRunnableFile() === null);
     setInert(stopBtn, !running);
+    setInert(formatBtn, engine === null || running);
+    setInert(resetBtn, running);
+    filePane.setEditingLocked(running);
+    const active = workspace.activeFile;
+    const bytes = active === null ? null : workspace.get(active);
+    setEditorReadOnly(view, running || (bytes !== null && !isText(bytes)));
+    editorRunningHint.textContent = running ? EDITOR_RUNNING_HINT : '';
+    editorRunningHint.hidden = !running;
+    if (running) view.contentDOM.setAttribute('aria-describedby', editorRunningHint.id);
+    else view.contentDOM.removeAttribute('aria-describedby');
   }
 
   // --- stdin field (FR-029 – FR-034, FR-060 – FR-062, FR-066) -------------
@@ -577,6 +579,7 @@ function boot(): void {
   /** FR-029: enabled and focused only while a read is actually pending. */
   function stdinPending(mode: StdinMode): void {
     stdinMode = mode;
+    stdinInput.placeholder = STDIN_WAITING_HINT;
     setInert(stdinInput, false);
     setInert(eofBtn, false);
     stdinInput.focus();
@@ -586,6 +589,7 @@ function boot(): void {
   function stdinIdle(): void {
     stdinMode = null;
     stdinInput.value = '';
+    stdinInput.placeholder = STDIN_IDLE_HINT;
     setInert(stdinInput, true);
     setInert(eofBtn, true);
   }
@@ -752,9 +756,9 @@ function boot(): void {
     runtime.stop();
   });
 
-  need<HTMLButtonElement>('btn-reset').addEventListener('click', () => {
+  resetBtn.addEventListener('click', () => {
+    if (isInert(resetBtn)) return;
     if (!window.confirm(RESET_CONFIRM)) return;
-    if (runtime.isRunning) runtime.stop();
     workspace.reset();
     lastRunFile = null;
     autosaver.schedule('workspace');
