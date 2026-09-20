@@ -1041,13 +1041,15 @@ test.describe('the layout control', () => {
       if (stop.target === 'editor') await page.keyboard.press('Control+m');
     }
 
-    // FR-1405 amends BR-407: Clear is now local to Console. No positive
+    // FR-1405 / FR-1507: Clear and Copy output are local to Console. No positive
     // tabindex or layout-dependent DOM movement changes the reading order.
     expect(stops.filter((stop) => stop.panel === 'Console')).toEqual([
       { panel: 'Console', target: 'btn-clear' },
+      { panel: 'Console', target: 'btn-copy-output' },
     ]);
     expect(stops.map((stop) => stop.target)).toEqual([
       'btn-clear',
+      'btn-copy-output',
       'btn-copy',
       'btn-format',
       'editor',
@@ -1058,6 +1060,7 @@ test.describe('the layout control', () => {
       'diagnostic-entry',
     ]);
     expect(stops.map((stop) => stop.panel)).toEqual([
+      'Console',
       'Console',
       'Editor',
       'Editor',
@@ -1352,6 +1355,7 @@ test('VC-407 (FR-049 from spec-01, FR-405): Tab reaches every control once in bo
   const EXPECTED_HORIZONTAL = [
     ...TOOLBAR_STOPS,
     'btn-clear',
+    'btn-copy-output',
     'console-resizer',
     'btn-copy',
     'btn-format',
@@ -1366,6 +1370,7 @@ test('VC-407 (FR-049 from spec-01, FR-405): Tab reaches every control once in bo
   const EXPECTED_VERTICAL = [
     ...TOOLBAR_STOPS,
     'btn-clear',
+    'btn-copy-output',
     'btn-copy',
     'btn-format',
     'editor',

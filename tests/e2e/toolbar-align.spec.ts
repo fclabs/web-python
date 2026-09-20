@@ -525,7 +525,8 @@ for (const theme of ['light', 'dark']) {
     await openPlayground(page);
     await waitForPythonReady(page);
     const controls = {
-      'btn-stop': 'Stop', 'btn-clear': 'Clear console', 'btn-copy': 'Copy code',
+      'btn-stop': 'Stop', 'btn-clear': 'Clear console', 'btn-copy-output': 'Copy output',
+      'btn-copy': 'Copy code',
       'btn-format': 'Format', 'btn-reset': 'Reset', 'btn-files': 'Files',
       'btn-output': 'Output', 'btn-symbols': 'Symbols',
       'layout-horizontal': 'Stacked', 'layout-vertical': 'Side by side',
@@ -541,11 +542,12 @@ for (const theme of ['light', 'dark']) {
       expect(box.height).toBeGreaterThanOrEqual(32);
     }
     await expect(page.locator('#console-pane #btn-clear')).toHaveCount(1);
+    await expect(page.locator('#console-pane #btn-copy-output')).toHaveCount(1);
     await expect(page.locator('.editor-heading #btn-copy')).toHaveCount(1);
     await expect(page.locator('.editor-heading #btn-format')).toHaveCount(1);
     await expect(page.locator('.toolbar #btn-reset')).toHaveCount(1);
     await page.locator('#btn-about').focus();
-    for (const id of ['btn-clear', 'btn-copy', 'btn-format']) {
+    for (const id of ['btn-clear', 'btn-copy-output', 'btn-copy', 'btn-format']) {
       await page.keyboard.press('Tab');
       const control = page.locator(`#${id}`);
       await expect(control).toBeFocused();
@@ -566,6 +568,7 @@ for (const theme of ['light', 'dark']) {
     await expect(page.locator('#btn-copy .icon-copy')).toBeVisible();
     await page.locator('#btn-output').click();
     await expect(page.locator('#btn-clear')).toBeHidden();
+    await expect(page.locator('#btn-copy-output')).toBeHidden();
     await expect(page.locator('#btn-copy')).toBeVisible();
     await expect(page.locator('#btn-format')).toBeVisible();
   });

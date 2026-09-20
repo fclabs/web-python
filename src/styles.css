@@ -1664,11 +1664,11 @@ html[data-diag-sized] #app:not([data-layout='vertical']) .panel--diagnostics {
 }
 
 .icon-check,
-#btn-copy[data-state='copied'] .icon-copy {
+.icon-button[data-state='copied'] .icon-copy {
   display: none;
 }
 
-#btn-copy[data-state='copied'] .icon-check {
+.icon-button[data-state='copied'] .icon-check {
   display: block;
 }
 

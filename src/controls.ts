@@ -2,10 +2,11 @@
  * Inert-but-focusable controls (FR-049 vs FR-054 / FR-058).
  *
  * FR-049 asks that `Tab` from page load reach *every* control — Run, Stop,
- * Clear console, Copy code, Format, the editor, the stdin field, Send EOF and
- * the diagnostics entries — each showing a visible focus indicator. FR-054 and
- * FR-058 ask that Stop and Format be "visibly disabled" and "non-activatable
- * by pointer or keyboard" whenever they do not apply.
+ * Clear console, Copy output, Copy code, Format, the editor, the stdin field,
+ * Send EOF and the diagnostics entries — each showing a visible focus
+ * indicator. FR-054, FR-058 and FR-1505 ask that Stop, Format and Copy output
+ * be "visibly disabled" and "non-activatable by pointer or keyboard" whenever
+ * they do not apply.
  *
  * A natively `disabled` control satisfies the second pair and violates the
  * first: the browser removes it from the tab order outright. So none of the

@@ -165,10 +165,18 @@
       <section id="console-pane" class="panel panel--console" aria-label="Console">
         <div class="panel-heading">
           <h2 id="console-heading" class="panel-title">Console</h2>
-          <button id="btn-clear" class="icon-button btn" type="button" title="Clear console">
-            <svg class="control-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v5M14 11v5"/></svg>
-            <span class="control-label visually-hidden">Clear console</span>
-          </button>
+          <div class="panel-actions">
+            <button id="btn-clear" class="icon-button btn" type="button" title="Clear console">
+              <svg class="control-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v5M14 11v5"/></svg>
+              <span class="control-label visually-hidden">Clear console</span>
+            </button>
+            <!-- FR-1501 / FR-1505: after Clear; inert while the transcript is empty. -->
+            <button id="btn-copy-output" class="icon-button btn" type="button" tabindex="0" aria-disabled="true" title="Copy output">
+              <svg class="control-icon icon-copy" aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V4H4v12h4"/></svg>
+              <svg class="control-icon icon-check" aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 4 4L19 6"/></svg>
+              <span class="control-label visually-hidden">Copy output</span>
+            </button>
+          </div>
         </div>
         <div id="console" class="console"></div>
         <!-- FR-1314: stacked height handle, inside the panel like `#file-resizer`. -->
