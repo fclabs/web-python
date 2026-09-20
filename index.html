@@ -144,7 +144,16 @@
 
       <p id="coi-banner" class="banner" role="status" hidden></p>
 
-      <p id="status-bar" class="status-bar" aria-live="polite">Loading Python… 0%</p>
+      <!-- FR-1501: the status cluster is the grid `status` row. `#status-bar`
+           keeps FR-065; `#stdin-cue` is outside the Output stack so a pending
+           read is visible while console/Input are hidden. -->
+      <div class="status-bar">
+        <p id="status-bar" aria-live="polite">Loading Python… 0%</p>
+        <div id="stdin-cue" class="stdin-cue" hidden>
+          <p id="stdin-cue-text" class="stdin-cue-text" role="status">Waiting for input…</p>
+          <button id="btn-goto-input" class="btn" type="button">Go to input</button>
+        </div>
+      </div>
 
       <div id="notices" class="notices" aria-live="polite"></div>
 

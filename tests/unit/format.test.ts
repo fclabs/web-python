@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
+  GOTO_INPUT_LABEL,
   NOT_ISOLATED_BANNER,
   PROGRAM_ERRORED,
   RUNTIME_FAILED,
   STDERR_PREFIX,
+  STDIN_WAITING_HINT,
   formatFinished,
   formatLoading,
   formatReady,
@@ -65,5 +67,7 @@ describe('fixed strings quoted by the spec', () => {
       'This page must be served with cross-origin isolation enabled (see Deployment). Python cannot run here.',
     );
     expect(STDERR_PREFIX).toBe('[stderr] ');
+    expect(STDIN_WAITING_HINT).toBe('Waiting for input…');
+    expect(GOTO_INPUT_LABEL).toBe('Go to input');
   });
 });

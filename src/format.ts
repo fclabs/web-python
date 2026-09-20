@@ -21,6 +21,9 @@ export const EDITOR_RUNNING_HINT = 'Program running — use Stop to edit code.';
 export const STDIN_IDLE_HINT = 'Program is not waiting for input';
 export const STDIN_WAITING_HINT = 'Waiting for input…';
 
+/** FR-1502: reveal-and-focus control while a stdin read is pending. */
+export const GOTO_INPUT_LABEL = 'Go to input';
+
 /** FR-022: `Program finished in N.NN s`, wall-clock seconds to two decimals. */
 export function formatFinished(durationMs: number): string {
   return `Program finished in ${(Math.max(0, durationMs) / 1000).toFixed(2)} s`;

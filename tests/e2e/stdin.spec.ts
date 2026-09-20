@@ -34,11 +34,10 @@ async function waitForTermination(page: Page): Promise<void> {
 
 const stdinField = (page: Page) => page.locator('#stdin-input');
 
-/** The field is enabled, focused and empty — the state FR-029 asks for. */
+/** The field is enabled and empty — the state FR-029 asks for (no auto-focus, FR-1503). */
 async function expectStdinReady(page: Page): Promise<void> {
   await waitForStdinPrompt(page);
   await expect(stdinField(page)).toBeEnabled();
-  await expect(stdinField(page)).toBeFocused();
   await expect(stdinField(page)).toHaveValue('');
   await expect(stdinField(page)).toHaveAttribute('placeholder', 'Waiting for input…');
   await expect(page.locator('#btn-eof')).toBeEnabled();
@@ -78,7 +77,7 @@ test('VC-030 (FR-029, FR-030, FR-031): a prompted read suspends, prompts once, a
   await openReady(page);
   await runProgram(page, 'n = input("Name: ")\nprint("Hi", n)\n');
 
-  // FR-029: the field is enabled and focused; FR-030: the prompt appears once.
+  // FR-029: the field is enabled; FR-030: the prompt appears once.
   await expectStdinReady(page);
   const prompted = await consoleText(page);
   expect(prompted.match(/Name: /g) ?? []).toHaveLength(1);

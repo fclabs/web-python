@@ -13,7 +13,7 @@ the implementation deliberately differs from the spec's *Data & Interfaces*.
 │    diagnostics height ── pyplay.diagnostics-height.v1; #diag-resizer │
 │    output pane ── pyplay.output-visible.v1 + pyplay.output-width.v1  │
 │    console (rAF-batched, bounded)                                   │
-│    status bar, toolbar, stdin field, diagnostics panel              │
+│    status bar + pending-input cue, toolbar, stdin field, diagnostics│
 │    Ruff-WASM (lint + format, in-thread)                             │
 │    src/runtime.ts ── owns the worker, runIds, stop-and-replace       │
 └───────────┬──────────────────────────────────┬──────────────────────┘
@@ -39,7 +39,10 @@ editor lock; this prevents the post-run filesystem snapshot from overwriting
 concurrent user edits (issue #41). A status badge inside the editor explains
 the lock and points to Stop. The stdin placeholder separately tracks whether
 the running program is currently waiting for input, so it never contradicts
-the enabled field.
+the enabled field. A pending read also shows a waiting cue in the status
+cluster (`Waiting for input…` plus **Go to input**) so the visitor can reach
+the field when Output is hidden; the request does not steal editor focus or
+auto-unhide Input.
 
 Python paste cleanup is also main-thread-only and synchronous. A CodeMirror
 transaction filter inspects only native `input.paste` transactions for the
