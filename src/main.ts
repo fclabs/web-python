@@ -34,6 +34,7 @@ import {
   EDITOR_RUNNING_HINT,
   STDIN_IDLE_HINT,
   STDIN_WAITING_HINT,
+  GOTO_INPUT_LABEL,
 } from './format';
 import { mountDiagResizer } from './diag-resize';
 import { mountOutputPane } from './output-pane';
@@ -646,33 +647,51 @@ function boot(): void {
     else view.contentDOM.removeAttribute('aria-describedby');
   }
 
-  // --- stdin field (FR-029 – FR-034, FR-060 – FR-062, FR-066) -------------
+  // --- stdin field (FR-029 – FR-034, FR-060 – FR-062, FR-066, FR-1501 – FR-1504)
   const stdinInput = need<HTMLInputElement>('stdin-input');
   const eofBtn = need<HTMLButtonElement>('btn-eof');
+  const stdinCue = need('stdin-cue');
+  const stdinCueText = need('stdin-cue-text');
+  const gotoInputBtn = need<HTMLButtonElement>('btn-goto-input');
+  stdinCueText.textContent = STDIN_WAITING_HINT;
+  gotoInputBtn.textContent = GOTO_INPUT_LABEL;
 
   /** The kind of read the visitor is answering, or null when none is pending. */
   let stdinMode: StdinMode | null = null;
 
-  /** FR-029: enabled and focused only while a read is actually pending. */
+  /** FR-1501: the cue lives in the status cluster, outside the Output stack. */
+  function setStdinCue(visible: boolean): void {
+    stdinCue.hidden = !visible;
+  }
+
+  /** FR-029: enabled only while a read is actually pending. No auto-focus (FR-1503). */
   function stdinPending(mode: StdinMode): void {
     stdinMode = mode;
     stdinInput.placeholder = STDIN_WAITING_HINT;
     setInert(stdinInput, false);
     setInert(eofBtn, false);
-    // FR-1303: reveal Input even when Output is hidden, then focus (FR-029).
     outputPane?.setStdinPending(true);
-    stdinInput.focus();
+    setStdinCue(true);
   }
 
-  /** FR-032 / FR-033: no read pending — the field takes no text at all. */
+  /** FR-032 / FR-033 / FR-1504: no read pending — the field takes no text at all. */
   function stdinIdle(): void {
     stdinMode = null;
     stdinInput.value = '';
     stdinInput.placeholder = STDIN_IDLE_HINT;
     setInert(stdinInput, true);
     setInert(eofBtn, true);
+    setStdinCue(false);
     outputPane?.setStdinPending(false);
   }
+
+  /** FR-1502: reveal Input if Output is hidden, then focus the textbox. */
+  function goToInput(): void {
+    if (stdinMode === null) return;
+    outputPane?.revealStdin();
+    stdinInput.focus();
+  }
+  gotoInputBtn.addEventListener('click', () => goToInput());
 
   function submitStdin(): void {
     if (isInert(stdinInput) || stdinMode === null) return;

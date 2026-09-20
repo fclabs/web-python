@@ -296,7 +296,7 @@ const NON_TEXT_SAMPLES: Sample[] = [
   { label: 'control border (Clear console)', selector: '#btn-clear', prop: 'borderTopColor' },
   { label: 'control border (stdin field)', selector: '#stdin-input', prop: 'borderTopColor' },
   { label: 'panel border', selector: '.panel--console', prop: 'borderTopColor' },
-  { label: 'status bar border', selector: '#status-bar', prop: 'borderTopColor' },
+  { label: 'status bar border', selector: '.status-bar', prop: 'borderTopColor' },
   {
     label: 'completion popup border',
     selector: '.cm-tooltip-autocomplete',

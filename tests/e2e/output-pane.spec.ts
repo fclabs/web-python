@@ -158,7 +158,7 @@ test('VC-1302 (FR-1302, FR-1304): toggle hides the stack and grows the editor', 
   await expect(page.locator('#btn-output')).toHaveAttribute('aria-expanded', 'true');
 });
 
-test('VC-1303 (FR-1303): pending input() reveals only the Input row', async ({ page }) => {
+test('VC-1303 (FR-1303, FR-1502): Go to input reveals only the Input row', async ({ page }) => {
   await openVertical(page);
   await page.locator('#btn-output').click();
   await expect(page.locator('#console-pane')).toBeHidden();
@@ -166,6 +166,9 @@ test('VC-1303 (FR-1303): pending input() reveals only the Input row', async ({ p
 
   await runProgram(page, 'name = input("¿Cómo te llamás? ")\nprint(name)\n');
   await waitForStdinPrompt(page);
+  await expect(page.locator('#stdin-pane')).toBeHidden();
+  await expect(page.locator('#stdin-cue')).toBeVisible();
+  await page.locator('#btn-goto-input').click();
   await expect(page.locator('#stdin-pane')).toBeVisible();
   await expect(page.locator('#console-pane')).toBeHidden();
   await expect(page.locator('#diagnostics-pane')).toBeHidden();
@@ -180,15 +183,15 @@ test('VC-1303 (FR-1303): pending input() reveals only the Input row', async ({ p
   await expect(page.locator('#console')).toContainText('Ada');
 });
 
-test('VC-1303-keep (FR-1303): hiding Output during a read keeps Input', async ({ page }) => {
+test('VC-1303-keep (FR-1303, FR-1503): hiding Output during a read hides Input', async ({ page }) => {
   await openVertical(page);
   await runProgram(page, 'x = input("n: ")\nprint(x)\n');
   await waitForStdinPrompt(page);
   await expect(page.locator('#stdin-pane')).toBeVisible();
   await page.locator('#btn-output').click();
   await expect(page.locator('#console-pane')).toBeHidden();
-  await expect(page.locator('#stdin-pane')).toBeVisible();
-  await expect(page.locator('#btn-eof')).toBeVisible();
+  await expect(page.locator('#stdin-pane')).toBeHidden();
+  await expect(page.locator('#stdin-cue')).toBeVisible();
 });
 
 test('VC-1304 (FR-1305, FR-1308): keyboard and pointer resize the column', async ({ page }) => {

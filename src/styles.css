@@ -275,16 +275,48 @@ body {
   outline-offset: -2px;
 }
 
-/* Status bar (FR-065) ---------------------------------------------------- */
+/* Status bar (FR-065) + pending-input cue (FR-1501) ---------------------- */
 .status-bar {
+  align-items: center;
   background: var(--bg-sunken);
   border: 1px solid var(--border);
   border-radius: 4px;
   color: var(--fg-muted);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
   margin: 0;
   padding: 4px 8px;
+}
+
+/* FR-065: the live region itself is not interactive (VC-050). */
+.status-bar > #status-bar {
+  flex: 1 1 auto;
+  margin: 0;
+  min-width: 0;
   pointer-events: none;
   user-select: none;
+}
+
+.stdin-cue {
+  align-items: center;
+  display: flex;
+  flex: 0 0 auto;
+  gap: 8px;
+}
+
+.stdin-cue-text {
+  color: var(--fg);
+  margin: 0;
+}
+
+#stdin-cue[hidden] {
+  display: none;
+}
+
+#btn-goto-input {
+  min-height: 32px;
+  min-width: 32px;
 }
 
 /* Cross-origin isolation banner (FR-015) -------------------------------- */
@@ -342,7 +374,7 @@ body {
 
 /* FR-1311 / FR-1302: first-paint hide (bootstrap sets html[data-output] before
    the panels exist) plus the `hidden` attribute once JS has run. Stdin is
-   restored independently while a read is pending (FR-1303). */
+   restored independently after Go to input (FR-1502 / FR-1303). */
 html[data-output='hidden'] .panel--console,
 html[data-output='hidden'] .panel--diagnostics,
 html[data-output='hidden'] .diag-resizer,

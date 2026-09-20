@@ -4,8 +4,8 @@
  *
  * Pure load/save/clamp stay free of the DOM. The mount helper wires
  * `#btn-output` and `#output-resizer`, applies `--output-width` /
- * `data-output` / `data-stdin`, and persists only on visitor commit — never
- * on viewport/layout clamp alone.
+ * `data-output` / `data-stdin` (FR-1502 reveal), and persists only on visitor
+ * commit — never on viewport/layout clamp alone.
  */
 
 import { isInert, setInert } from './controls';
@@ -198,8 +198,10 @@ export interface OutputPaneOptions {
 export interface OutputPaneHandle {
   /** Re-measure bounds, refresh ARIA, clamp in memory without rewriting storage. */
   sync(): void;
-  /** FR-1303: reveal or re-hide Input according to a pending stdin read. */
+  /** FR-1504: drop a visitor-initiated Input reveal; re-hide if Output is hidden. */
   setStdinPending(pending: boolean): void;
+  /** FR-1502: unhide Input only, while Output stays hidden. */
+  revealStdin(): void;
 }
 
 function setAriaRange(el: HTMLElement, min: number, max: number, now: number): void {
@@ -242,7 +244,8 @@ export function mountOutputPane(options: OutputPaneOptions): OutputPaneHandle {
   let visibleSaveWarned = false;
   let widthSaveWarned = false;
   let consoleHeightSaveWarned = false;
-  let stdinPending = false;
+  /** FR-1502: Input was revealed by Go to input; idle (FR-1504) clears it. */
+  let stdinRevealed = false;
   let currentWidth = 0;
   let currentMin = OUTPUT_WIDTH_MIN;
   let currentMax = OUTPUT_WIDTH_MIN;
@@ -265,7 +268,10 @@ export function mountOutputPane(options: OutputPaneOptions): OutputPaneHandle {
     const hideStack = next === 'hidden';
     consolePane.hidden = hideStack;
     diagnosticsPane.hidden = hideStack;
-    stdinPane.hidden = hideStack && !stdinPending;
+    // FR-1502 / FR-1303: Input stays in the hidden stack until Go to input.
+    stdinPane.hidden = hideStack && !stdinRevealed;
+    if (hideStack && stdinRevealed) app.dataset.stdin = 'pending';
+    else delete app.dataset.stdin;
     toggle.setAttribute('aria-expanded', String(next === 'shown'));
     if (persist && !saveOutputVisible(storage, next) && !visibleSaveWarned) {
       visibleSaveWarned = true;
@@ -381,8 +387,6 @@ export function mountOutputPane(options: OutputPaneOptions): OutputPaneHandle {
 
   const sync = (): void => {
     applyVisibility(visible, false);
-    if (stdinPending) app.dataset.stdin = 'pending';
-    else delete app.dataset.stdin;
     syncResizer();
     syncConsoleResizer();
   };
@@ -482,17 +486,20 @@ export function mountOutputPane(options: OutputPaneOptions): OutputPaneHandle {
   return {
     sync,
     setStdinPending(pending: boolean): void {
-      stdinPending = pending;
-      if (pending) {
-        app.dataset.stdin = 'pending';
-        stdinPane.hidden = false;
-        return;
-      }
+      // FR-1503: a new pending read does not auto-reveal Input.
+      if (pending) return;
+      stdinRevealed = false;
       delete app.dataset.stdin;
       const active = document.activeElement;
       const focusWasInside = active instanceof Node && stdinPane.contains(active);
       stdinPane.hidden = visible === 'hidden';
       if (focusWasInside && visible === 'hidden') toggle.focus();
+    },
+    revealStdin(): void {
+      stdinRevealed = true;
+      if (visible !== 'hidden') return;
+      app.dataset.stdin = 'pending';
+      stdinPane.hidden = false;
     },
   };
 }
