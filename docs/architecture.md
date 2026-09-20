@@ -306,8 +306,8 @@ a query string of its own.
 Two requirements pull in opposite directions:
 
 - keyboard traversal must reach **every** control — Run, Stop, Clear console,
-  Copy code, Format, the editor, the stdin field, Send EOF and the diagnostics
-  entries — each showing a visible focus indicator;
+  Copy output, Copy code, Format, the editor, the stdin field, Send EOF and the
+  diagnostics entries — each showing a visible focus indicator;
 - Stop must be visibly disabled and non-activatable whenever nothing is
   running, and Format likewise when the lint engine failed to load.
 
@@ -522,11 +522,12 @@ things depend on the fixed panel order:
   focus and selection, which would break FR-419 outright. Because the element
   never moves, a switch costs one repaint and the `EditorView` is the same
   object afterwards — `VC-420` asserts object identity, not just equal state.
-- **Keyboard traversal (spec-14 FR-1405).** Clear console is now in the Console
-  heading, and Copy code / Format are in the editor heading. They follow the
-  existing panel DOM order: Clear → console resize handle when visible → Copy
-  → Format → editor → active separators → stdin → diagnostics. Hiding Output
-  hides Clear with its panel. This intentionally amends BR-407's former
+- **Keyboard traversal (spec-14 FR-1405, spec-15 FR-1507).** Clear console and
+  Copy output are in the Console heading, and Copy code / Format are in the
+  editor heading. They follow the existing panel DOM order: Clear → Copy
+  output → console resize handle when visible → Copy code → Format → editor →
+  active separators → stdin → diagnostics. Hiding Output hides both Console
+  actions with their panel. This intentionally amends BR-407's former
   no-focusable-console assumption: each action is named within its panel,
   traversal remains stable across layouts, and no positive tabindex or
   layout-dependent re-parenting is used. VC-407/VC-431 walk this order.

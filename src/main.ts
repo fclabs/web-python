@@ -26,6 +26,7 @@ import {
   LAYOUT_SAVE_FAILED,
   ICON_CONTROL_LABELS,
   COPIED_LABEL,
+  COPY_OUTPUT_FAILED,
   CONSOLE_HEADING,
   RUN_LABEL,
   RUNNING_LABEL,
@@ -515,7 +516,28 @@ function boot(): void {
   );
 
   // --- Python runtime ----------------------------------------------------
-  const consoleView = new ConsoleView(need('console'));
+  const copyOutputBtn = need<HTMLButtonElement>('btn-copy-output');
+  let copyOutputTimer: ReturnType<typeof setTimeout> | null = null;
+  let consoleView: ConsoleView;
+
+  const restoreCopyOutputLabel = (): void => {
+    setControlLabel(copyOutputBtn, ICON_CONTROL_LABELS['btn-copy-output']);
+    delete copyOutputBtn.dataset.state;
+    if (copyOutputTimer !== null) {
+      clearTimeout(copyOutputTimer);
+      copyOutputTimer = null;
+    }
+  };
+
+  const syncCopyOutput = (): void => {
+    const empty = consoleView.empty;
+    setInert(copyOutputBtn, empty);
+    // FR-1505: becoming empty must not leave a stale `Copied` label.
+    if (empty) restoreCopyOutputLabel();
+  };
+
+  consoleView = new ConsoleView(need('console'), syncCopyOutput);
+  syncCopyOutput();
   const statusBar = need('status-bar');
   const banner = need('coi-banner');
   const runBtn = need<HTMLButtonElement>('btn-run');
@@ -529,6 +551,28 @@ function boot(): void {
   // completely untouched.
   need<HTMLButtonElement>('btn-clear').addEventListener('click', () => {
     consoleView.clear();
+  });
+
+  // FR-1501 – FR-1506: Copy output. Same clipboard helper and Copied window
+  // as Copy code; inert while the transcript is empty (never `disabled`).
+  copyOutputBtn.addEventListener('click', () => {
+    void (async () => {
+      if (isInert(copyOutputBtn)) return;
+      const text = consoleView.text;
+      const ok = await writeClipboard(text);
+      if (ok) {
+        setControlLabel(copyOutputBtn, COPIED_LABEL);
+        copyOutputBtn.dataset.state = 'copied';
+        if (copyOutputTimer !== null) clearTimeout(copyOutputTimer);
+        copyOutputTimer = setTimeout(() => {
+          restoreCopyOutputLabel();
+        }, COPIED_MS);
+      } else {
+        restoreCopyOutputLabel();
+        notices.show(COPY_OUTPUT_FAILED);
+        consoleView.selectAll();
+      }
+    })();
   });
 
   let ready = false;

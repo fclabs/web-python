@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
+  COPY_OUTPUT_FAILED,
+  COPY_OUTPUT_LABEL,
   NOT_ISOLATED_BANNER,
   PROGRAM_ERRORED,
   RUNTIME_FAILED,
@@ -65,5 +67,9 @@ describe('fixed strings quoted by the spec', () => {
       'This page must be served with cross-origin isolation enabled (see Deployment). Python cannot run here.',
     );
     expect(STDERR_PREFIX).toBe('[stderr] ');
+    expect(COPY_OUTPUT_LABEL).toBe('Copy output');
+    expect(COPY_OUTPUT_FAILED).toBe(
+      "Couldn't copy — select the output and press Ctrl/Cmd+C",
+    );
   });
 });

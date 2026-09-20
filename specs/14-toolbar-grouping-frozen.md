@@ -12,7 +12,7 @@ offline, inert-but-focusable controls and performance contracts remain unchanged
   16 ± 1 px. At ≥ 900 px the Output→Symbols boundary may grow with the existing
   auto margin, and About stays flush with the content inline-end.
 - **FR-1402 — Presentation:** Run retains its primary accent and visible text.
-  Stop, Reset, Files, Output, Symbols, Clear console, Copy code and Format use
+  Stop, Reset, Files, Output, Symbols, Clear console, Copy output, Copy code and Format use
   consistent inline SVG icons with existing palette tokens, accessible names
   and title tooltips. Icons are decorative to assistive technology. Hit targets
   are at least 32 × 32 px. At 375 px controls wrap without overlap or horizontal
@@ -32,18 +32,19 @@ offline, inert-but-focusable controls and performance contracts remain unchanged
   Reset stays in the global toolbar because it resets the entire workspace.
   Actions move in the DOM with their panels; no CSS reordering or positive
   tabindex is used. The main toolbar has nine tab stops. After the optional
-  Symbols pane, traversal reaches Clear console, the console resizer when
-  visible, Copy code, Format, then the editor and existing subsequent controls.
-  Hidden Output also hides its Clear action; editor actions remain available.
+  Symbols pane, traversal reaches Clear console, Copy output (spec-15), the
+  console resizer when visible, Copy code, Format, then the editor and existing
+  subsequent controls. Hidden Output also hides its Console actions; editor
+  actions remain available.
 
 ## Intentional specification amendments
 
 FR-703/FR-705/FR-706 and VC-703/VC-705 now use FR-1401's explicit group gaps.
 FR-704/VC-704, parent VC-052, Symbols VC-315 and layout VC-407/VC-431 use FR-1405's
 contextual tab order. BR-407's former no-console-tab-stop assumption is amended:
-Clear is the only Console action, followed by editor actions in the stable panel
-DOM order in both layouts. Panel headings name each action's context; hidden
-Output removes its action from traversal. No layout-dependent focus reordering
+Clear and Copy output (spec-15) are the Console actions, followed by editor
+actions in the stable panel DOM order in both layouts. Panel headings name each action's context; hidden
+Output removes its actions from traversal. No layout-dependent focus reordering
 is introduced.
 FR-401/VC-401 use FR-1404's icons and accessible names; stored layout semantics
 and IDs are unchanged. FR-1313/VC-1301 preserve Files→Output→Symbols placement.

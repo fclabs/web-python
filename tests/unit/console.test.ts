@@ -57,4 +57,30 @@ describe('ConsoleView (FR-019, FR-020, FR-021)', () => {
     expect(view.text).toBe('');
     expect(host.children).toHaveLength(0);
   });
+
+  it('reports empty until the first retained character (FR-1505)', () => {
+    expect(view.empty).toBe(true);
+    view.stdout('');
+    expect(view.empty).toBe(true);
+    view.stdout('x');
+    expect(view.empty).toBe(false);
+    view.clear();
+    expect(view.empty).toBe(true);
+  });
+
+  it('selects the displayed transcript (FR-1504)', () => {
+    view.stdout('café\n你好\n');
+    view.selectAll();
+    expect(window.getSelection()?.toString()).toBe('café\n你好\n');
+  });
+
+  it('notifies only when emptiness changes (FR-1505)', () => {
+    const seen: boolean[] = [];
+    const watched = new ConsoleView(host, () => seen.push(watched.empty));
+    watched.stdout('x\n');
+    watched.stdout('y\n');
+    watched.clear();
+    watched.clear();
+    expect(seen).toEqual([false, true]);
+  });
 });
