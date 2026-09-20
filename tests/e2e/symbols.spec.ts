@@ -357,7 +357,7 @@ test('VC-332 (FR-318): nothing but the toggle and Escape dismisses the pane', as
   await page.locator('body').click({ position: { x: 2, y: 2 } });
   await stillOpen('after a background click');
 
-  for (const name of ['Clear console', 'Copy code', 'Format']) {
+  for (const name of ['Copy output', 'Clear console', 'Copy code', 'Format']) {
     await page.getByRole('button', { name }).click();
     await stillOpen(`after ${name}`);
   }
@@ -944,6 +944,7 @@ test.describe('wide layout keyboard model', () => {
       '#btn-about',
       'pane',
       '#btn-clear',
+      '#btn-copy-output',
       ...(consoleResizerVisible ? (['#console-resizer'] as const) : []),
       '#btn-copy',
       '#btn-format',

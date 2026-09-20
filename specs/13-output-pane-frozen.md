@@ -236,6 +236,11 @@ measurement for spec-12, but VC-1206 no longer charges every later whole-app
 feature to the pairing branch point. Output carries the independently anchored
 NFR-1301 budget instead.
 
+**Amendment (spec-15, 2026-09-20):** NFR-1301's ≤ 3 KiB ship measurement vs
+`6ab5936` is immutable; VC-1314-size no longer subtracts later whole-app
+builds from that baseline. Indentation folding carries the independently
+anchored NFR-1501 budget instead.
+
 **NFR-1302 — Apply latency**
 
 Hide, show, and a committed resize paint in ≤ 50 ms and introduce no

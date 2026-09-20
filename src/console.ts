@@ -44,7 +44,10 @@ export class ConsoleView {
   /** FR-028: follow new output only while the visitor is at the bottom. */
   private pinned = true;
 
-  constructor(private readonly host: HTMLElement) {
+  constructor(
+    private readonly host: HTMLElement,
+    private readonly onChange?: () => void,
+  ) {
     host.addEventListener('scroll', () => {
       const distance = host.scrollHeight - host.scrollTop - host.clientHeight;
       this.pinned = distance <= BOTTOM_EPSILON;
@@ -101,6 +104,7 @@ export class ConsoleView {
 
   /** FR-026: all console content is removed; the editor is not touched. */
   clear(): void {
+    const wasEmpty = this.empty;
     if (this.frame !== null) {
       unschedule(this.frame);
       this.frame = null;
@@ -112,12 +116,29 @@ export class ConsoleView {
     this.markerNode = null;
     this.pinned = true;
     this.host.replaceChildren();
+    if (!wasEmpty) this.onChange?.();
   }
 
   /** The console's full text, used by the verification suite. */
   get text(): string {
     this.paint();
     return this.host.textContent ?? '';
+  }
+
+  /** FR-1505: nothing retained — Copy output is inert. */
+  get empty(): boolean {
+    return this.model.text === '';
+  }
+
+  /** FR-1504: select the displayed transcript so the visitor can copy manually. */
+  selectAll(): void {
+    this.paint();
+    const selection = window.getSelection();
+    if (selection === null) return;
+    const range = document.createRange();
+    range.selectNodeContents(this.host);
+    selection.removeAllRanges();
+    selection.addRange(range);
   }
 
   /** Render everything pending right now, instead of on the next frame. */
@@ -133,7 +154,11 @@ export class ConsoleView {
 
   private write(cls: string, text: string): void {
     if (text === '') return;
+    const wasEmpty = this.empty;
     this.model.append(cls, text);
+    // FR-1505 / NFR-009: inertness only changes at the empty boundary, so a
+    // tight print loop must not call into the Copy output control per chunk.
+    if (wasEmpty) this.onChange?.();
     if (this.frame === null) {
       this.frame = schedule(() => {
         this.frame = null;

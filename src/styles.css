@@ -706,6 +706,27 @@ html[data-output='hidden'] #app:not([data-layout='vertical']) .diag-resizer {
   color: var(--fg-muted);
 }
 
+/* FR-1502 / FR-1504 / NFR-1502: fold markers and placeholder use palette tokens.
+   Element+class beats CodeMirror's generated-class `.cm-foldPlaceholder` rule. */
+.cm-editor .cm-foldGutter {
+  min-width: 0.9em;
+}
+
+.cm-editor .cm-foldGutter span {
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+
+.cm-editor span.cm-foldPlaceholder {
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--fg-muted);
+  cursor: pointer;
+  margin: 0 0.35em;
+  padding: 0 0.3em;
+}
+
 .cm-editor .cm-activeLine {
   background: color-mix(in srgb, var(--fg) 6%, transparent);
 }
@@ -1675,11 +1696,11 @@ html[data-diag-sized] #app:not([data-layout='vertical']) .panel--diagnostics {
 }
 
 .icon-check,
-#btn-copy[data-state='copied'] .icon-copy {
+.icon-button[data-state='copied'] .icon-copy {
   display: none;
 }
 
-#btn-copy[data-state='copied'] .icon-check {
+.icon-button[data-state='copied'] .icon-check {
   display: block;
 }
 

@@ -212,7 +212,7 @@ Their license terms remain applicable and are listed in
 | `Shift` + `Alt` + `F` | Format (from the editor) |
 | `Enter` in the input field | Submit a line to the running program |
 | `Ctrl` + `D` in the input field | Send EOF |
-| `Tab` outside the editor | Move to the next control — including Run, Stop, Clear console, Copy code, Format, Reset, the layout control, Symbols, the editor, the input field, Send EOF and the diagnostics entries |
+| `Tab` outside the editor | Move to the next control — including Run, Stop, Clear console, Copy output, Copy code, Format, Reset, the layout control, Symbols, the editor, the input field, Send EOF and the diagnostics entries |
 | `←` `→` `↑` `↓` in the layout control | Select the other layout — and apply it |
 | `Home` / `End` in the layout control | Select `Horizontal` / `Vertical` |
 

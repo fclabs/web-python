@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
+  COPY_OUTPUT_FAILED,
+  COPY_OUTPUT_LABEL,
   GOTO_INPUT_LABEL,
   NOT_ISOLATED_BANNER,
   PROGRAM_ERRORED,
@@ -69,5 +71,9 @@ describe('fixed strings quoted by the spec', () => {
     expect(STDERR_PREFIX).toBe('[stderr] ');
     expect(STDIN_WAITING_HINT).toBe('Waiting for input…');
     expect(GOTO_INPUT_LABEL).toBe('Go to input');
+    expect(COPY_OUTPUT_LABEL).toBe('Copy output');
+    expect(COPY_OUTPUT_FAILED).toBe(
+      "Couldn't copy — select the output and press Ctrl/Cmd+C",
+    );
   });
 });

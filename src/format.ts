@@ -67,9 +67,9 @@ export const STATUS_RESTARTING = 'Restarting Python…';
 export const UPDATE_AVAILABLE = 'A new version is available — reload to update';
 
 /**
- * FR-006 / FR-307: how long `Copied` feedback stays on screen. One constant,
- * shared by **Copy code** and the special-character pane, so the two windows
- * cannot drift apart (spec-03: User-visible strings).
+ * FR-006 / FR-307 / FR-1503: how long `Copied` feedback stays on screen. One
+ * constant, shared by **Copy code**, **Copy output**, and the special-character
+ * pane, so the windows cannot drift apart (spec-03 / spec-15).
  */
 export const COPIED_MS = 2000;
 
@@ -160,10 +160,17 @@ export const ABOUT_CLOSE_LABEL = 'Close';
 /** BR-802: per-field fallback when build-time input is missing. */
 export const UNKNOWN = 'unknown';
 
+/** FR-1501: `#btn-copy-output` visible label, tooltip, and accessible name. */
+export const COPY_OUTPUT_LABEL = 'Copy output';
+
+/** FR-1504: notice when Copy output's clipboard write is rejected. */
+export const COPY_OUTPUT_FAILED = "Couldn't copy — select the output and press Ctrl/Cmd+C";
+
 /** FR-1402/1405: icon tooltips and accessible labels, independent of placement. */
 export const ICON_CONTROL_LABELS = {
   'btn-stop': 'Stop',
   'btn-clear': 'Clear console',
+  'btn-copy-output': COPY_OUTPUT_LABEL,
   'btn-copy': 'Copy code',
   'btn-format': 'Format',
   'btn-reset': 'Reset',
