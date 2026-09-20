@@ -6,7 +6,7 @@ the implementation deliberately differs from the spec's *Data & Interfaces*.
 ```
 ┌──────────────────────────── main thread ────────────────────────────┐
 │  index.html + src/main.ts                                           │
-│    flat file tree + CodeMirror + indent + pairing + paste cleanup     │
+│    flat file tree + CodeMirror + indent + fold + pairing + paste    │
 │      └─ autosave → localStorage['pyplay.workspace.v1']               │
 │    color mode ── pyplay.theme.v1; editor darkTheme from effective   │
 │    layout ── pyplay.layout.v2; #app[data-layout] drives the grid    │
@@ -72,6 +72,13 @@ selection, and lets Backspace delete an empty pair. `closeBracketsKeymap`
 runs ahead of the default keymap so its Backspace binding is tried first.
 `@codemirror/lang-python` supplies the delimiter set and string prefixes; the
 playground adds no custom handler for these characters.
+
+CodeMirror's native `codeFolding` / `foldGutter` collapse indented blocks
+without rewriting the document. An indent `foldService` is the default
+strategy: a header folds through later lines that stay strictly more
+indented, and blank lines do not end the region. Python syntax folds stay
+installed as the fallback for delimiter-wrapped constructs the indent
+service does not mark. Fold state is not persisted.
 
 ---
 

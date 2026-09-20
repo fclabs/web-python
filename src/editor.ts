@@ -21,6 +21,7 @@ import {
 import {
   HighlightStyle,
   bracketMatching,
+  foldKeymap,
   indentOnInput,
   indentUnit,
   syntaxHighlighting,
@@ -29,6 +30,7 @@ import { python } from '@codemirror/lang-python';
 import { tags as t } from '@lezer/highlight';
 import { diagnosticMarkers } from './lint/markers';
 import { pythonNameCompletionSource } from './completion';
+import { indentFolding } from './fold';
 import { sanitizePythonPaste, type PasteRange } from './paste';
 
 /**
@@ -158,6 +160,8 @@ export function createEditor({
       ]),
     ),
     lineNumbers(),
+    // FR-1501 – FR-1504 / BR-1501: native fold gutter with indent as default.
+    indentFolding(),
     highlightActiveLineGutter(),
     highlightActiveLine(),
     highlightSpecialChars(),
@@ -208,7 +212,14 @@ export function createEditor({
     // keeps Ctrl+M (Shift+Alt+M on macOS) as the accessible Tab-focus escape.
     // BR-1201: closeBracketsKeymap is first so empty-pair Backspace is tried
     // before defaultKeymap's deleteCharBackward.
-    keymap.of([...closeBracketsKeymap, indentWithTab, ...defaultKeymap, ...historyKeymap]),
+    // BR-1501: foldKeymap is native fold/unfold, not a custom binding.
+    keymap.of([
+      ...closeBracketsKeymap,
+      indentWithTab,
+      ...foldKeymap,
+      ...defaultKeymap,
+      ...historyKeymap,
+    ]),
     EditorView.lineWrapping,
     EditorView.updateListener.of((update) => {
       if (update.docChanged) onChange(update.state.doc.toString());
