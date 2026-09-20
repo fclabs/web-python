@@ -3,10 +3,6 @@
  *
  * VC-1301 – VC-1314 against the built site.
  */
-import { readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { gzipSync } from 'node:zlib';
 import { expect, test, type Page, type Request } from '@playwright/test';
 import {
   CONSOLE_HEIGHT_KEY,
@@ -583,67 +579,11 @@ test('VC-1314 (NFR-1302): hide and resize paint in ≤ 50 ms', async ({ page }) 
   expect(Math.max(0, ...resizeTasks), 'NFR-1302 resize long task').toBeLessThanOrEqual(50);
 });
 
-const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
-const dist = join(repoRoot, 'dist');
-const OUTPUT_BASELINE_PATH =
-  process.env.PYPLAY_BASELINE_OUTPUT ??
-  join(repoRoot, 'tests', 'e2e', 'baseline-build-output.json');
-
-interface BaselineBuild {
-  commit: string;
-  manifestUrlCount: number;
-  gzippedApp?: number;
-  gzippedBy?: string;
-  gzippedAppBy?: Record<string, number>;
-}
-
-const outputBaseline = JSON.parse(readFileSync(OUTPUT_BASELINE_PATH, 'utf8')) as BaselineBuild;
-const compressor = `${process.platform}-${process.arch} zlib ${process.versions.zlib}`;
-const outputBaselineApp =
-  outputBaseline.gzippedAppBy?.[compressor] ??
-  (outputBaseline.gzippedBy === compressor ? outputBaseline.gzippedApp : undefined);
-const OUTPUT_SIZE_BUDGET_BYTES = 3 * 1024;
-
-if (process.env.PYPLAY_BASELINE_OUTPUT !== undefined && outputBaselineApp === undefined) {
-  throw new Error(
-    `${OUTPUT_BASELINE_PATH} records no app size for "${compressor}" (gzipped by ` +
-      `"${outputBaseline.gzippedBy}")`,
-  );
-}
-
-const uncoveredOutputCompressor =
-  `no ${outputBaseline.commit} baseline for "${compressor}" — have: ` +
-  `${Object.keys(outputBaseline.gzippedAppBy ?? {}).join(', ')}. Record with: ` +
-  `node scripts/record-baselines.mjs ${outputBaseline.commit} --build <out.json>`;
-
-const isVendored = (url: string): boolean =>
-  url.startsWith('/pyodide/') || url.startsWith('/ruff/');
-
-test('VC-1314-size (NFR-1301): Output adds ≤ 3 KiB gzip and no asset', async () => {
-  test.skip(outputBaselineApp === undefined, uncoveredOutputCompressor);
-
-  const manifest = JSON.parse(readFileSync(join(dist, 'precache-manifest.json'), 'utf8')) as {
-    urls: string[];
-  };
-  let gzippedApp = 0;
-  for (const url of [...manifest.urls, '/index.html']) {
-    if (url === '/' || isVendored(url)) continue;
-    gzippedApp += gzipSync(readFileSync(join(dist, url.replace(/^\//, ''))), { level: 9 }).length;
-  }
-
-  const delta = gzippedApp - outputBaselineApp!;
-  expect(
-    delta,
-    `NFR-1301 app size delta vs ${outputBaseline.commit}: ${delta} B gzipped ` +
-      `(budget ${OUTPUT_SIZE_BUDGET_BYTES} B, compressor "${compressor}")`,
-  ).toBeLessThanOrEqual(OUTPUT_SIZE_BUDGET_BYTES);
-  expect(manifest.urls).toHaveLength(outputBaseline.manifestUrlCount);
-
+test('VC-1314-size (NFR-1301): Output size is historical as of spec-15', () => {
   console.log(
     [
       'VC-1314 measurements:',
-      `  NFR-1301 app delta vs ${outputBaseline.commit} ${delta} B (<= ${OUTPUT_SIZE_BUDGET_BYTES})`,
-      `  NFR-1301 precache URL count           ${manifest.urls.length} (unchanged)`,
+      '  NFR-1301 app size delta                 (historical — see specs/13-output-pane-frozen.md)',
     ].join('\n'),
   );
 });

@@ -8,6 +8,7 @@ src/                       application code (TypeScript, no framework)
   main.ts                  wiring: every FR is hooked up here
   controls.ts              the inert-but-focusable control pattern
   editor.ts                CodeMirror 6 setup
+  fold.ts                  indent fold ranges and the native fold gutter
   completion.ts            offline Python name completion source
   console.ts               console rendering; console-buffer.ts caps it
   runtime.ts               owns the Pyodide worker, runIds, stop-and-replace
@@ -134,7 +135,8 @@ Records pin what a build is compared against:
 | `tests/e2e/baseline-build-diag-resize.json` | VC-912 (NFR-904, ≤ 2 KB) | `562cb27` |
 | `tests/e2e/baseline-build-paste.json` | VC-1011 (NFR-1001 size historical) | `2eb0bd4` |
 | `tests/e2e/baseline-build-brackets.json` | VC-1206 (NFR-1201 size historical) | `44f9afa` |
-| `tests/e2e/baseline-build-output.json` | VC-1314 (NFR-1301, ≤ 3 KiB) | `6ab5936` |
+| `tests/e2e/baseline-build-output.json` | VC-1314 (NFR-1301 size historical) | `6ab5936` |
+| `tests/e2e/baseline-build-fold.json` | VC-1506 (NFR-1501, ≤ 4 KiB) | `1b3da62` |
 | `tests/e2e/baseline-build-theme.json` | VC-513 (spec-05, shape / latency) | `0a4194f` |
 | `tests/e2e/baseline-geometry.json` | VC-408 (spec-04, ±1 px) | `384cb70` |
 
@@ -155,7 +157,7 @@ environments reports the environment as a regression:
 
 So `pr.yml` builds the pinned commits on the runner and records its own before
 each suite, pointing `PYPLAY_BASELINE_GEOMETRY`, `PYPLAY_BASELINE_BUILD`, and
-`PYPLAY_BASELINE_OUTPUT` at them. The committed records are the fallback
+`PYPLAY_BASELINE_FOLD` at them. The committed records are the fallback
 for a local run: a geometry record names the environment it was made on and
 the size records are keyed by compressor, and a run matching neither **skips**
 rather than reporting a pass it did not earn.
@@ -168,6 +170,7 @@ node scripts/record-baselines.mjs 3efb8be --build    tests/e2e/baseline-build-co
 node scripts/record-baselines.mjs 562cb27 --build    tests/e2e/baseline-build-diag-resize.json
 node scripts/record-baselines.mjs 44f9afa --build    tests/e2e/baseline-build-brackets.json
 node scripts/record-baselines.mjs 6ab5936 --build    tests/e2e/baseline-build-output.json
+node scripts/record-baselines.mjs 1b3da62 --build    tests/e2e/baseline-build-fold.json
 ```
 
 Commit the result only when it is your own environment's record of a commit
