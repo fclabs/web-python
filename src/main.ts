@@ -13,6 +13,7 @@ import {
 } from './editor';
 import { FilePane } from './file-pane';
 import type { FsMutation } from './fs-channel';
+import { insertIntoField } from './insert';
 import {
   NOT_ISOLATED_BANNER,
   PROGRAM_ERRORED,
@@ -366,17 +367,35 @@ function boot(): void {
   // FR-301 – FR-318 / FR-1601: the special-character pane. It depends on its
   // own two elements plus `onInsert`, and `main.ts` depends on it for exactly
   // one thing — `setLocked`, driven from `syncControls()` (BR-1601, BR-1604).
+  // FR-1608: `main.ts` needs the pane element itself to answer "does the pane
+  // hold focus" without the pane exposing a predicate (BR-1601, BR-1604).
+  const symbolPaneEl = need('symbol-pane');
+
   const symbolPane = new SymbolPane({
     toggle: need<HTMLButtonElement>('btn-symbols'),
-    pane: need('symbol-pane'),
+    pane: symbolPaneEl,
     status: need('symbol-status'),
     // FR-1601 / FR-1605 / FR-1610: resolve the target here, mutate it here,
     // and never move focus — the activated button keeps it.
     onInsert(value) {
       const target = resolveInsertTarget();
       if (target === 'editor') insertAtCaret(view, value);
-      // `'stdin'` is unreachable until Iteration 3 wires the stdin candidate
-      // into `resolveInsertTarget()`; `null` is a no-op by FR-1607.
+      // FR-1606: `setRangeText` at the field's own offsets. No `focus()`, no
+      // synthetic `input` event (`submitStdin()` reads `.value` directly), and
+      // nothing else on the page is written to. `null` is a no-op (FR-1607).
+      else if (target === 'stdin') {
+        // Chromium discards an *unfocused* field's programmatically set
+        // selection at the next pointer-down elsewhere on the page, so the
+        // second pane activation in a row would otherwise read offset 0 and
+        // insert in reverse order. `stdinCaret` is the caret this module last
+        // left in the field; it is null whenever the visitor owns the caret,
+        // in which case the field's own offsets are used unchanged (FR-1606).
+        if (stdinCaret !== null && document.activeElement !== stdinInput) {
+          stdinInput.setSelectionRange(stdinCaret, stdinCaret);
+        }
+        insertIntoField(stdinInput, value);
+        stdinCaret = stdinInput.selectionStart;
+      }
     },
   });
 
@@ -646,6 +665,30 @@ function boot(): void {
    * Stop enabled if and only if a program is currently running.
    */
   /**
+   * FR-1605: the more recently focused of the two insertion targets. Written
+   * only by the `focusin` listener below — focusing anything else (a toolbar
+   * control, a symbol button, the console, the Files tree) leaves it alone.
+   * Before either has been focused the record is the editor.
+   */
+  let lastFocusedTarget: 'editor' | 'stdin' = 'editor';
+
+  /**
+   * FR-1606: where the last pane insertion left the stdin field's caret, or
+   * `null` whenever the visitor owns it (the field has focus, or has not been
+   * written to by the pane since). Only the `'stdin'` branch of `onInsert`
+   * writes a number here.
+   */
+  let stdinCaret: number | null = null;
+
+  /**
+   * FR-1607 / BR-1604: the resolution the last `syncControls()` pass locked the
+   * pane against. `focusin` re-runs that pass only when the resolution has
+   * actually changed, because the pass re-renders the Files tree and a
+   * re-render between pointer-down and click would swallow a file selection.
+   */
+  let lockedTarget: 'editor' | 'stdin' | null = null;
+
+  /**
    * FR-1605: which text target the next symbol-pane insertion would land in,
    * or `null` when there is no live target at all (FR-1607).
    *
@@ -654,19 +697,24 @@ function boot(): void {
    * `running` / `active` / `isText(bytes)` facts `syncControls()` feeds to
    * `setEditorReadOnly`, read from the same sources so the two cannot drift.
    *
-   * **Iteration 3** adds the stdin candidate here: the field is a live target
-   * while `!isInert(stdinInput)` (a read is pending, FR-029 / FR-032), and a
-   * `focusin` listener in this module records the last-focused of the two.
-   * Until then the branch resolves to `null` and the editor is the only
-   * candidate.
+   * The stdin field is a live target only while it is not inert, which is
+   * exactly "a read is pending" (FR-029 / FR-032). The last-focused of the two
+   * wins when it is live; otherwise the editor does, when it is live; when
+   * neither is, there is no target at all and FR-1607 locks the pane.
    */
   function resolveInsertTarget(): 'editor' | 'stdin' | null {
-    // Iteration 3: `if (!isInert(stdinInput)) return 'stdin';` goes here,
-    // ahead of the editor, gated on the last-focused record.
+    // FR-1605: the stdin field takes text only while a read is pending, which
+    // `stdinPending()` / `stdinIdle()` express as its inertness (FR-029 /
+    // FR-032). `main.ts` reads that one fact rather than tracking a second.
+    const stdinLive = !isInert(stdinInput);
     const active = workspace.activeFile;
     const bytes = active === null ? null : workspace.get(active);
-    if (running || active === null || bytes === null || !isText(bytes)) return null;
-    return 'editor';
+    const editorLive = !running && active !== null && bytes !== null && isText(bytes);
+    if (lastFocusedTarget === 'stdin' && stdinLive) return 'stdin';
+    // FR-1605: whenever the last-focused target is not live, the editor is the
+    // target — including before either of the two has ever been focused.
+    if (editorLive) return 'editor';
+    return null;
   }
 
   function syncControls(): void {
@@ -680,7 +728,10 @@ function boot(): void {
     setEditorReadOnly(view, running || (bytes !== null && !isText(bytes)));
     // FR-1607 / BR-1604: the single owner of the pane's lock, derived from the
     // same pass as every other control's inertness.
-    symbolPane.setLocked(resolveInsertTarget() === null);
+    lockedTarget = resolveInsertTarget();
+    symbolPane.setLocked(lockedTarget === null);
+    // FR-1608: the outline follows the same resolution, in the same pass.
+    syncInsertTargetOutline();
     editorRunningHint.textContent = running ? EDITOR_RUNNING_HINT : '';
     editorRunningHint.hidden = !running;
     if (running) view.contentDOM.setAttribute('aria-describedby', editorRunningHint.id);
@@ -690,6 +741,55 @@ function boot(): void {
   // --- stdin field (FR-029 – FR-034, FR-060 – FR-062, FR-066) -------------
   const stdinInput = need<HTMLInputElement>('stdin-input');
   const eofBtn = need<HTMLButtonElement>('btn-eof');
+
+  /**
+   * FR-1608: mark the resolved target, and only it, with `data-insert-target`.
+   * Presentation only — `src/styles.css` paints the outline (and the editor's
+   * caret) off the attribute. No transaction, no `focus()` call, no change to
+   * `document.activeElement`, and never two targets at once.
+   */
+  function markInsertTarget(target: 'editor' | 'stdin' | null): void {
+    view.contentDOM.toggleAttribute('data-insert-target', target === 'editor');
+    stdinInput.toggleAttribute('data-insert-target', target === 'stdin');
+  }
+
+  /** FR-1608: `#symbol-pane:focus-within`, with the pane actually open. */
+  function paneHoldsFocus(node: EventTarget | null): boolean {
+    return symbolPane.isOpen && node instanceof Node && symbolPaneEl.contains(node);
+  }
+
+  function syncInsertTargetOutline(): void {
+    markInsertTarget(paneHoldsFocus(document.activeElement) ? resolveInsertTarget() : null);
+  }
+
+  /**
+   * FR-1605 / FR-1610: the one focus listener of this feature. It lives here
+   * and never in `src/symbol-pane.ts`, and it dismisses nothing — it records
+   * the last-focused target and re-derives the lock and the outline from it.
+   */
+  document.addEventListener('focusin', (event) => {
+    const target = event.target;
+    if (target instanceof Node && view.contentDOM.contains(target)) lastFocusedTarget = 'editor';
+    else if (target === stdinInput) {
+      lastFocusedTarget = 'stdin';
+      // The visitor owns the caret again while the field has focus (FR-1606).
+      stdinCaret = null;
+    }
+    // Anything else leaves the record unchanged (FR-1605).
+    if (resolveInsertTarget() !== lockedTarget) syncControls();
+    else syncInsertTargetOutline();
+  });
+
+  /**
+   * FR-1608: focus leaving the pane for nothing at all (a click on the page
+   * background) fires no `focusin`, so the outline is cleared here. At this
+   * point focus has not moved yet, which is why the *next* element is read
+   * from `relatedTarget` rather than from `document.activeElement`.
+   */
+  document.addEventListener('focusout', (event) => {
+    if (paneHoldsFocus(event.relatedTarget)) return;
+    markInsertTarget(null);
+  });
 
   /** The kind of read the visitor is answering, or null when none is pending. */
   let stdinMode: StdinMode | null = null;
@@ -703,6 +803,9 @@ function boot(): void {
     // FR-1303: reveal Input even when Output is hidden, then focus (FR-029).
     outputPane?.setStdinPending(true);
     stdinInput.focus();
+    // FR-1607: a pending read is a live insertion target even while the
+    // program runs, so the pane's lock is re-derived here too (FR-1605).
+    syncControls();
   }
 
   /** FR-032 / FR-033: no read pending — the field takes no text at all. */
@@ -713,6 +816,9 @@ function boot(): void {
     setInert(stdinInput, true);
     setInert(eofBtn, true);
     outputPane?.setStdinPending(false);
+    stdinCaret = null;
+    // FR-1607: the field stops being a target the moment the read is answered.
+    syncControls();
   }
 
   function submitStdin(): void {

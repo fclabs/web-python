@@ -7,6 +7,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { expect, test, type Page } from '@playwright/test';
+import { failures, measureContrast } from './contrast';
 import {
   caretPosition,
   consoleText,
@@ -1213,8 +1214,8 @@ test('VC-320 (FR-312, BR-304): opening and copying persists nothing, and a reloa
 /* -------------------------------------------------------------------------
    spec-16 — FR-1601 – FR-1612: the pane inserts at the caret
 
-   Iteration 2 of the insert-at-caret plan: the editor is the only target.
-   VC-1607 / VC-1608's stdin legs and VC-1609's outline land with Iteration 3.
+   Iteration 2 of the insert-at-caret plan covered the editor target; the stdin
+   target and FR-1608's outline are in the Iteration 3 section further down.
    ------------------------------------------------------------------------- */
 
 /** Focus the live CodeMirror view without a pointer, so the selection is kept. */
@@ -1771,4 +1772,193 @@ test('VC-1613 (BR-1603): the pane still inserts with navigator.clipboard deleted
   expect(await editorText(page)).toBe('x = 1#\n');
   expect(await symbolStatus(page)).toBe('Inserted #');
   expect(await noticeTexts(page)).toEqual([]);
+});
+
+/* -------------------------------------------------------------------------
+   spec-16 — FR-1605, FR-1606, FR-1608: the stdin target and its outline
+   ------------------------------------------------------------------------- */
+
+/** A program that blocks on one read and echoes exactly what it was given. */
+const ECHO_READ = 'value = input()\nprint("[" + value + "]")\n';
+
+/** The element FR-1608 has marked, as a stable name — or '' when none is. */
+async function insertTargetElements(page: Page): Promise<string[]> {
+  return page.evaluate(() =>
+    Array.from(document.querySelectorAll('[data-insert-target]')).map((el) =>
+      el.id !== '' ? `#${el.id}` : el.classList.contains('cm-content') ? 'cm-content' : el.tagName,
+    ),
+  );
+}
+
+/** FR-1608: focus a character button, which is what puts the pane in focus. */
+async function focusSymbol(page: Page, value: string): Promise<void> {
+  await symbolButton(page, value).focus();
+  expect(await focusedSymbol(page)).toBe(value);
+}
+
+test('VC-1607 (FR-1605, FR-1606): a pending read makes the stdin field the target', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+
+  await openPlayground(page);
+  await waitForPythonReady(page);
+  await runProgram(page, ECHO_READ);
+  await waitForStdinPrompt(page);
+
+  await openSymbolPane(page);
+  const editorBefore = await editorSnapshot(page);
+
+  // FR-1606: the first activation lands in the field, at its caret.
+  await symbolButton(page, '_').click();
+  await expect(page.locator('#stdin-input')).toHaveValue('_');
+  // FR-1610: focus never left the activated button.
+  expect(await focusedSymbol(page)).toBe('_');
+  // FR-1601 is not reached at all: the editor document and caret are untouched.
+  expect(await editorSnapshot(page)).toEqual(editorBefore);
+
+  // FR-1606: five activations in a row accumulate in field order.
+  for (const value of ['#', '|', '%', '...']) await symbolButton(page, value).click();
+  await expect(page.locator('#stdin-input')).toHaveValue('_#|%...');
+  expect(await editorSnapshot(page)).toEqual(editorBefore);
+  expect(await editorText(page)).toBe(ECHO_READ);
+
+  // FR-1606: `submitStdin()` reads `#stdin-input.value` directly, so the value
+  // the worker receives is the one the pane built — no synthetic event needed.
+  await page.locator('#stdin-input').press('Enter');
+  await expect.poll(() => programStdout(page), { timeout: 30_000 }).toContain('[_#|%...]');
+});
+
+test('VC-1608 (FR-1605): the target follows the last-focused of the two', async ({ page }) => {
+  test.setTimeout(120_000);
+
+  await openPlayground(page);
+  await waitForPythonReady(page);
+  await setProgram(page, ECHO_READ);
+  await openSymbolPane(page);
+
+  // (a) a fresh load with neither target focused resolves to the editor.
+  await focusSymbol(page, '#');
+  expect(await insertTargetElements(page)).toEqual(['cm-content']);
+
+  // (b) the editor, then a toolbar control: the record still says the editor,
+  // because focusing anything else leaves it unchanged.
+  await focusEditor(page);
+  await page.locator('#btn-clear').focus();
+  await focusSymbol(page, '#');
+  expect(await insertTargetElements(page)).toEqual(['cm-content']);
+
+  // (c) a read begins: `stdinPending()` focuses the field, so it is the target.
+  await page.locator('#btn-run').click();
+  await waitForStdinPrompt(page);
+  await focusSymbol(page, '#');
+  expect(await insertTargetElements(page)).toEqual(['#stdin-input']);
+
+  // (d) the read is answered: the field is inert again, so the editor wins.
+  await submitStdin(page, 'x');
+  await expect(page.locator('#btn-run')).toBeEnabled({ timeout: 30_000 });
+  await focusSymbol(page, '#');
+  expect(await insertTargetElements(page)).toEqual(['cm-content']);
+});
+
+for (const palette of ['light', 'dark'] as const) {
+  test(`VC-1609 (FR-1608, NFR-1603): exactly one outlined target — ${palette}`, async ({
+    page,
+  }) => {
+    await page.addInitScript(
+      ({ value }) => window.localStorage.setItem('pyplay.theme.v1', value),
+      { value: palette },
+    );
+    await openPlayground(page);
+    await setProgram(page, 'x = 1\n');
+    await setCaret(page, 1, 6);
+
+    // Nothing is marked until the pane both is open and holds focus (FR-1608).
+    expect(await insertTargetElements(page)).toEqual([]);
+    await openSymbolPane(page);
+    await focusSymbol(page, '#');
+
+    // Exactly one element, and it is the resolved target — the same activation
+    // inserts there and nowhere else.
+    expect(await insertTargetElements(page)).toEqual(['cm-content']);
+    await symbolButton(page, '#').click();
+    expect(await editorText(page)).toBe('x = 1#\n');
+    await expect(page.locator('#stdin-input')).toHaveValue('');
+
+    // FR-1608: the editor's caret is rendered although focus is in the pane.
+    await focusSymbol(page, '#');
+    expect(
+      await page.evaluate(() => {
+        const cursor = document.querySelector('.cm-cursorLayer .cm-cursor');
+        return cursor === null ? 'missing' : getComputedStyle(cursor).display;
+      }),
+      'the editor caret is rendered while the editor is the target',
+    ).toBe('block');
+
+    // NFR-1603: the outline clears 3:1 against the surface behind it.
+    const measured = await measureContrast(page, [
+      {
+        label: `insert-target outline (editor, ${palette})`,
+        selector: '.cm-content[data-insert-target]',
+        prop: 'outlineColor',
+      },
+    ]);
+    expect(measured).toHaveLength(1);
+    expect(failures(measured, 3)).toEqual([]);
+
+    // Moving focus out of the pane removes the attribute outright.
+    await page.locator('#btn-clear').focus();
+    expect(await insertTargetElements(page)).toEqual([]);
+  });
+}
+
+test('VC-1609 (FR-1608, NFR-1603): the stdin field is the outlined target while a read is pending', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+
+  await openPlayground(page);
+  await waitForPythonReady(page);
+  await runProgram(page, ECHO_READ);
+  await waitForStdinPrompt(page);
+  await openSymbolPane(page);
+  await focusSymbol(page, '#');
+
+  expect(await insertTargetElements(page)).toEqual(['#stdin-input']);
+
+  const measured = await measureContrast(page, [
+    {
+      label: 'insert-target outline (stdin field)',
+      selector: '#stdin-input[data-insert-target]',
+      prop: 'outlineColor',
+    },
+  ]);
+  expect(measured).toHaveLength(1);
+  expect(failures(measured, 3)).toEqual([]);
+
+  // FR-1608 is presentation only: focus never moved out of the pane.
+  expect(await focusedSymbol(page)).toBe('#');
+});
+
+test('VC-1613 (FR-1605, FR-1606): an idle, last-focused stdin field is not a target', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+
+  await openPlayground(page);
+  await waitForPythonReady(page);
+  await runProgram(page, ECHO_READ);
+  // The read focuses the field, then answering it makes the field inert again
+  // — the last-focused target is the stdin field, and it is not live.
+  await submitStdin(page, 'x');
+  await expect(page.locator('#btn-run')).toBeEnabled({ timeout: 30_000 });
+
+  await openSymbolPane(page);
+  await setCaret(page, 1, 1);
+  await symbolButton(page, '_').click();
+
+  // FR-1605: the editor took the insertion...
+  expect(await editorText(page)).toBe(`_${ECHO_READ}`);
+  // ...and the field was never written to (FR-1606).
+  await expect(page.locator('#stdin-input')).toHaveValue('');
 });

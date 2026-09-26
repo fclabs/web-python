@@ -162,3 +162,99 @@ Applied in the same commit, to `specs/16-insert-at-caret.md` (still DRAFT):
   5**, with the rest of the documentation pass.
 - **Iteration 5 must not re-litigate this.** The spec amendment is already in
   the tree; Iteration 5 freezes it as-is.
+
+---
+
+## D-06 — `syncControls()` is now also driven by focus and by the stdin read state
+
+*Iteration 3.*
+
+FR-1607's lock is `symbolPane.setLocked(resolveInsertTarget() === null)` and
+BR-1604 makes `syncControls()` its **only** caller. From this iteration the
+resolution depends on two facts `syncControls()` was never re-run for:
+
+- the last-focused target (`focusin`), and
+- whether a read is pending (`stdinPending()` / `stdinIdle()`).
+
+Without a re-run the lock would go stale — a program blocked on `input()`
+would keep the buttons inert from the moment the run started, and every
+activation path would no-op although FR-1607 says a pending read is a live
+target.
+
+**Decision.** `syncControls()` is called from the `focusin` listener and at the
+end of `stdinPending()` and `stdinIdle()`. `setLocked` still has exactly one
+caller, so BR-1604 is intact; nothing else about the pass changed. The call is
+cheap (attribute writes that `setInert` skips when unchanged) and cannot
+recurse: `setInert` moves no focus and fires no focus event.
+
+---
+
+## D-07 — The editor is the fallback target even while a read is pending
+
+*Iteration 3.* **A known divergence between FR-1605 and FR-1607 — recorded,
+not resolved. Iteration 5 owns the spec text.**
+
+The plan fixes the resolution as: *the last-focused target when it is live;
+otherwise the editor when it is live; otherwise `null`* — which is FR-1605's
+own wording ("whenever the last-focused target is not currently live, the
+target is the editor"). That is what is implemented.
+
+It has one reachable consequence FR-1607 does not list. While a program is
+blocked on `input()` the visitor can click into the editor (read-only, but
+still focusable). The record then says `editor`, the editor is not live
+because a program is running, and the fallback is the editor, so the
+resolution is `null` and the pane locks — although a read *is* pending, which
+FR-1607's enumeration ("a running program with **no** pending read; a binary
+active file; no active file") does not treat as a no-target state.
+
+Resolving it would mean a second fallback (`otherwise the stdin field when it
+is live`), which contradicts FR-1605's single stated fallback and is outside
+this iteration's scope. Implemented as the plan specifies; flagged here so
+Iteration 5 can either amend FR-1607's enumeration or add the second fallback
+deliberately. No verification criterion exercises the state.
+
+---
+
+## D-08 — The stdin caret is remembered, because Chromium discards an unfocused field's selection
+
+*Iteration 3.* **A deviation from FR-1606's stated premise, forced by the
+engine. Implemented in `src/main.ts` only; `src/insert.ts` is unchanged.**
+
+FR-1606 says "Focus is not moved: the field keeps its selection offsets while
+unfocused, which is what lets several characters be inserted in a row from the
+pane." Chromium does not. Measured directly (`chromium` via Playwright, an
+`<input>` and a `<button>` on a bare page):
+
+| step | `value` | `selectionStart` |
+|---|---|---|
+| focus the field, `setRangeText('abc', 0, 0, 'end')` | `abc` | 3 |
+| click the button (field blurs) | `abc` | 3 |
+| `setRangeText('X', 3, 3, 'end')` while unfocused | `abcX` | 4 |
+| **click the button again** | `abcX` | **0** |
+
+A selection written programmatically while the field is unfocused survives
+until the next pointer-down elsewhere on the page, which discards it. The pane
+is activated by exactly such a pointer-down, so from the *second* activation
+onwards `insertIntoField` read offset 0 and the characters accumulated in
+reverse: VC-1607 observed `...%|#_` where it required `_#|%...`.
+
+**Decision.** `src/main.ts` keeps `stdinCaret: number | null` — the caret the
+*pane* last left in the field — and restores it immediately before the
+insertion, but only while the field does not have focus. It is set to
+`stdinInput.selectionStart` after each pane insertion, and cleared whenever the
+visitor takes the caret back (`focusin` on the field) or the field is reset
+(`stdinIdle()`). When it is `null` the field's own offsets are used exactly as
+FR-1606 describes, so a visitor who clicks into the field to position the caret
+and then activates the pane still gets the insertion at their caret.
+
+`src/insert.ts` is untouched: `insertIntoField` still reads
+`selectionStart`/`selectionEnd` and its unit tests still describe the
+platform-correct behaviour. The workaround is one restore call at the one call
+site that needs it.
+
+**Consequence.** FR-1606's parenthetical premise is wrong about at least one
+engine. **Iteration 5** should amend that sentence to say the *module* keeps
+the offsets rather than the field, and `docs/architecture.md` should carry the
+engine note beside the existing WebKit ones. NFR-1604's pinned matrix is
+Iteration 4's to run; the restore is unconditional, so an engine that does
+preserve the selection is restored to the same offset and behaves identically.
