@@ -64,9 +64,9 @@ export const STATUS_RESTARTING = 'Restarting Python…';
 export const UPDATE_AVAILABLE = 'A new version is available — reload to update';
 
 /**
- * FR-006 / FR-307 / FR-1503: how long `Copied` feedback stays on screen. One
- * constant, shared by **Copy code**, **Copy output**, and the special-character
- * pane, so the windows cannot drift apart (spec-03 / spec-15).
+ * FR-006 / FR-1503 / FR-1609: how long the `Copied` / `Inserted` feedback stays
+ * on screen. One constant, shared by **Copy code**, **Copy output**, and the
+ * special-character pane, so the windows cannot drift apart (spec-15 / spec-16).
  */
 export const COPIED_MS = 2000;
 
@@ -77,14 +77,6 @@ export function formatSymbolInserted(value: string): string {
 
 /** FR-301: the pane's toolbar toggle. */
 export const SYMBOLS_LABEL = 'Symbols';
-
-/** FR-307: the pane's `role="status"` confirmation. */
-export function formatSymbolCopied(value: string): string {
-  return `Copied ${value}`;
-}
-
-/** FR-308: the notice shown when the pane's clipboard write is rejected. */
-export const SYMBOL_COPY_FAILED = "Couldn't copy — select the character and press Ctrl/Cmd+C";
 
 /** FR-401: the layout control's accessible name and its two radio labels. */
 export const LAYOUT_LABEL = 'Layout';

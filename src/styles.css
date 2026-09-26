@@ -952,16 +952,11 @@ html[data-diag-sized] #app:not([data-layout='vertical']) .panel--diagnostics {
   min-width: 32px;
   padding: 2px 4px;
   text-align: center;
-  /* FR-308: the fallback asks the visitor to "select the character and press
-     Ctrl/Cmd+C". Firefox refuses to select content inside a `<button>` unless
-     the element opts back in, which would leave the denial path advising an
-     impossible action there. */
-  user-select: text;
 }
 
-/* FR-307: the activated button while its 2 000 ms window lasts. The highlight
-   is a fill, which NFR-303 measures against the pane behind it. */
-.symbol[data-state='copied'] {
+/* FR-1609: the activated button while its 2 000 ms window lasts. The highlight
+   is a fill, which NFR-1603 measures against the pane behind it. */
+.symbol[data-state='inserted'] {
   background: var(--accent);
   border-color: var(--accent);
   color: var(--accent-fg);

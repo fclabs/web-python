@@ -3,7 +3,14 @@ import { Autosaver } from './autosave';
 import { writeClipboard } from './clipboard';
 import { ConsoleView } from './console';
 import { isInert, setInert } from './controls';
-import { createEditor, revealPosition, selectAll, setDoc, setEditorReadOnly } from './editor';
+import {
+  createEditor,
+  insertAtCaret,
+  revealPosition,
+  selectAll,
+  setDoc,
+  setEditorReadOnly,
+} from './editor';
 import { FilePane } from './file-pane';
 import type { FsMutation } from './fs-channel';
 import {
@@ -356,14 +363,21 @@ function boot(): void {
     })();
   });
 
-  // FR-301 – FR-318: the special-character pane. It is constructed here and
-  // never consulted again — nothing else in the playground depends on it, and
-  // it depends on nothing but its own three elements (BR-301).
-  new SymbolPane({
+  // FR-301 – FR-318 / FR-1601: the special-character pane. It depends on its
+  // own two elements plus `onInsert`, and `main.ts` depends on it for exactly
+  // one thing — `setLocked`, driven from `syncControls()` (BR-1601, BR-1604).
+  const symbolPane = new SymbolPane({
     toggle: need<HTMLButtonElement>('btn-symbols'),
     pane: need('symbol-pane'),
     status: need('symbol-status'),
-    notices,
+    // FR-1601 / FR-1605 / FR-1610: resolve the target here, mutate it here,
+    // and never move focus — the activated button keeps it.
+    onInsert(value) {
+      const target = resolveInsertTarget();
+      if (target === 'editor') insertAtCaret(view, value);
+      // `'stdin'` is unreachable until Iteration 3 wires the stdin candidate
+      // into `resolveInsertTarget()`; `null` is a no-op by FR-1607.
+    },
   });
 
   const filePane = new FilePane({
@@ -631,6 +645,30 @@ function boot(): void {
    * FR-017 / FR-054 / FR-064: Run only when idle, ready and not recovering;
    * Stop enabled if and only if a program is currently running.
    */
+  /**
+   * FR-1605: which text target the next symbol-pane insertion would land in,
+   * or `null` when there is no live target at all (FR-1607).
+   *
+   * The editor is live only while it is editable: no program running, an
+   * active workspace file, and that file editable UTF-8 text — the same
+   * `running` / `active` / `isText(bytes)` facts `syncControls()` feeds to
+   * `setEditorReadOnly`, read from the same sources so the two cannot drift.
+   *
+   * **Iteration 3** adds the stdin candidate here: the field is a live target
+   * while `!isInert(stdinInput)` (a read is pending, FR-029 / FR-032), and a
+   * `focusin` listener in this module records the last-focused of the two.
+   * Until then the branch resolves to `null` and the editor is the only
+   * candidate.
+   */
+  function resolveInsertTarget(): 'editor' | 'stdin' | null {
+    // Iteration 3: `if (!isInert(stdinInput)) return 'stdin';` goes here,
+    // ahead of the editor, gated on the last-focused record.
+    const active = workspace.activeFile;
+    const bytes = active === null ? null : workspace.get(active);
+    if (running || active === null || bytes === null || !isText(bytes)) return null;
+    return 'editor';
+  }
+
   function syncControls(): void {
     setInert(runBtn, !ready || running || restarting || activeRunnableFile() === null);
     setInert(stopBtn, !running);
@@ -640,6 +678,9 @@ function boot(): void {
     const active = workspace.activeFile;
     const bytes = active === null ? null : workspace.get(active);
     setEditorReadOnly(view, running || (bytes !== null && !isText(bytes)));
+    // FR-1607 / BR-1604: the single owner of the pane's lock, derived from the
+    // same pass as every other control's inertness.
+    symbolPane.setLocked(resolveInsertTarget() === null);
     editorRunningHint.textContent = running ? EDITOR_RUNNING_HINT : '';
     editorRunningHint.hidden = !running;
     if (running) view.contentDOM.setAttribute('aria-describedby', editorRunningHint.id);

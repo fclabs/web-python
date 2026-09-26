@@ -3,10 +3,15 @@
  *
  * Iteration 1 criteria: VC-301 – VC-306, VC-321, VC-325, VC-331, VC-332.
  */
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { expect, test, type Page } from '@playwright/test';
 import {
   caretPosition,
   consoleText,
+  diagnosticEntries,
+  editorSnapshot,
   editorText,
   noticeTexts,
   openPlayground,
@@ -21,6 +26,9 @@ import {
   waitForPythonReady,
   waitForStdinPrompt,
 } from './helpers';
+
+/** The repository's `src/` directory — VC-1612 greps the pane's own source. */
+const SRC_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'src');
 
 /** The 29 values of *Character set*, in table order (FR-305). */
 export const SYMBOL_VALUES = [
@@ -1200,4 +1208,567 @@ test('VC-320 (FR-312, BR-304): opening and copying persists nothing, and a reloa
   await expect(page.locator('#btn-symbols')).toHaveAttribute('aria-expanded', 'false');
   expect(await storageSnapshot(page)).toEqual(before);
   expect(unexpectedKeys(await storageSnapshot(page))).toEqual([]);
+});
+
+/* -------------------------------------------------------------------------
+   spec-16 — FR-1601 – FR-1612: the pane inserts at the caret
+
+   Iteration 2 of the insert-at-caret plan: the editor is the only target.
+   VC-1607 / VC-1608's stdin legs and VC-1609's outline land with Iteration 3.
+   ------------------------------------------------------------------------- */
+
+/** Focus the live CodeMirror view without a pointer, so the selection is kept. */
+async function focusEditor(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const content = document.querySelector('.cm-content') as
+      | (HTMLElement & { cmView?: { view: { focus(): void } }; cmTile?: { view: { focus(): void } } })
+      | null;
+    (content?.cmTile?.view ?? content?.cmView?.view)?.focus();
+  });
+}
+
+/** Put an explicit anchor/head selection on the editor (VC-1602, VC-1605). */
+async function setSelection(page: Page, anchor: number, head: number): Promise<void> {
+  await page.evaluate(
+    ({ anchor, head }) => {
+      const content = document.querySelector('.cm-content') as
+        | (HTMLElement & { cmView?: { view: unknown }; cmTile?: { view: unknown } })
+        | null;
+      const view = (content?.cmTile?.view ?? content?.cmView?.view) as
+        | { dispatch(spec: unknown): void; focus(): void }
+        | undefined;
+      if (!view) throw new Error('CodeMirror view not found');
+      view.dispatch({ selection: { anchor, head } });
+      view.focus();
+    },
+    { anchor, head },
+  );
+}
+
+/** The `data-value` of every button in FR-1609's 2 000 ms window. */
+async function insertedButtons(page: Page): Promise<string[]> {
+  return page.evaluate(() =>
+    Array.from(
+      document.querySelectorAll<HTMLElement>('#symbol-pane .symbol[data-state="inserted"]'),
+    ).map((b) => b.dataset.value ?? ''),
+  );
+}
+
+/** Every character button's inertness, exactly as FR-1607 describes it. */
+async function buttonStates(
+  page: Page,
+): Promise<{ aria: string | null; disabled: boolean; tabIndex: number }[]> {
+  return page.evaluate(() =>
+    Array.from(document.querySelectorAll<HTMLButtonElement>('#symbol-pane .symbol')).map((b) => ({
+      aria: b.getAttribute('aria-disabled'),
+      disabled: b.hasAttribute('disabled'),
+      tabIndex: b.tabIndex,
+    })),
+  );
+}
+
+/**
+ * FR-1607: every button inert, none natively `disabled`, the roving tab stop
+ * intact — and the one we focus really does take focus.
+ */
+async function expectPaneLocked(page: Page, what: string): Promise<void> {
+  const states = await buttonStates(page);
+  expect(states, what).toHaveLength(29);
+  expect(
+    states.filter((s) => s.aria !== 'true'),
+    `${what}: every button aria-disabled`,
+  ).toEqual([]);
+  expect(
+    states.filter((s) => s.disabled),
+    `${what}: never the disabled attribute`,
+  ).toEqual([]);
+  expect(states.filter((s) => s.tabIndex === 0), `${what}: roving tab stop`).toHaveLength(1);
+
+  // Still focusable (FR-049 / FR-1607).
+  await symbolButton(page, '#').focus();
+  expect(await focusedSymbol(page), `${what}: focusable`).toBe('#');
+}
+
+/**
+ * FR-1607: a forced pointer click, `Enter` and `Space` on an inert button all
+ * no-op. Returns nothing — it asserts the document, the caret and the status
+ * region are byte-identical afterwards.
+ */
+async function expectInertActivationsDoNothing(page: Page, what: string): Promise<void> {
+  const before = await editorSnapshot(page);
+  const statusBefore = await symbolStatus(page);
+  const stateBefore = await insertedButtons(page);
+
+  await symbolButton(page, '#').click({ force: true });
+  await symbolButton(page, '#').focus();
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('Space');
+
+  expect(await editorSnapshot(page), `${what}: document and caret`).toEqual(before);
+  expect(await symbolStatus(page), `${what}: status region`).toBe(statusBefore);
+  expect(await insertedButtons(page), `${what}: no new data-state`).toEqual(stateBefore);
+}
+
+test('VC-1601 (FR-1601, FR-1612): all 29 values insert at the caret, in table order', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+
+  await openPlayground(page);
+  await setProgram(page, 'ab\n');
+  await setCaret(page, 1, 2); // offset 1 — between `a` and `b`
+  await openSymbolPane(page);
+
+  let inserted = '';
+  for (const value of SYMBOL_VALUES) {
+    await symbolButton(page, value).click();
+    inserted += value;
+    const snapshot = await editorSnapshot(page);
+    expect(snapshot.text, `document after ${value}`).toBe(`a${inserted}b\n`);
+    // FR-1601: the caret sits immediately after the inserted text.
+    expect(snapshot.from, `caret after ${value}`).toBe(1 + inserted.length);
+    expect(snapshot.to, `collapsed after ${value}`).toBe(1 + inserted.length);
+  }
+
+  // Nothing else changed: the prefix and the suffix are exactly as they were.
+  expect(await editorText(page)).toBe(`a${SYMBOL_VALUES.join('')}b\n`);
+});
+
+test('VC-1602 (FR-1601): an activation replaces the selection', async ({ page }) => {
+  await openPlayground(page);
+  await setProgram(page, 'print("x")\n');
+  await setSelection(page, 0, 10); // the whole `print("x")` call
+  await openSymbolPane(page);
+
+  await symbolButton(page, '#').click();
+
+  const snapshot = await editorSnapshot(page);
+  expect(snapshot.text).toBe('#\n');
+  expect(snapshot.from).toBe(1);
+  expect(snapshot.to).toBe(1);
+
+  // The multi-range leg: the playground never enables
+  // `allowMultipleSelections`, so a two-range selection cannot exist here at
+  // all. FR-1601 delegates multi-range mapping to `state.replaceSelection`,
+  // and that leg is discharged at state level by `tests/unit/insert.test.ts`.
+  // Asserted rather than assumed, so the gap stays visible.
+  const rangeCount = await page.evaluate(() => {
+    const content = document.querySelector('.cm-content') as
+      | (HTMLElement & { cmView?: { view: unknown }; cmTile?: { view: unknown } })
+      | null;
+    const view = (content?.cmTile?.view ?? content?.cmView?.view) as
+      | { state: { selection: { ranges: unknown[] } } }
+      | undefined;
+    return view?.state.selection.ranges.length ?? 0;
+  });
+  expect(rangeCount).toBe(1);
+});
+
+test('VC-1603 (FR-1602): the insertion is literal — no matched pair, re-indent parity', async ({
+  page,
+}) => {
+  await openPlayground(page);
+  await openSymbolPane(page);
+
+  // `(` inserts one character; *typing* `(` in the same editor still pairs.
+  await setProgram(page, '\n');
+  await setCaret(page, 1, 1);
+  await symbolButton(page, '(').click();
+  expect(await editorText(page)).toBe('(\n');
+
+  await focusEditor(page);
+  await page.keyboard.press('ControlOrMeta+a');
+  await page.keyboard.press('Delete');
+  await page.keyboard.type('(');
+  expect(await editorText(page), 'typing still auto-closes (spec-12 FR-1201)').toBe('()');
+
+  // `...` is three characters, never U+2026.
+  await setProgram(page, '\n');
+  await setCaret(page, 1, 1);
+  await symbolButton(page, '...').click();
+  expect(await editorText(page)).toBe('...\n');
+
+  // FR-1602's re-indent parity. `indentOnInput()` is an
+  // `EditorState.transactionFilter` gated on `tr.isUserEvent('input.type')`
+  // (`@codemirror/language`, `dist/index.js:1188`), which FR-1601 requires the
+  // insertion to carry, so it treats the pane and the keyboard identically. A
+  // dangling `else` is the line shape its Python rules match.
+  const dangling = 'if x:\n    pass\n    else\n';
+  const reindented = 'if x:\n    pass\nelse:\n';
+
+  await setProgram(page, dangling);
+  await setCaret(page, 3, 9); // end of `    else`
+  await symbolButton(page, ':').click();
+  expect(await editorText(page), 'the pane re-indents exactly as typing does').toBe(reindented);
+
+  await setProgram(page, dangling);
+  await setCaret(page, 3, 9);
+  await focusEditor(page);
+  await page.keyboard.type(':');
+  expect(await editorText(page), 'typing produces the identical result').toBe(reindented);
+
+  // FR-1603: the filter's changes ride in the insertion's own transaction, so
+  // the re-indent is still one undo step.
+  await setProgram(page, dangling);
+  await setCaret(page, 3, 9);
+  await symbolButton(page, ':').click();
+  expect(await editorText(page)).toBe(reindented);
+  await focusEditor(page);
+  await page.keyboard.press('ControlOrMeta+z');
+  expect(await editorText(page), 'one undo removes the insertion and its re-indent').toBe(
+    dangling,
+  );
+});
+
+test('VC-1604 (FR-1604): pointer, Enter and Space produce the same insertion', async ({ page }) => {
+  await openPlayground(page);
+  await openSymbolPane(page);
+
+  const results: { text: string; from: number; to: number; status: string }[] = [];
+  for (const activate of ['click', 'Enter', 'Space'] as const) {
+    await setProgram(page, 'x = 1\n');
+    await setCaret(page, 1, 6); // offset 5, end of `x = 1`
+    if (activate === 'click') {
+      await symbolButton(page, '#').click();
+    } else {
+      await symbolButton(page, '#').focus();
+      await page.keyboard.press(activate);
+    }
+    const snapshot = await editorSnapshot(page);
+    results.push({ ...snapshot, status: await symbolStatus(page) });
+  }
+
+  expect(results[0]).toEqual({ text: 'x = 1#\n', from: 6, to: 6, status: 'Inserted #' });
+  expect(results[1]).toEqual(results[0]);
+  expect(results[2]).toEqual(results[0]);
+});
+
+test('VC-1605 (FR-1603, BR-1602): one activation is exactly one undo step', async ({ page }) => {
+  await openPlayground(page);
+  await openSymbolPane(page);
+
+  // (a) the collapsed-caret case.
+  await setProgram(page, 'x = 1\n');
+  await setCaret(page, 1, 6);
+  const collapsed = await editorSnapshot(page);
+  await symbolButton(page, '#').click();
+  expect(await editorText(page)).toBe('x = 1#\n');
+  await focusEditor(page);
+  await page.keyboard.press('ControlOrMeta+z');
+  expect(await editorSnapshot(page), 'document and selection restored').toEqual(collapsed);
+
+  // (b) the replaced-selection case: the selected text comes back selected.
+  await setProgram(page, 'x = 1\n');
+  await setSelection(page, 0, 5);
+  const selected = await editorSnapshot(page);
+  await symbolButton(page, '_').click();
+  expect(await editorText(page)).toBe('_\n');
+  await focusEditor(page);
+  await page.keyboard.press('ControlOrMeta+z');
+  expect(await editorSnapshot(page), 'the replaced selection comes back').toEqual(selected);
+
+  // (c) three activations inside history's 500 ms `newGroupDelay`, dispatched
+  // in a single task so the window cannot be missed, are three undo steps in
+  // reverse order — `isolateHistory` is what stops them coalescing.
+  await setProgram(page, 'x = 1\n');
+  await setCaret(page, 1, 6);
+  await page.evaluate((values) => {
+    for (const value of values) {
+      const escaped = value.replace(/([\\"])/g, '\\$1');
+      document
+        .querySelector<HTMLButtonElement>(`#symbol-pane .symbol[data-value="${escaped}"]`)!
+        .click();
+    }
+  }, ['#', '_', '|']);
+  expect(await editorText(page)).toBe('x = 1#_|\n');
+
+  await focusEditor(page);
+  for (const expected of ['x = 1#_\n', 'x = 1#\n', 'x = 1\n']) {
+    await page.keyboard.press('ControlOrMeta+z');
+    expect(await editorText(page)).toBe(expected);
+  }
+});
+
+test('VC-1606 (FR-1607, BR-1604): a running program with no pending read locks every button', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+
+  await openPlayground(page);
+  await waitForPythonReady(page);
+  await openSymbolPane(page);
+
+  // Live before the run.
+  expect((await buttonStates(page)).filter((s) => s.aria !== 'false')).toEqual([]);
+
+  await runProgram(page, 'while True: pass\n');
+  await expect(page.getByRole('button', { name: 'Stop' })).toBeEnabled();
+
+  await expectPaneLocked(page, 'while running');
+  await expectInertActivationsDoNothing(page, 'while running');
+  const whileRunning = await editorText(page);
+
+  await page.getByRole('button', { name: 'Stop' }).click();
+  await expect(page.locator('#btn-run')).toBeEnabled({ timeout: 15_000 });
+
+  // FR-1607: leaving the state clears inertness on every button...
+  expect((await buttonStates(page)).filter((s) => s.aria !== 'false')).toEqual([]);
+
+  // ...and the same activation now inserts. One undo takes the document back
+  // to exactly what it was while the program ran, which is only true if the
+  // three inert activations left no history entry behind.
+  await setCaret(page, 1, 1);
+  await symbolButton(page, '#').click();
+  expect(await editorText(page)).toBe(`#${whileRunning}`);
+  await focusEditor(page);
+  await page.keyboard.press('ControlOrMeta+z');
+  expect(await editorText(page)).toBe(whileRunning);
+});
+
+test('VC-1606 (FR-1607, BR-1604): a binary active file and no active file both lock the pane', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+
+  await openPlayground(page);
+  await waitForPythonReady(page);
+  await runProgram(page, 'from pathlib import Path\nPath("blob.bin").write_bytes(bytes([0, 255, 1]))\n');
+  await expect(page.locator('[data-file="blob.bin"]')).toBeVisible({ timeout: 60_000 });
+  await expect(page.locator('#btn-run')).toBeEnabled({ timeout: 60_000 });
+
+  await openSymbolPane(page);
+  expect((await buttonStates(page)).filter((s) => s.aria !== 'false')).toEqual([]);
+
+  // (a) a binary active file.
+  await page.locator('[data-file="blob.bin"]').click();
+  await expect(page.locator('.cm-content')).toContainText('Binary file: blob.bin');
+  await expectPaneLocked(page, 'binary active file');
+  await expectInertActivationsDoNothing(page, 'binary active file');
+
+  // Leaving the state makes the same activation insert.
+  await page.locator('[data-file="main.py"]').click();
+  await expect(page.locator('.cm-content')).not.toContainText('Binary file');
+  expect((await buttonStates(page)).filter((s) => s.aria !== 'false')).toEqual([]);
+  await setProgram(page, 'x = 1\n');
+  await setCaret(page, 1, 6);
+  await symbolButton(page, '#').click();
+  expect(await editorText(page)).toBe('x = 1#\n');
+
+  // (b) no active file at all — delete every file in the workspace.
+  for (const name of ['blob.bin', 'main.py']) {
+    await page.locator(`[data-file="${name}"]`).click();
+    page.once('dialog', (dialog) => void dialog.accept());
+    await page.getByRole('button', { name: 'Delete' }).click();
+    await expect(page.locator(`[data-file="${name}"]`)).toHaveCount(0);
+  }
+  await expectPaneLocked(page, 'no active file');
+  await expectInertActivationsDoNothing(page, 'no active file');
+
+  // Creating a file restores a live target.
+  await page.getByRole('button', { name: 'New' }).click();
+  const nameInput = page.locator('#file-name-input');
+  await nameInput.fill('again.py');
+  await nameInput.press('Enter');
+  await expect(page.locator('[data-file="again.py"]')).toBeVisible();
+  expect((await buttonStates(page)).filter((s) => s.aria !== 'false')).toEqual([]);
+  await setCaret(page, 1, 1);
+  await symbolButton(page, '#').click();
+  expect(await editorText(page)).toBe('#');
+});
+
+test('VC-1610 (FR-1611): an insertion is autosaved and linted exactly like typed input', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+
+  await openPlayground(page);
+  await waitForLinter(page);
+  await setProgram(page, 'x = 1\n');
+  await setCaret(page, 1, 6);
+  await openSymbolPane(page);
+
+  await symbolButton(page, '#').click();
+  expect(await editorText(page)).toBe('x = 1#\n');
+
+  // FR-1611: the editor's existing debounced autosave carries it, with no
+  // second path to storage from the pane.
+  await expect.poll(() => storedProgram(page), { timeout: 10_000 }).toBe('x = 1#\n');
+  await page.reload();
+  await page.waitForSelector('.cm-content');
+  expect(await editorText(page)).toBe('x = 1#\n');
+
+  // ...and the existing lint schedule runs on it, exactly as it does for a
+  // typed character: `(` at the end of the line is a syntax error either way.
+  // `**` is used rather than `(` because typing `(` auto-closes it (FR-1602),
+  // so the two paths would not be comparing the same document.
+  await waitForLinter(page);
+  await openSymbolPane(page);
+  await setProgram(page, 'x = 1\n');
+  await setCaret(page, 1, 6);
+  await symbolButton(page, '**').click();
+  expect(await editorText(page)).toBe('x = 1**\n');
+  await expect.poll(() => diagnosticEntries(page), { timeout: 20_000 }).not.toEqual([]);
+  const inserted = await diagnosticEntries(page);
+
+  await setProgram(page, 'x = 1\n');
+  await expect.poll(() => diagnosticEntries(page), { timeout: 20_000 }).toEqual([]);
+  await setCaret(page, 1, 6);
+  await focusEditor(page);
+  await page.keyboard.type('**');
+  expect(await editorText(page)).toBe('x = 1**\n');
+  await expect.poll(() => diagnosticEntries(page), { timeout: 20_000 }).not.toEqual([]);
+  expect(await diagnosticEntries(page), 'same diagnostics as typing').toEqual(inserted);
+});
+
+test('VC-1611 (FR-1609): `Inserted V` appears at once, moves, restarts and is cleaned up', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+
+  await openPlayground(page);
+  await setProgram(page, 'x = 1\n');
+  await setCaret(page, 1, 6);
+  await openSymbolPane(page);
+
+  // Synchronous — read with no polling at all, which is stronger than the
+  // 100 ms the criterion allows.
+  await symbolButton(page, '(').click();
+  expect(await symbolStatus(page)).toBe('Inserted (');
+  expect(await insertedButtons(page)).toEqual(['(']);
+
+  // COPIED_MS is 2 000 ms: still there just before, gone after.
+  await page.waitForTimeout(1_200);
+  expect(await symbolStatus(page)).toBe('Inserted (');
+  await expect(page.locator('#symbol-status')).toHaveText('', { timeout: 4_000 });
+  expect(await insertedButtons(page)).toEqual([]);
+
+  // A second insertion inside the window replaces the text, moves the state
+  // and restarts the timer from zero.
+  await symbolButton(page, '(').click();
+  await page.waitForTimeout(1_200);
+  await symbolButton(page, '_').click();
+  expect(await symbolStatus(page)).toBe('Inserted _');
+  expect(await insertedButtons(page)).toEqual(['_']);
+  await page.waitForTimeout(1_200);
+  expect(await symbolStatus(page), 'the timer restarted').toBe('Inserted _');
+
+  // Closing the pane mid-window leaves nothing behind.
+  await symbolButton(page, '#').click();
+  expect(await symbolStatus(page)).toBe('Inserted #');
+  await page.getByRole('button', { name: 'Symbols' }).click();
+  await expect(page.locator('#symbol-pane')).toBeHidden();
+  expect(await symbolStatus(page)).toBe('');
+  expect(await insertedButtons(page)).toEqual([]);
+});
+
+test('VC-1612 (FR-1610, FR-318, BR-1601): five insertions leave the pane open and focused', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+
+  await openPlayground(page);
+  await setProgram(page, 'x = 1\n');
+  await setCaret(page, 1, 6);
+  await openSymbolPane(page);
+
+  const scrollTop = async (): Promise<number> =>
+    page.evaluate(() => document.getElementById('symbol-pane')!.scrollTop);
+
+  const five = ['(', ')', '#', '_', '...'];
+  for (const value of five) await symbolButton(page, value).click();
+  expect(await editorText(page)).toBe(`x = 1${five.join('')}\n`);
+
+  // FR-1610: the pane is still open and still scrolled — `...` is the last
+  // button of the last group, so reaching it scrolled the pane, and the
+  // insertion neither closed it nor reset that scroll.
+  await expect(page.locator('#symbol-pane')).toBeVisible();
+  await expect(page.locator('#btn-symbols')).toHaveAttribute('aria-expanded', 'true');
+  const scrolled = await scrollTop();
+  expect(scrolled, 'the pane is genuinely scrolled').toBeGreaterThan(0);
+  await symbolButton(page, '...').click();
+  expect(await scrollTop(), 'a further insertion does not move the pane').toBe(scrolled);
+  expect(await editorText(page)).toBe(`x = 1${five.join('')}...\n`);
+  expect(await focusedSymbol(page)).toBe('...');
+
+  // ...and it is the pane's only tab stop, with arrow navigation intact.
+  const zeros = await page.evaluate(() =>
+    Array.from(document.querySelectorAll<HTMLButtonElement>('#symbol-pane .symbol'))
+      .filter((b) => b.tabIndex === 0)
+      .map((b) => b.dataset.value ?? ''),
+  );
+  expect(zeros).toEqual(['...']);
+  await expectPaneNavigable(page);
+});
+
+test('VC-1612 (BR-1601, FR-1610): the pane source holds no dismissal or editor hook', async () => {
+  const source = readFileSync(join(SRC_DIR, 'symbol-pane.ts'), 'utf8');
+
+  for (const forbidden of [
+    'blur',
+    'focusout',
+    'pointerdown',
+    'mousedown',
+    'document.addEventListener',
+    'window.addEventListener',
+    '@codemirror/',
+  ]) {
+    expect(source, `src/symbol-pane.ts must not mention ${forbidden}`).not.toContain(forbidden);
+  }
+
+  // The paragraph that makes FR-318's narrowness true by construction.
+  expect(source).toContain('registers no focus-loss listener');
+});
+
+test('VC-1613 (FR-1606, BR-1603): a full insertion cycle writes no clipboard and no notice', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+
+  await page.addInitScript(() => {
+    const box = window as unknown as { __clipboardWrites: string[] };
+    box.__clipboardWrites = [];
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: {
+        writeText: (text: string) => {
+          box.__clipboardWrites.push(text);
+          return Promise.resolve();
+        },
+        readText: () => Promise.resolve(''),
+      },
+    });
+  });
+
+  await openPlayground(page);
+  await setProgram(page, 'x = 1\n');
+  await setCaret(page, 1, 6);
+  await openSymbolPane(page);
+
+  for (const value of ['(', '_', '**']) await symbolButton(page, value).click();
+  expect(await editorText(page)).toBe('x = 1(_**\n');
+
+  expect(
+    await page.evaluate(() => (window as unknown as { __clipboardWrites: string[] }).__clipboardWrites),
+    'the pane wrote to the clipboard',
+  ).toEqual([]);
+  expect(await noticeTexts(page), '#notices stays empty').toEqual([]);
+  expect(await page.evaluate(() => document.getElementById('notices')!.textContent)).toBe('');
+});
+
+test('VC-1613 (BR-1603): the pane still inserts with navigator.clipboard deleted', async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: undefined });
+  });
+
+  await openPlayground(page);
+  await setProgram(page, 'x = 1\n');
+  await setCaret(page, 1, 6);
+  await openSymbolPane(page);
+
+  await symbolButton(page, '#').click();
+  expect(await editorText(page)).toBe('x = 1#\n');
+  expect(await symbolStatus(page)).toBe('Inserted #');
+  expect(await noticeTexts(page)).toEqual([]);
 });

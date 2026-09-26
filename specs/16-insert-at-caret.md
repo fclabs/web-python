@@ -63,8 +63,9 @@ the same commit; see *Documentation* below.
   stdin field while a program is waiting for input. It is outlined while the
   pane holds focus, so the visitor can see where the character will land.
 - The insertion is **literal**: exactly the row's `value`, and nothing else. It
-  does not auto-close a bracket, does not re-indent the line, and does not
-  trigger completion.
+  does not auto-close a bracket and does not trigger completion. The editor's
+  own `indentOnInput` still re-indents the line on the few tokens it reacts to,
+  exactly as it does for typed input — parity, not an extra character.
 - An editor insertion is a single CodeMirror transaction that never merges with
   the one before it, so `Ctrl/Cmd+Z` once removes exactly that character and
   restores the previous selection.
@@ -104,14 +105,28 @@ dispatched.
 **FR-1602 — Insertion is literal (Must)**
 
 The inserted text is exactly the row's `value` — never a matched pair, never a
-re-indented line, never a completion. Spec-12's `closeBrackets()` and spec-01's
-`indentOnInput()` hook *typed* input and are deliberately not reached by a
-programmatic transaction, so the pane's `(` inserts one character where typing
-`(` inserts `()`, and the pane's `:` does not re-indent the line. This
-divergence from typing is intended: matched-pair insertion is out of scope, and
-a palette that silently adds a character the visitor did not ask for cannot be
-used to repair one. Multi-character values (`//`, `**`, `==`, `!=`, `<=`, `>=`,
-`...`) insert all of their characters, in the one transaction of FR-1601.
+completion. Spec-12's `closeBrackets()` hooks *typed* input and is deliberately
+not reached by a programmatic transaction, so the pane's `(` inserts one
+character where typing `(` inserts `()`. This divergence from typing is
+intended: matched-pair insertion is out of scope, and a palette that silently
+adds a character the visitor did not ask for cannot be used to repair one.
+
+spec-01's `indentOnInput()` **is** reached. It is an
+`EditorState.transactionFilter` gated on nothing but
+`tr.docChanged && tr.isUserEvent('input.type')`
+(`@codemirror/language`, `dist/index.js:1188`), which FR-1601 requires the
+insertion to carry, and it never inspects how the transaction was produced. Its
+Python rules
+(`/^\s*([\}\]\)]|else:|elif |except |finally:|case\s+[^:]*:?)$/`,
+`@codemirror/lang-python`, `dist/index.js:295`) therefore fire for an inserted
+character exactly as they do for a typed one. Re-indentation is **parity, not a
+defect**: it adds no character the visitor did not ask for, it only moves
+leading whitespace the language mode already owns, and the filter's changes
+ride in the same transaction, so FR-1603's one-activation-one-undo-step
+guarantee is unaffected.
+
+Multi-character values (`//`, `**`, `==`, `!=`, `<=`, `>=`, `...`) insert all
+of their characters, in the one transaction of FR-1601.
 
 **FR-1603 — Exactly one undo entry (Must)**
 
@@ -383,7 +398,7 @@ through the editor's existing autosave path (FR-1611).
 |---|---|---|
 | **VC-1601** | FR-1601, FR-1612 | With the caret at a known offset, activating each of the 29 buttons in turn inserts exactly that row's `value` at that offset and leaves the caret immediately after it. The document equals the concatenation of the 29 values; no other text changed. |
 | **VC-1602** | FR-1601 | With `print("x")` selected, activating `#` replaces the selection with exactly `#`, leaving a cursor after it. With two ranges selected, both are replaced and both carets land correctly. |
-| **VC-1603** | FR-1602 | The pane's `(` inserts exactly `(` — not `()` — and its `:` on an `if x` line does not re-indent that line, while *typing* the same characters in the same editor still does both (spec-12 FR-1201, `indentOnInput`). `...` inserts three characters. |
+| **VC-1603** | FR-1602 | The pane's `(` inserts exactly `(` — not `()` — while *typing* `(` in the same editor still inserts `()` (spec-12 FR-1201). `...` inserts three characters, never U+2026. On a line `indentOnInput`'s Python rules match — a dangling `else` — the pane's `:` re-indents the line to exactly the same result as typing `:` there, and that re-indentation is still one undo step. |
 | **VC-1604** | FR-1604 | For a pointer click, `Enter` and `Space` on the same focused button: identical resulting document, identical caret offset, identical `Inserted V` text. |
 | **VC-1605** | FR-1603, BR-1602 | One activation then `Ctrl/Cmd+Z` restores the exact prior document *and* prior selection (both the collapsed-caret and replaced-selection cases). Three activations dispatched **within 500 ms** need exactly three undos, in reverse order. |
 | **VC-1606** | FR-1607, BR-1604 | Each no-live-target state — program running with no pending read; binary active file; no active file — reports `aria-disabled="true"` on every button, no `disabled` attribute, still focusable; a forced pointer click and `Enter`/`Space` each change nothing (document, caret, undo depth, `#stdin-input.value`, `#symbol-status` all unchanged). Leaving each state makes the same activation insert. |
@@ -435,7 +450,10 @@ with the suite and is updated in the same commit.
 - **A palette insertion is not a typed insertion** (FR-1602). A visitor who
   inserts `(` from the pane and then types `)` ends with `()`; one who types
   `(` gets `()` and may then insert a second `)`. Both produce valid Python;
-  neither is silently corrected.
+  neither is silently corrected. The divergence is bracket-pairing and
+  completion only — `indentOnInput` treats the two paths identically, so an
+  inserted `:` after a dangling `else` re-indents the line just as a typed one
+  does.
 
 ## Documentation
 
@@ -455,8 +473,10 @@ Part of the change, not a follow-up:
 
 ## Out of scope
 
-- Matched-pair insertion, snippets, triple quotes, auto-indent-aware insertion
-  (FR-1602 is the decision, not an omission).
+- Matched-pair insertion, snippets and triple quotes (FR-1602 is the decision,
+  not an omission). Suppressing the editor's existing `indentOnInput` for a
+  pane insertion is equally out of scope: FR-1602 records the parity as
+  intended.
 - Any change to the 29-character set or to the five groups; new categories; a
   configurable, searchable or favourited set.
 - A keyboard shortcut that inserts without visiting the pane.

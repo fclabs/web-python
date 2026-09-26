@@ -1,86 +1,98 @@
 # CONTEXT — insert-at-caret (spec 16)
 
-State of the codebase as of Iteration 1 (`01-primitives`).
+State of the codebase as of Iteration 2 (`02-editor-insert`).
 
 ## 1. Where the work stands
 
-Iteration 1 of 5 is complete. The **insertion primitives exist and are unit
-tested, but nothing is wired to them**: `src/symbol-pane.ts` is untouched and
-still writes the activated glyph to the clipboard (spec-03 FR-306 – FR-308).
-No shipped behaviour changed in this iteration; `src/insert.ts` has no importer
-yet, so Vite tree-shakes it out of the bundle.
+Iteration 2 of 5 is **complete and committed**. One Must-vs-Must conflict was
+escalated mid-iteration and resolved by the user as **Option 1 — amend FR-1602
+and VC-1603**, so `specs/16-insert-at-caret.md` is amended in the same commit
+and no production code changed because of it. See `DECISIONS.md` **D-05** and
+`iterations/02-editor-insert.md` → *The FR-1602 amendment*.
 
-Remaining iterations: 2 (pane inserts into the editor), 3 (stdin target +
-`data-insert-target` outline), 4 (suite migration + audit gates), 5 (spec
-amendments + docs).
+The clipboard path is **gone**. Activating a live character button now inserts
+that row's `value` at the editor caret, through `onInsert` → `main.ts` →
+`insertAtCaret(view, value)`. The pane drives its own `Inserted V` feedback and
+`syncControls()` drives its inertness.
+
+Remaining iterations: 3 (stdin target + `data-insert-target` outline),
+4 (suite migration + audit gates), 5 (spec amendments + docs).
 
 ## 2. File map
 
-Files this spec touches, and their state now.
-
-| File | State after Iteration 1 |
+| File | State after Iteration 2 |
 |---|---|
-| `src/editor.ts` | **Changed.** Gains `symbolInsertion()` and `insertAtCaret()` at the end of the file, plus `isolateHistory` (`@codemirror/commands`), `foldedRanges` / `unfoldEffect` (`@codemirror/language`) and the `StateEffect` / `TransactionSpec` types (`@codemirror/state`) on the existing imports. Everything else unchanged. |
-| `src/insert.ts` | **New.** Holds `insertIntoField()` only. Imports nothing. |
-| `src/format.ts` | **Changed.** Gains `formatSymbolInserted()` between `COPIED_MS` and `SYMBOLS_LABEL`. `formatSymbolCopied` and `SYMBOL_COPY_FAILED` are deliberately still present (Iteration 2 removes them). |
-| `tests/unit/insert.test.ts` | **New.** 17 tests. |
-| `src/symbol-pane.ts` | Unchanged — still clipboard-based. Sole caller of `formatSymbolCopied` (line 220) and `SYMBOL_COPY_FAILED` (line 227). |
-| `src/main.ts` | Unchanged — no target resolution, no `onInsert`, constructs and discards the `SymbolPane`. |
-| `src/styles.css` | Unchanged — still `.symbol[data-state='copied']`, still the `user-select: text` Firefox workaround. |
-| `src/controls.ts`, `src/symbols.ts`, `src/clipboard.ts`, `src/notices.ts`, `src/fold.ts` | Unchanged. |
-| `tests/e2e/symbols.spec.ts` | Unchanged — every test still asserts the clipboard behaviour. |
-| `specs/03-vertical-pane-frozen.md`, `docs/architecture.md`, `README.md`, `docs/ci.md`, `CLAUDE.md` | Unchanged. |
+| `src/editor.ts` | Unchanged since Iteration 1: `symbolInsertion()`, `insertAtCaret()`. |
+| `src/insert.ts` | Unchanged since Iteration 1: `insertIntoField()`. **Still has no importer** — Iteration 3 wires it. |
+| `src/format.ts` | **Changed.** `formatSymbolCopied` and `SYMBOL_COPY_FAILED` deleted (FR-307 / FR-308 retired). `COPIED_MS`, `formatSymbolInserted`, `SYMBOLS_LABEL` remain; `COPIED_MS`'s doc comment now cites FR-1609. |
+| `src/symbol-pane.ts` | **Rewritten around insertion.** Header records that BR-301 is superseded by BR-1601. `SymbolPaneElements` gains `onInsert(value)` and drops `notices`. `writeClipboard`, `selectGlyph()`, `activationId` and the async `activate()` body are gone. New public `setLocked(locked)`. Imports `isInert`/`setInert` from `./controls`. |
+| `src/main.ts` | **Changed.** Imports `insertAtCaret`. `const symbolPane = new SymbolPane({… onInsert})` (was `new SymbolPane(…)` discarded). New `resolveInsertTarget()` above `syncControls()`; `syncControls()` ends its editor block with `symbolPane.setLocked(resolveInsertTarget() === null)`. |
+| `src/styles.css` | **Changed.** `.symbol[data-state='copied']` → `[data-state='inserted']`; `.symbol`'s `user-select: text` FR-308 workaround removed. |
+| `tests/e2e/symbols.spec.ts` | **Extended** with a spec-16 section: VC-1601 – VC-1606, VC-1610 – VC-1613 (13 new tests). Every clipboard-era test is left exactly as it was — Iteration 4 migrates them. |
+| `tests/unit/*` | Unchanged. Nothing referenced the two deleted strings. |
+| `specs/16-insert-at-caret.md` | **Amended** (still DRAFT). FR-1602 and VC-1603 rewritten per D-05; *What it does*, *Known limits* and *Out of scope* follow. FR-1601, FR-1603, BR-1602 untouched. Iteration 5 freezes this text and must not re-litigate it. |
+| `specs/03-vertical-pane-frozen.md`, `docs/`, `README.md`, `CLAUDE.md` | Unchanged (Iterations 4 – 5). |
 
 ## 3. Public interfaces
 
-Exactly as committed.
-
 ```ts
-// src/editor.ts
+// src/editor.ts        (Iteration 1, unchanged)
 export function symbolInsertion(state: EditorState, value: string): TransactionSpec;
 export function insertAtCaret(view: EditorView, value: string): void;
 
-// src/insert.ts
+// src/insert.ts        (Iteration 1, unchanged; still no importer)
 export function insertIntoField(field: HTMLInputElement, value: string): void;
 
 // src/format.ts
+export const COPIED_MS = 2000;
 export function formatSymbolInserted(value: string): string;   // `Inserted ${value}`
-export const COPIED_MS = 2000;                                 // unchanged, shared
-export const SYMBOLS_LABEL = 'Symbols';                        // unchanged
-export function formatSymbolCopied(value: string): string;     // to be removed, Iteration 2
-export const SYMBOL_COPY_FAILED: string;                       // to be removed, Iteration 2
+export const SYMBOLS_LABEL = 'Symbols';
+
+// src/symbol-pane.ts
+export interface SymbolPaneElements {
+  toggle: HTMLButtonElement;
+  pane: HTMLElement;
+  status: HTMLElement;
+  onInsert(value: string): void;      // FR-1601 / BR-1601
+}
+export class SymbolPane {
+  get isOpen(): boolean;
+  open(): void;
+  close(): void;
+  setLocked(locked: boolean): void;   // FR-1607 / BR-1604 — syncControls() only
+}
+
+// src/main.ts (module-internal, inside boot())
+function resolveInsertTarget(): 'editor' | 'stdin' | null;
 ```
 
-`symbolInsertion` returns `{ ...state.replaceSelection(value), userEvent:
-'input.type', annotations: isolateHistory.of('full'), scrollIntoView: true }`.
-Change and selection travel in the one spec (BR-1602).
+`activate(button)` is synchronous: `isInert(button)` → return; else
+`onInsert(value)`, `clearFeedback()`, `status.textContent =
+formatSymbolInserted(value)`, `button.dataset.state = 'inserted'`, `COPIED_MS`
+revert timer. `clearFeedback()` is still the single writer and is still called
+by `close()`.
 
-`insertAtCaret` unfolds first (effects-only transaction, only when a folded
-range covers the primary head), then dispatches the insertion **once**. It does
-not call `view.focus()`.
-
-`insertIntoField` resolves `selectionStart ?? value.length` and
-`selectionEnd ?? value.length` and calls `setRangeText(value, start, end,
-'end')`. No synthetic `input` event, no `focus()`.
+`resolveInsertTarget()` reads `workspace.activeFile`, `workspace.get(active)`
+and the `running` flag — the same three facts `syncControls()` feeds to
+`setEditorReadOnly` — and returns `null` when `running || active === null ||
+bytes === null || !isText(bytes)`, otherwise `'editor'`. The `'stdin'` arm is a
+documented stub at the top of the function body for Iteration 3.
 
 ## 4. Commands
 
 Run every command from
 `/Users/fede/orca/workspaces/web-python/insert-the-symbol-at-the-caret-when-a-symbols-pa`.
 This is a **git worktree**, so `PW_PORT_BASE=4273` is mandatory for every
-Playwright run — without it the suite silently serves the other checkout's
-build.
+Playwright run.
 
 ```bash
 npm ci
 npm run build                                   # vendor + tsc --noEmit + vite build
 npm run test:unit                               # vitest run
-npx vitest run tests/unit/insert.test.ts
 PW_PORT_BASE=4273 npx playwright test --project=chromium
 PW_PORT_BASE=4273 npx playwright test --project=chromium tests/e2e/symbols.spec.ts
 PW_PORT_BASE=4273 npm run audit:perf
 PW_PORT_BASE=4273 npm run audit:contrast
-PW_PORT_BASE=4273 MATRIX=1 npm run test:matrix  # local only
 ```
 
 E2E specs run against the **built** site: run `npm run build` after any `src/`
@@ -89,35 +101,39 @@ change or Playwright reuses the previous build.
 ## 5. Conventions in force
 
 - Every non-obvious line cites its requirement (`FR-`/`BR-`/`NFR-`/`VC-`);
-  tests are named after the VC they discharge (`tests/unit/insert.test.ts`
-  uses `describe('VC-1601: …')` blocks).
+  every test is named after the VC it discharges.
 - User-visible strings live in `src/format.ts`, verbatim from the spec.
-- Never the `disabled` attribute on a conditionally-inert control — `setInert()`
-  / `isInert()` from `src/controls.ts`, and every activation path guarded.
-- TypeScript strict, with `noUnusedLocals`, `noUnusedParameters`,
-  `verbatimModuleSyntax`. An empty array literal needs an explicit type
-  annotation (`const unfold: StateEffect<unknown>[] = []`).
+- Never the `disabled` attribute on a conditionally-inert control —
+  `setInert()` / `isInert()` from `src/controls.ts`, and **every** activation
+  path guarded. `SymbolPane.activate()` is guarded by `isInert(button)`.
+- `syncControls()` is the sole caller of `symbolPane.setLocked` (BR-1604).
+- `src/symbol-pane.ts` must stay free of `clipboard`, `writeClipboard`,
+  `Notices` and `@codemirror/` — asserted by VC-1612 and by a grep gate.
 - Never relax a threshold or skip an assertion to make a gate green.
 - Artifacts are committed with the code they describe.
 
 ## 6. Known gaps
 
-- **The pane still copies.** `src/symbol-pane.ts`, `src/styles.css` and
-  `src/main.ts` are untouched; nothing calls the new primitives (Iteration 2).
-- **No stdin target and no `data-insert-target` outline** (FR-1605, FR-1608 —
-  Iteration 3). `insertIntoField` exists but has no caller.
-- **`formatSymbolCopied` / `SYMBOL_COPY_FAILED` are still exported**, each with
-  exactly one caller in `src/symbol-pane.ts`. VC-1616 fails until Iteration 2.
-- **The e2e suite is still clipboard-era.** Iteration 4 migrates it.
-- **Six chromium e2e failures pre-date this branch.** Verified by building and
-  running the same five specs from `376d8dc` (the branch point) in a throwaway
-  worktree: the identical six fail there. They are environmental, not caused by
-  this work, and not this spec's to fix:
-  `completion.spec.ts:47` VC-608/VC-1103; `layout.spec.ts:991` VC-431;
-  `layout.spec.ts:1272` VC-407; `perf.spec.ts:753` VC-814;
-  `presentation.spec.ts:723` VC-052; `symbols.spec.ts:882` VC-315.
-  Iterations 2–4 must compare against this list, not against zero.
-- **`CLAUDE.md`'s `94 passed, 1 skipped` line is stale.** The chromium project
-  actually reports `323 passed, 2 skipped` (+ the six above) on this machine.
-  Iteration 4 owns the corrected figure.
+- **`indentOnInput` re-indents a pane insertion, by design now.** It is an
+  `EditorState.transactionFilter` keyed on `tr.isUserEvent('input.type')`
+  (`@codemirror/language`, `dist/index.js:1188`), not on the DOM input path, so
+  FR-1601's transaction reaches it. On the Python line shapes its rules match
+  (`else`, `elif `, `except `, `finally:`, `case …`, a closing bracket) the
+  pane's `:` re-indents exactly as typing does. FR-1602 now records this as
+  intended parity (`DECISIONS.md` **D-05**). **Open follow-up:**
+  `docs/architecture.md` still needs the parity note — Iteration 5.
+- **No stdin target and no `data-insert-target` outline** (FR-1605, FR-1606,
+  FR-1608 — Iteration 3). `insertIntoField` still has no importer, and
+  `resolveInsertTarget()` never returns `'stdin'`.
+- **The clipboard-era suite is still in the tree and now fails.** 11 tests in
+  `tests/e2e/symbols.spec.ts`, VC-323 in `tests/e2e/perf.spec.ts` and 8
+  contrast tests in `tests/e2e/presentation.spec.ts`. Exact list in
+  `iterations/02-editor-insert.md` → *Legacy failures for Iteration 4*.
+- **Six chromium e2e failures pre-date this branch** (Iteration 1 verified them
+  at `376d8dc` in a throwaway worktree): `completion.spec.ts:47` VC-608/VC-1103;
+  `layout.spec.ts:991` VC-431; `layout.spec.ts:1272` VC-407; `perf.spec.ts:753`
+  VC-814 (flaky — it passed on the Iteration 2 run); `presentation.spec.ts:723`
+  VC-052; `symbols.spec.ts:890` VC-315. Not this spec's to fix.
+- **`CLAUDE.md`'s `94 passed, 1 skipped` line is stale.** Iteration 4 owns the
+  corrected figure.
 - Docs and spec amendments are untouched (Iteration 5).
