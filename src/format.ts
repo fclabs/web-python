@@ -70,6 +70,11 @@ export const UPDATE_AVAILABLE = 'A new version is available — reload to update
  */
 export const COPIED_MS = 2000;
 
+/** FR-1609: the pane's `role="status"` confirmation of a successful insertion. */
+export function formatSymbolInserted(value: string): string {
+  return `Inserted ${value}`;
+}
+
 /** FR-301: the pane's toolbar toggle. */
 export const SYMBOLS_LABEL = 'Symbols';
 

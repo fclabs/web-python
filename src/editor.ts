@@ -1,4 +1,11 @@
-import { Compartment, EditorState, Prec, type Extension } from '@codemirror/state';
+import {
+  Compartment,
+  EditorState,
+  Prec,
+  type Extension,
+  type StateEffect,
+  type TransactionSpec,
+} from '@codemirror/state';
 import {
   Decoration,
   EditorView,
@@ -11,7 +18,13 @@ import {
   lineNumbers,
   type DecorationSet,
 } from '@codemirror/view';
-import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
+import {
+  defaultKeymap,
+  history,
+  historyKeymap,
+  indentWithTab,
+  isolateHistory,
+} from '@codemirror/commands';
 import {
   acceptCompletion,
   autocompletion,
@@ -22,9 +35,11 @@ import {
   HighlightStyle,
   bracketMatching,
   foldKeymap,
+  foldedRanges,
   indentOnInput,
   indentUnit,
   syntaxHighlighting,
+  unfoldEffect,
 } from '@codemirror/language';
 import { python } from '@codemirror/lang-python';
 import { tags as t } from '@lezer/highlight';
@@ -278,4 +293,43 @@ export function revealPosition(view: EditorView, line: number, column: number): 
     effects: EditorView.scrollIntoView(pos, { y: 'center' }),
   });
   view.focus();
+}
+
+/**
+ * FR-1601 / BR-1602: the single transaction an inserted symbol produces.
+ * `replaceSelection` maps *every* range, so a collapsed caret inserts, a
+ * non-empty selection is replaced and a multi-range selection is handled by
+ * CodeMirror itself; the change and the resulting selection travel in this one
+ * spec, because dispatching the selection separately would be a second history
+ * event (BR-1602).
+ */
+export function symbolInsertion(state: EditorState, value: string): TransactionSpec {
+  return {
+    ...state.replaceSelection(value),
+    // FR-1601: indistinguishable from typing for autosave, lint and the update
+    // listener (FR-1611).
+    userEvent: 'input.type',
+    // FR-1603: stops `history()` coalescing consecutive insertions, which
+    // `userEvent: 'input.type'` alone would invite.
+    annotations: isolateHistory.of('full'),
+    scrollIntoView: true,
+  };
+}
+
+/**
+ * FR-1601: insert `value` at the editor caret in exactly one change
+ * transaction. A range collapsed by spec-15's folding over the primary head is
+ * opened first, in its own effects-only transaction (no document change, so it
+ * is not a history event), so the inserted character is visible.
+ * It never calls `view.focus()` — the pane keeps focus (FR-1610).
+ */
+export function insertAtCaret(view: EditorView, value: string): void {
+  const head = view.state.selection.main.head;
+  const unfold: StateEffect<unknown>[] = [];
+  // FR-1601: `between` over a single point yields every folded range covering it.
+  foldedRanges(view.state).between(head, head, (from, to) => {
+    unfold.push(unfoldEffect.of({ from, to }));
+  });
+  if (unfold.length > 0) view.dispatch({ effects: unfold });
+  view.dispatch(symbolInsertion(view.state, value));
 }
