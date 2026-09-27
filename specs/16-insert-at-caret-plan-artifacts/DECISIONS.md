@@ -258,3 +258,116 @@ the offsets rather than the field, and `docs/architecture.md` should carry the
 engine note beside the existing WebKit ones. NFR-1604's pinned matrix is
 Iteration 4's to run; the restore is unconditional, so an engine that does
 preserve the selection is restored to the same offset and behaves identically.
+
+---
+
+## D-09 — VC-317 is inverted, not retired
+
+*Iteration 4.*
+
+VC-317 ("copying while a read is pending injects nothing into stdin") is on the
+spec's **re-run unchanged** list (the range "VC-317 – VC-322"), but Iteration 3
+found its premise contradicted by FR-1606 itself: a pending read *is* a live
+target, and the pane now deliberately writes into the field. Repairing only the
+asserted string would have left a test whose name claims the opposite of the
+requirement it cites.
+
+**Decision.** Invert it, keeping the id and the part of FR-310 that survives.
+VC-317 now asserts that an activation during a pending read reaches the *field*
+— `Inserted ,` in `#symbol-status`, the character at the field's caret — and
+that it still **interrupts nothing**: the field stays live, the run is not
+restarted, and the read that was pending is the one that is answered, with the
+inserted character in the middle of the submitted line.
+
+Retiring it instead would have removed the only criterion that pins "an
+activation during a read does not disturb the read", which FR-310 still
+requires and which VC-1607 (target resolution and accumulation) does not state.
+Iteration 5's spec-03 amendment should record VC-317 as *rewritten*, not
+re-run, and the spec's *Existing criteria* list should move it out of the
+"VC-317 – VC-322" range.
+
+---
+
+## D-10 — VC-320 measures what the *pane* persists, not that nothing changed
+
+*Iteration 4.*
+
+VC-320 ("opening and copying persists nothing") compared a whole storage
+snapshot before and after an activation. Under FR-1611 an editor insertion is
+an ordinary document change, so it legitimately reaches
+`pyplay.workspace.v1` through the editor's own autosave; a byte-identical
+snapshot is no longer the right assertion and could only be kept by inserting
+into something that is not autosaved.
+
+**Decision.** VC-320 keeps its id and its subject — BR-304, *the pane* writes
+no storage of its own — and now asserts: the set of `localStorage` keys is
+unchanged, no key outside the allowed three appears, `sessionStorage`, cookies
+and IndexedDB are byte-identical, every `localStorage` value except
+`pyplay.workspace.v1` is byte-identical, and the workspace key changed exactly
+by the inserted character (the FR-1611 path). The reload leg is unchanged: the
+pane is closed again, because its open state was never persisted.
+
+---
+
+## D-11 — Both `data-insert-target` outlines enter the contrast gate
+
+*Iteration 4.*
+
+NFR-1603 lists the FR-1608 outline among the non-text pairs that must clear
+3:1. VC-1609 already measures it in both palettes, but VC-1609 is not in the
+`audit:contrast` grep (`VC-051|VC-071|VC-514|VC-622|VC-815|VC-1505`), so the
+gate would not have covered the new surface.
+
+**Decision.** Add both variants to `presentation.spec.ts` as
+`measureInsertTargetOutlines()`, sampled by VC-071 and VC-514's non-text runs
+in every palette and forced-theme combination. The editor variant needs one
+extra `focus()` of a character button; the stdin variant additionally needs a
+program blocked on `input()`, which the helper starts itself after every other
+sample has been taken — `stdinPending()` focuses the field, so the resolution
+moves to `stdin` without a pointer. The grep in `package.json` is left alone:
+the gate's named criteria still own the measurement.
+
+Two knock-on fixes in `paintEverySurface()`, both consequences of the
+activation now being an *insertion* rather than a copy:
+
+- the caret is parked on the program's blank last line and the activated button
+  is `#`, so the inserted character is a comment and the error/warning
+  diagnostics the samples depend on survive it (activating the pane's first
+  button, `"`, made the program a syntax error and erased the warning marker);
+- the caret is moved back to offset 0 before `Control+Space`, because spec-06
+  offers no completion inside a comment and `.cm-tooltip-autocomplete` is one
+  of the sampled surfaces.
+
+---
+
+## D-12 — The five pre-existing local failures are environmental, and stay untouched
+
+*Iteration 4.* **Investigated as directed; no code changed.**
+
+`completion.spec.ts:47` (VC-608/VC-1103), `layout.spec.ts:991` (VC-431),
+`layout.spec.ts:1272` (VC-407), `presentation.spec.ts:723` (VC-052) and
+`symbols.spec.ts` (VC-315) fail on this machine and pass on CI. They are the
+only five tests in the suite that press **`Control+m`**, CodeMirror's
+`toggleTabFocusMode` binding:
+
+```js
+{ key: "Ctrl-m", mac: "Shift-Alt-m", run: toggleTabFocusMode }
+// @codemirror/commands, dist/index.js:1816
+```
+
+On a Mac the `mac` binding applies and `Ctrl-m` does nothing, so tab-focus mode
+is never entered, `Tab` indents (spec-11) instead of leaving the editor, and
+every subsequent tab stop the test expects resolves to the editor again. A
+direct probe against the built site confirmed it: `Tab` inside `.cm-content`
+leaves `document.activeElement` on `.cm-content` for eight presses and inserts
+four spaces. On the Linux CI runner `Ctrl-m` matches and all five pass — run
+`35538295273` on `main` at the branch point `376d8dc` shows `✓` for each.
+
+**Decision.** Environmental, not a regression, and not this spec's to fix: the
+one-line repair (press `Shift+Alt+m` on `darwin`) touches five tests in four
+unrelated spec files and belongs in its own commit. Recorded here and in
+`docs/ci.md` so the next reader does not re-investigate.
+
+`perf.spec.ts:753` (VC-814) is not a failure at all: it is baseline-gated and
+**skips** both locally and on CI, because the run matches no record in
+`tests/e2e/baseline-*.json`.

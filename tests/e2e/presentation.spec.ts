@@ -11,12 +11,13 @@
  * VC-816 (NFR-804) — `#btn-about` hit area at 375 × 667.
  */
 import { expect, test, type Page } from '@playwright/test';
-import { failures, measureContrast, type Sample } from './contrast';
+import { failures, measureContrast, type Measurement, type Sample } from './contrast';
 import {
   consoleText,
   diagnosticEntries,
   openPlayground,
   runProgram,
+  setCaret,
   setProgram,
   submitStdin,
   waitForLinter,
@@ -202,15 +203,27 @@ async function paintEverySurface(page: Page): Promise<void> {
   await page.keyboard.press('Enter');
   await expect(page.locator('#symbol-pane')).toBeVisible();
 
-  // VC-322 samples *inside* FR-307's 2 000 ms window, so the feedback text and
-  // the `data-state="copied"` highlight are both genuinely on screen. `Enter`
-  // on the focused button keeps the run in keyboard modality, which is what
-  // makes the focus rings VC-071 samples visible.
+  /*
+   * VC-322 samples *inside* FR-1609's 2 000 ms window, so the feedback text
+   * and the `data-state="inserted"` highlight are both genuinely on screen.
+   * `Enter` on the focused button keeps the run in keyboard modality, which is
+   * what makes the focus rings VC-071 samples visible.
+   *
+   * spec-16 FR-1601: the activation now *inserts* into the editor, so the
+   * caret is parked on the program's blank last line and the character is a
+   * `#` — a comment there, which leaves the error and warning diagnostics this
+   * run painted exactly where the samples below expect them.
+   */
+  await setCaret(page, 8, 1);
+  await page.locator('#symbol-pane .symbol[data-value="#"]').focus();
   await page.keyboard.press('Enter');
-  await expect(page.locator('#symbol-status')).toHaveText('Copied "');
+  await expect(page.locator('#symbol-status')).toHaveText('Inserted #');
 
   // spec-06 NFR-602: keep the completion list and its selected option painted
-  // while both palette audits sample their rendered colours.
+  // while both palette audits sample their rendered colours. The caret is
+  // moved off the comment the insertion above created first — spec-06 offers
+  // no completion inside a comment.
+  await setCaret(page, 1, 1);
   await page.locator('.cm-content').focus();
   await page.keyboard.press('Control+Space');
   await expect(page.locator('.cm-tooltip-autocomplete')).toBeVisible();
@@ -240,12 +253,16 @@ const TEXT_SAMPLES: Sample[] = [
   { label: 'syntax: string', selector: '.tok-string', prop: 'color' },
   { label: 'syntax: definition', selector: '.tok-def', prop: 'color' },
   { label: 'syntax: operator', selector: '.tok-operator', prop: 'color' },
-  // spec-03 NFR-302: the pane's text — glyphs and group headings. The FR-307
-  // feedback text is sampled separately, once a copy has actually happened.
+  // spec-03 NFR-302: the pane's text — glyphs and group headings. The FR-1609
+  // feedback text is sampled once an insertion has actually happened.
   { label: 'symbol glyph', selector: '#symbol-pane .symbol', prop: 'color' },
   { label: 'symbol group heading', selector: '#symbol-pane .symbol-group-title', prop: 'color' },
-  { label: 'symbol copy feedback', selector: '#symbol-status', prop: 'color' },
-  { label: 'copied-state glyph', selector: '#symbol-pane .symbol[data-state="copied"]', prop: 'color' },
+  { label: 'symbol insertion feedback', selector: '#symbol-status', prop: 'color' },
+  {
+    label: 'inserted-state glyph',
+    selector: '#symbol-pane .symbol[data-state="inserted"]',
+    prop: 'color',
+  },
   /*
    * spec-04 NFR-402, amending VC-051: both layout radio labels, checked and
    * unchecked. The disabled rendering only exists below 900 px, so VC-428
@@ -325,7 +342,7 @@ const NON_TEXT_SAMPLES: Sample[] = [
     focus: true,
   },
   // spec-03 NFR-303: the pane's non-text components.
-  // A button in its resting state: the copied one is a filled highlight,
+  // A button in its resting state: the inserted one is a filled highlight,
   // measured separately below.
   {
     label: 'symbol button border',
@@ -442,6 +459,45 @@ const NOTICE_SAMPLES: Sample[] = [
   { label: 'notice border', selector: '.notice', prop: 'borderTopColor' },
 ];
 
+/**
+ * spec-16 NFR-1603: FR-1608's `data-insert-target` outline, on both targets.
+ *
+ * The attribute only exists while the pane is open **and** a character button
+ * holds focus, so the sample needs one `focus()` of its own; the stdin variant
+ * additionally needs a program blocked on `input()`, which is what makes the
+ * field a live target (FR-1605). Both outlines are drawn with `--focus`, the
+ * token NFR-013's focus ring already uses.
+ */
+async function measureInsertTargetOutlines(page: Page): Promise<Measurement[]> {
+  const button = page.locator('#symbol-pane .symbol').first();
+
+  await button.focus();
+  const measured = await measureContrast(page, [
+    {
+      label: 'insertion target outline (editor)',
+      selector: '.cm-editor .cm-content[data-insert-target]',
+      prop: 'outlineColor',
+    },
+  ]);
+
+  // A pending read makes the stdin field the resolved target (FR-1605), and
+  // `stdinPending()` focuses it, so the record moves without a pointer.
+  await runProgram(page, 'input()\n');
+  await waitForStdinPrompt(page);
+  await button.focus();
+  measured.push(
+    ...(await measureContrast(page, [
+      {
+        label: 'insertion target outline (stdin field)',
+        selector: '.stdin-input[data-insert-target]',
+        prop: 'outlineColor',
+      },
+    ])),
+  );
+
+  return measured;
+}
+
 /** Provoke FR-045's `Can't format` notice, so the notice strip is painted. */
 async function paintNotice(page: Page): Promise<void> {
   await setProgram(page, 'def f(:\n');
@@ -495,14 +551,14 @@ for (const scheme of ['light', 'dark'] as const) {
         ])),
       );
 
-      // spec-03 FR-307: the copied highlight is a fill on the activated
+      // spec-16 FR-1609: the inserted highlight is a fill on the activated
       // button, measured against the pane behind it (NFR-303), in the state a
-      // real copy put it in.
+      // real insertion put it in.
       measured.push(
         ...(await measureContrast(page, [
           {
-            label: 'copied-state highlight',
-            selector: '#symbol-pane .symbol[data-state="copied"]',
+            label: 'inserted-state highlight',
+            selector: '#symbol-pane .symbol[data-state="inserted"]',
             prop: 'backgroundColor',
           },
         ])),
@@ -531,11 +587,13 @@ for (const scheme of ['light', 'dark'] as const) {
         ])),
       );
 
+      measured.push(...(await measureInsertTargetOutlines(page)));
+
       // spec-08 VC-815: dialog border / backdrop / Close ring with modal open.
       await openAboutDialog(page);
       measured.push(...(await measureContrast(page, ABOUT_NON_TEXT_SAMPLES)));
 
-      expect(measured).toHaveLength(NON_TEXT_SAMPLES.length + 5 + ABOUT_NON_TEXT_SAMPLES.length);
+      expect(measured).toHaveLength(NON_TEXT_SAMPLES.length + 7 + ABOUT_NON_TEXT_SAMPLES.length);
       expect(failures(measured, 3)).toEqual([]);
     });
   });
@@ -609,17 +667,19 @@ for (const forced of [
             prop: 'borderTopColor',
           },
           {
-            label: 'copied-state highlight',
-            selector: '#symbol-pane .symbol[data-state="copied"]',
+            label: 'inserted-state highlight',
+            selector: '#symbol-pane .symbol[data-state="inserted"]',
             prop: 'backgroundColor',
           },
         ])),
       );
 
+      measured.push(...(await measureInsertTargetOutlines(page)));
+
       await openAboutDialog(page);
       measured.push(...(await measureContrast(page, ABOUT_NON_TEXT_SAMPLES)));
 
-      expect(measured).toHaveLength(NON_TEXT_SAMPLES.length + 3 + ABOUT_NON_TEXT_SAMPLES.length);
+      expect(measured).toHaveLength(NON_TEXT_SAMPLES.length + 5 + ABOUT_NON_TEXT_SAMPLES.length);
       expect(failures(measured, 3)).toEqual([]);
     });
   });

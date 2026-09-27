@@ -30,7 +30,9 @@ export const WORKSPACE_KEY = 'pyplay.workspace.v1';
  * special-character pane present but never opened (the default), and once with
  * it opened before each spec's first assertion. `PANE_OPEN=1` selects the
  * second configuration, so no spec needs to know about the pane to be verified
- * against it (BR-301).
+ * against it (BR-1601). VC-327's clipboard leg is retired with spec-03's
+ * FR-306 – FR-308: an *open* pane still changes nothing on its own, because
+ * only an activation inserts (spec-16 FR-1601).
  */
 export interface OpenOptions {
   /**

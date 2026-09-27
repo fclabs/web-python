@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { expect, test, type Page } from '@playwright/test';
 import { failures, measureContrast } from './contrast';
 import {
-  caretPosition,
+  LAYOUT_KEY,
   consoleText,
   diagnosticEntries,
   editorSnapshot,
@@ -22,6 +22,7 @@ import {
   setProgram,
   storedProgram,
   submitStdin,
+  trackLongTasks,
   typeProgram,
   waitForLinter,
   waitForPythonReady,
@@ -547,25 +548,21 @@ test('A-305: the multi-character glyphs render as literal characters', async ({ 
 });
 
 /* -------------------------------------------------------------------------
-   FR-306 – FR-308, FR-313, FR-316 — copying and its feedback
+   FR-1601, FR-1609 — inserting and its feedback
+
+   spec-16 supersedes spec-03's clipboard path: FR-306 – FR-308, FR-313 and
+   FR-316 are retired together with the criteria that verified them. VC-307
+   and VC-308 are rewritten here against the insertion behaviour; spec-03's
+   Enter/Space copy criterion is folded into VC-1604 further down the file.
    ------------------------------------------------------------------------- */
 
-/** The pane's `role="status"` text (FR-307). */
+/** The pane's `role="status"` text (FR-1609). */
 async function symbolStatus(page: Page): Promise<string> {
   return page.evaluate(() => document.getElementById('symbol-status')?.textContent ?? '');
 }
 
-/** The `data-value` of every button currently in the copied state (FR-307). */
-async function copiedButtons(page: Page): Promise<string[]> {
-  return page.evaluate(() =>
-    Array.from(
-      document.querySelectorAll<HTMLElement>('#symbol-pane .symbol[data-state="copied"]'),
-    ).map((b) => b.dataset.value ?? ''),
-  );
-}
-
 /**
- * The pane button for `value`, addressed by the value it copies. Every value
+ * The pane button for `value`, addressed by the value it inserts. Every value
  * is printable ASCII (VC-325), so escaping `\` and `"` is enough to make a
  * valid attribute selector.
  */
@@ -574,263 +571,93 @@ function symbolButton(page: Page, value: string) {
   return page.locator(`#symbol-pane .symbol[data-value="${escaped}"]`);
 }
 
-/** Reject every clipboard write, the way a denied permission does (FR-308). */
-async function denyClipboard(page: Page): Promise<void> {
-  await page.addInitScript(() => {
-    Object.defineProperty(navigator, 'clipboard', {
-      configurable: true,
-      value: { writeText: () => Promise.reject(new DOMException('denied', 'NotAllowedError')) },
-    });
+/**
+ * Count the document-changing transactions the live view receives, by wrapping
+ * `view.dispatch` in the page (FR-1601: *no other transaction is dispatched*).
+ * Only a dispatch that actually moves the document is counted, so the lint
+ * pass — which dispatches diagnostics, never a change — cannot inflate it.
+ */
+async function trackDocChanges(page: Page): Promise<{
+  reset: () => Promise<void>;
+  read: () => Promise<number>;
+}> {
+  await page.evaluate(() => {
+    const content = document.querySelector('.cm-content') as
+      | (HTMLElement & { cmView?: { view: unknown }; cmTile?: { view: unknown } })
+      | null;
+    const view = (content?.cmTile?.view ?? content?.cmView?.view) as
+      | { dispatch: (...args: unknown[]) => void; state: { doc: { toString(): string } } }
+      | undefined;
+    if (!view) throw new Error('CodeMirror view not found');
+    const box = window as unknown as { __docChanges: number };
+    box.__docChanges = 0;
+    const original = view.dispatch.bind(view);
+    view.dispatch = (...args: unknown[]): void => {
+      const before = view.state.doc.toString();
+      original(...args);
+      if (view.state.doc.toString() !== before) box.__docChanges++;
+    };
   });
+  return {
+    reset: () =>
+      page.evaluate(() => {
+        (window as unknown as { __docChanges: number }).__docChanges = 0;
+      }),
+    read: () => page.evaluate(() => (window as unknown as { __docChanges: number }).__docChanges),
+  };
 }
 
-test('VC-307 (FR-306, BR-301): every value lands on the clipboard, and the editor never moves', async ({
+test('VC-307 (FR-1601, BR-1601): the editor moves exactly once per activation, for all 29 values', async ({
   page,
 }) => {
   test.setTimeout(120_000);
 
   await openPlayground(page);
-  // The buffer as it was before the single undoable edit this test makes.
-  const original = await editorText(page);
   await setProgram(page, 'x = 1\ny = 2\n');
-  await setCaret(page, 2, 3);
+  await setCaret(page, 2, 3); // offset 8 — between `y ` and `= 2`
   await openSymbolPane(page);
 
-  const before = { text: await editorText(page), caret: await caretPosition(page) };
+  const changes = await trackDocChanges(page);
+  const start = (await editorSnapshot(page)).from;
 
+  let inserted = '';
   for (const value of SYMBOL_VALUES) {
+    await changes.reset();
     await symbolButton(page, value).click();
-    await expect
-      .poll(() => page.evaluate(() => navigator.clipboard.readText()), { timeout: 5_000 })
-      .toBe(value);
+    // FR-1601 / BR-1602: one dispatch, carrying the change and the selection.
+    await expect.poll(() => changes.read(), { timeout: 2_000 }).toBe(1);
+
+    inserted += value;
+    const snapshot = await editorSnapshot(page);
+    expect(snapshot.text, `document after ${value}`).toBe(`x = 1\ny ${inserted}= 2\n`);
+    expect(snapshot.from, `caret after ${value}`).toBe(start + inserted.length);
+    expect(snapshot.to, `collapsed after ${value}`).toBe(start + inserted.length);
   }
 
-  // BR-301: no transaction reached the editor at any point.
-  expect(await editorText(page)).toBe(before.text);
-  expect(await caretPosition(page)).toEqual(before.caret);
-
-  // ...and the undo history is exactly where it was: a single undo still
-  // reverses the one edit this test made, so no copy left an entry behind.
-  await page.evaluate(() => {
-    const content = document.querySelector('.cm-content') as
-      | (HTMLElement & { cmView?: { view: { focus(): void } }; cmTile?: { view: { focus(): void } } })
-      | null;
-    (content?.cmTile?.view ?? content?.cmView?.view)?.focus();
-  });
-  await page.keyboard.press('ControlOrMeta+z');
-  await expect.poll(() => editorText(page)).toBe(original);
+  // Nothing outside the insertion point moved, in 29 activations.
+  expect(await editorText(page)).toBe(`x = 1\ny ${SYMBOL_VALUES.join('')}= 2\n`);
 });
 
-test('VC-308 (FR-306): the copied `**` pastes as exactly two characters', async ({ page }) => {
+test('VC-308 (FR-1601, FR-1603): `**` inserts as exactly two characters, in one undo step', async ({
+  page,
+}) => {
   await openPlayground(page);
   await setProgram(page, 'x = 1\n');
+  await setCaret(page, 1, 6); // end of `x = 1`
   await openSymbolPane(page);
 
   await symbolButton(page, '**').click();
-  await expect(page.locator('#symbol-status')).toHaveText('Copied **');
+  await expect(page.locator('#symbol-status')).toHaveText('Inserted **');
 
-  await page.locator('.cm-content').click();
-  await page.keyboard.press('ControlOrMeta+a');
-  await page.keyboard.press('Delete');
-  await page.keyboard.press('ControlOrMeta+v');
+  // FR-1602: both characters land, and only those two.
+  const after = await editorSnapshot(page);
+  expect(after.text).toBe('x = 1**\n');
+  expect(after.from, 'caret immediately after the two characters').toBe(7);
 
-  await expect.poll(() => editorText(page)).toBe('**');
-});
-
-test('VC-309 (FR-307): `Copied (` appears at once and reverts after the window', async ({
-  page,
-}) => {
-  await openPlayground(page);
-  await openSymbolPane(page);
-
-  const clickedAt = Date.now();
-  await symbolButton(page, '(').click();
-  await expect(page.locator('#symbol-status')).toHaveText('Copied (', { timeout: 1_000 });
-  await expect(symbolButton(page, '(')).toHaveAttribute('data-state', 'copied');
-  expect(Date.now() - clickedAt, 'feedback painted promptly').toBeLessThan(1_000);
-
-  // Still there well inside the 2 000 ms window...
-  await page.waitForTimeout(1_200);
-  expect(await symbolStatus(page)).toBe('Copied (');
-
-  // ...and gone after it.
-  await expect.poll(() => symbolStatus(page), { timeout: 3_000 }).toBe('');
-  expect(await copiedButtons(page)).toEqual([]);
-});
-
-test('VC-310 (FR-307): a second copy replaces the text and restarts the timer', async ({
-  page,
-}) => {
-  await openPlayground(page);
-  await openSymbolPane(page);
-
-  await symbolButton(page, '(').click();
-  await expect(page.locator('#symbol-status')).toHaveText('Copied (');
-
-  await page.waitForTimeout(1_200);
-  const secondAt = Date.now();
-  await symbolButton(page, ':').click();
-  await expect(page.locator('#symbol-status')).toHaveText('Copied :');
-  expect(await copiedButtons(page)).toEqual([':']);
-
-  // 1 900 ms after the *first* click the second copy's text is still showing:
-  // the window restarted from zero rather than running down.
-  await page.waitForTimeout(Math.max(0, 700 - (Date.now() - secondAt)));
-  expect(await symbolStatus(page)).toBe('Copied :');
-
-  // It clears 2 000 ms after the second click, not the first.
-  await expect.poll(() => symbolStatus(page), { timeout: 3_000 }).toBe('');
-  expect(await copiedButtons(page)).toEqual([]);
-});
-
-test('VC-311 (FR-308, BR-303, FR-313): a denied write notifies, selects the glyph and degrades nothing', async ({
-  page,
-}) => {
-  const pageErrors: string[] = [];
-  page.on('pageerror', (error) => pageErrors.push(error.message));
-
-  await denyClipboard(page);
-  await openPlayground(page);
-  await openSymbolPane(page);
-
-  await symbolButton(page, '{').click();
-
-  await expect(
-    page.locator(
-      '[data-notice="Couldn\'t copy — select the character and press Ctrl/Cmd+C"]',
-    ),
-  ).toHaveCount(1);
-  await expect
-    .poll(() => page.evaluate(() => window.getSelection()?.toString() ?? ''))
-    .toBe('{');
-  expect(await symbolStatus(page)).toBe('');
-  expect(await copiedButtons(page)).toEqual([]);
-
-  // BR-303: the pane is still open and still navigable...
-  await expect(page.locator('#symbol-pane')).toBeVisible();
-  await expect(page.locator('#btn-symbols')).toHaveAttribute('aria-expanded', 'true');
-  await symbolButton(page, '"').first().focus();
-  await page.keyboard.press('ArrowDown');
-  expect(await focusedSymbol(page)).not.toBe('"');
-
-  // ...and editing plus Copy code behave exactly as spec-01 requires.
-  await typeProgram(page, 'print("hi")');
-  expect(await editorText(page)).toBe('print("hi")');
-  await page.getByRole('button', { name: 'Copy code' }).click();
-  await expect(
-    page.locator('[data-notice="Couldn\'t copy — select the code and press Ctrl/Cmd+C"]'),
-  ).toHaveCount(1);
-  await expect
-    .poll(() => page.evaluate(() => window.getSelection()?.toString() ?? ''))
-    .toBe('print("hi")');
-
-  expect(pageErrors).toEqual([]);
-});
-
-test('VC-312 (FR-313): with no clipboard API at all the pane falls back and Run still works', async ({
-  page,
-}) => {
-  const pageErrors: string[] = [];
-  page.on('pageerror', (error) => pageErrors.push(error.message));
-
-  await page.addInitScript(() => {
-    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: undefined });
-  });
-
-  await openPlayground(page);
-  await waitForPythonReady(page);
-  await openSymbolPane(page);
-
-  await symbolButton(page, '+').click();
-  await expect(
-    page.locator(
-      '[data-notice="Couldn\'t copy — select the character and press Ctrl/Cmd+C"]',
-    ),
-  ).toHaveCount(1);
-  await expect
-    .poll(() => page.evaluate(() => window.getSelection()?.toString() ?? ''))
-    .toBe('+');
-  expect(await symbolStatus(page)).toBe('');
-
-  await runProgram(page, 'print("ok")\n');
-  await expect.poll(() => programStdout(page), { timeout: 30_000 }).toBe('ok\n');
-  expect(pageErrors).toEqual([]);
-});
-
-test('VC-328 (FR-307, FR-308): a denial after a success leaves no stale feedback', async ({
-  page,
-}) => {
-  // The first write succeeds; the second, 500 ms later, is rejected.
-  await page.addInitScript(() => {
-    const real = navigator.clipboard;
-    let calls = 0;
-    Object.defineProperty(navigator, 'clipboard', {
-      configurable: true,
-      value: {
-        writeText: (text: string) =>
-          ++calls === 1
-            ? real.writeText(text)
-            : Promise.reject(new DOMException('denied', 'NotAllowedError')),
-        readText: () => real.readText(),
-      },
-    });
-  });
-
-  await openPlayground(page);
-  await openSymbolPane(page);
-
-  const firstAt = Date.now();
-  await symbolButton(page, '(').click();
-  await expect(page.locator('#symbol-status')).toHaveText('Copied (');
-
-  await page.waitForTimeout(Math.max(0, 500 - (Date.now() - firstAt)));
-  await symbolButton(page, ')').click();
-
-  await expect(
-    page.locator(
-      '[data-notice="Couldn\'t copy — select the character and press Ctrl/Cmd+C"]',
-    ),
-  ).toHaveCount(1);
-
-  // The FR-307 window that was still pending is cancelled, not merely hidden:
-  // nothing reappears at any point up to 3 000 ms after the first click.
-  const deadline = firstAt + 3_000;
-  while (Date.now() < deadline) {
-    expect(await symbolStatus(page)).toBe('');
-    expect(await copiedButtons(page)).toEqual([]);
-    await page.waitForTimeout(150);
-  }
-});
-
-test('VC-333 (FR-316): a pane closed mid-write produces no feedback at all', async ({ page }) => {
-  // Every clipboard write resolves 300 ms late, so `Escape` can land first.
-  await page.addInitScript(() => {
-    const real = navigator.clipboard;
-    Object.defineProperty(navigator, 'clipboard', {
-      configurable: true,
-      value: {
-        writeText: (text: string) =>
-          new Promise<void>((resolve, reject) => {
-            setTimeout(() => real.writeText(text).then(resolve, reject), 300);
-          }),
-      },
-    });
-  });
-
-  await openPlayground(page);
-  await openSymbolPane(page);
-
-  await symbolButton(page, '#').click();
-  await page.waitForTimeout(50);
-  await page.keyboard.press('Escape');
-  await expect(page.locator('#symbol-pane')).toBeHidden();
-
-  await page.waitForTimeout(500);
-  expect(await symbolStatus(page)).toBe('');
-  expect(await copiedButtons(page)).toEqual([]);
-  expect(await noticeTexts(page)).toEqual([]);
-  await expect(page.locator('#symbol-pane')).toBeHidden();
-  await expect(page.locator('#btn-symbols')).toHaveAttribute('aria-expanded', 'false');
+  // FR-1603: one undo removes the pair, not one character of it.
+  await focusEditor(page);
+  await page.keyboard.press('ControlOrMeta+z');
+  await expect.poll(() => editorText(page)).toBe('x = 1\n');
 });
 
 /* -------------------------------------------------------------------------
@@ -968,26 +795,12 @@ test.describe('wide layout keyboard model', () => {
     expect(visited.slice(0, expected.length)).toEqual(expected);
   });
 
-  test('VC-314 (FR-309, FR-306): Enter and Space both copy the focused character', async ({
-    page,
-  }) => {
-    await openPlayground(page);
-
-    for (const key of ['Enter', 'Space']) {
-      await openSymbolPane(page);
-      // Reach `//` with arrow keys alone: it is row 13 of the wide layout.
-      for (let i = 0; i < 12; i++) await page.keyboard.press('ArrowDown');
-      expect(await focusedSymbol(page)).toBe('//');
-
-      await page.keyboard.press(key);
-      await expect(page.locator('#symbol-status'), key).toHaveText('Copied //');
-      await expect(symbolButton(page, '//'), key).toHaveAttribute('data-state', 'copied');
-      expect(await page.evaluate(() => navigator.clipboard.readText()), key).toBe('//');
-
-      await page.keyboard.press('Escape');
-      await expect(page.locator('#symbol-pane')).toBeHidden();
-    }
-  });
+  /*
+   * spec-03's Enter/Space *copy* criterion is folded into VC-1604, which
+   * asserts that the pointer, `Enter` and `Space` paths produce an identical
+   * document, caret and `Inserted V` (spec-16, *Existing criteria: re-run,
+   * rewritten, retired*).
+   */
 });
 
 test.describe('narrow layout keyboard model', () => {
@@ -1060,10 +873,10 @@ test.describe('narrow layout keyboard model', () => {
    FR-310 — the pane never reaches a running program
    ------------------------------------------------------------------------- */
 
-test('VC-316 (FR-310, BR-301): copying mid-run interrupts neither the run nor its output', async ({
+test('VC-316 / VC-1606, VC-1607 (FR-310, FR-1607, FR-1606): a mid-run activation is inert unless a read is pending, and interrupts nothing either way', async ({
   page,
 }) => {
-  test.setTimeout(120_000);
+  test.setTimeout(240_000);
 
   await openPlayground(page);
   await waitForPythonReady(page);
@@ -1089,9 +902,13 @@ test('VC-316 (FR-310, BR-301): copying mid-run interrupts neither the run nor it
   await sample();
   await openSymbolPane(page);
   await sample();
-  await symbolButton(page, '%').click();
-  await expect(page.locator('#symbol-status')).toHaveText('Copied %');
+
+  // FR-1607 (VC-1606): a running program with *no* pending read resolves no
+  // live target, so every button is inert and every activation path no-ops.
+  await expectPaneLocked(page, 'mid-run, no pending read');
+  await expectInertActivationsDoNothing(page, 'mid-run, no pending read');
   await sample();
+
   await page.getByRole('button', { name: 'Symbols' }).click();
   await expect(page.locator('#symbol-pane')).toBeHidden();
   await sample();
@@ -1099,7 +916,6 @@ test('VC-316 (FR-310, BR-301): copying mid-run interrupts neither the run nor it
   expect(new Set(states), 'Run stayed disabled and Stop stayed enabled').toEqual(
     new Set(['true/false']),
   );
-  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('%');
 
   await expect
     .poll(() => consoleText(page), { timeout: 60_000 })
@@ -1109,9 +925,44 @@ test('VC-316 (FR-310, BR-301): copying mid-run interrupts neither the run nor it
   expect(await programStdout(page)).toBe(
     Array.from({ length: 20 }, (_, i) => `${i}\n`).join(''),
   );
+
+  /*
+   * ...and the other half of FR-310 under spec-16 (VC-1607): with a read
+   * pending the buttons are live, so the activation inserts — and that still
+   * interrupts nothing. Run stays disabled, Stop stays enabled, and the read
+   * that was pending is the one that is answered.
+   */
+  await page.getByRole('button', { name: 'Clear console' }).click();
+  await runProgram(page, 'value = input()\nprint("[" + value + "]")\n');
+  await waitForStdinPrompt(page);
+  await openSymbolPane(page);
+
+  const duringRead: string[] = [];
+  const sampleRead = async (): Promise<void> => {
+    duringRead.push(
+      await page.evaluate(
+        () =>
+          `${document.getElementById('btn-run')!.getAttribute('aria-disabled')}/` +
+          `${document.getElementById('btn-stop')!.getAttribute('aria-disabled')}`,
+      ),
+    );
+  };
+
+  await sampleRead();
+  await symbolButton(page, '%').click();
+  await expect(page.locator('#symbol-status')).toHaveText('Inserted %');
+  await expect(page.locator('#stdin-input')).toHaveValue('%');
+  await sampleRead();
+
+  expect(new Set(duringRead), 'the insertion did not touch Run or Stop').toEqual(
+    new Set(['true/false']),
+  );
+
+  await page.locator('#stdin-input').press('Enter');
+  await expect.poll(() => programStdout(page), { timeout: 30_000 }).toContain('[%]');
 });
 
-test('VC-317 (FR-310): copying while a read is pending injects nothing into stdin', async ({
+test('VC-317 (FR-310, FR-1606): an activation while a read is pending reaches the field, not the run', async ({
   page,
 }) => {
   test.setTimeout(120_000);
@@ -1129,14 +980,26 @@ test('VC-317 (FR-310): copying while a read is pending injects nothing into stdi
   expect(await stdinEnabled()).toBe(true);
   await openSymbolPane(page);
   expect(await stdinEnabled()).toBe(true);
+
+  /*
+   * spec-16 FR-1606 inverts spec-03's original criterion: a pending read *is*
+   * a live target, so the pane now deliberately writes into the field. What
+   * FR-310 still guarantees is that it interrupts nothing — the field stays
+   * live, the run is not restarted, and the read that was pending is the one
+   * that gets answered, with the inserted character in the middle of it.
+   */
+  await page.locator('#stdin-input').fill('a');
   await symbolButton(page, ',').click();
-  await expect(page.locator('#symbol-status')).toHaveText('Copied ,');
+  await expect(page.locator('#symbol-status')).toHaveText('Inserted ,');
+  await expect(page.locator('#stdin-input')).toHaveValue('a,');
   expect(await stdinEnabled()).toBe(true);
 
-  // The pane put nothing in the field, and the read is still the one pending.
-  expect(await page.inputValue('#stdin-input')).toBe('');
-
-  await submitStdin(page, 'a,b');
+  // Focusing the field resets its selection to offset 0 (the field was
+  // written to while unfocused), so the caret is moved to the end explicitly.
+  await page.locator('#stdin-input').press('End');
+  await page.locator('#stdin-input').press('b');
+  await expect(page.locator('#stdin-input')).toHaveValue('a,b');
+  await page.locator('#stdin-input').press('Enter');
   await expect.poll(() => programStdout(page), { timeout: 30_000 }).toBe('a,b\n');
 });
 
@@ -1170,7 +1033,7 @@ async function storageSnapshot(page: Page): Promise<{
   });
 }
 
-test('VC-320 (FR-312, BR-304): opening and copying persists nothing, and a reload closes the pane', async ({
+test('VC-320 (FR-312, BR-304, FR-1611): inserting persists nothing of the pane’s, and a reload closes it', async ({
   page,
 }) => {
   await openPlayground(page);
@@ -1185,8 +1048,8 @@ test('VC-320 (FR-312, BR-304): opening and copying persists nothing, and a reloa
    * spec-05's `pyplay.theme.v1`, and — under a spec-04 VC-433 run, which loads
    * the parent suites with the layout preference pre-seeded — spec-04's
    * `pyplay.layout.v2`. None is the pane's; what VC-320 asserts is that *the
-   * pane* writes nothing, which is the unchanged-snapshot comparisons below,
-   * plus the absence of any key outside this set.
+   * pane* writes nothing of its own, which is the comparisons below, plus the
+   * absence of any key outside this set.
    */
   const ALLOWED_KEYS = ['pyplay.layout.v2', 'pyplay.workspace.v1', 'pyplay.theme.v1'];
   const unexpectedKeys = (snapshot: { local: Record<string, string> }): string[] =>
@@ -1198,8 +1061,27 @@ test('VC-320 (FR-312, BR-304): opening and copying persists nothing, and a reloa
 
   await openSymbolPane(page);
   await symbolButton(page, '_').click();
-  await expect(page.locator('#symbol-status')).toHaveText('Copied _');
-  expect(await storageSnapshot(page)).toEqual(before);
+  await expect(page.locator('#symbol-status')).toHaveText('Inserted _');
+
+  /*
+   * spec-16 FR-1611: the inserted character reaches `pyplay.workspace.v1`
+   * through the editor's own autosave, exactly as a typed one does, so that
+   * one value legitimately changes. BR-304 is about what *the pane* writes:
+   * no new key, no session storage, no cookie, no database, and nothing about
+   * the pane's own state anywhere.
+   */
+  await expect.poll(() => storedProgram(page)).toBe('print("hi")_');
+  const after = await storageSnapshot(page);
+  expect(Object.keys(after.local).sort()).toEqual(Object.keys(before.local).sort());
+  expect(unexpectedKeys(after)).toEqual([]);
+  expect({ session: after.session, cookie: after.cookie, databases: after.databases }).toEqual({
+    session: before.session,
+    cookie: before.cookie,
+    databases: before.databases,
+  });
+  for (const key of Object.keys(after.local)) {
+    if (key !== 'pyplay.workspace.v1') expect(after.local[key], key).toBe(before.local[key]);
+  }
 
   await page.reload();
   await page.waitForSelector('.cm-content');
@@ -1207,7 +1089,6 @@ test('VC-320 (FR-312, BR-304): opening and copying persists nothing, and a reloa
   // FR-312: the pane is closed again — its open state was never persisted.
   await expect(page.locator('#symbol-pane')).toBeHidden();
   await expect(page.locator('#btn-symbols')).toHaveAttribute('aria-expanded', 'false');
-  expect(await storageSnapshot(page)).toEqual(before);
   expect(unexpectedKeys(await storageSnapshot(page))).toEqual([]);
 });
 
@@ -1961,4 +1842,187 @@ test('VC-1613 (FR-1605, FR-1606): an idle, last-focused stdin field is not a tar
   expect(await editorText(page)).toBe(`_${ECHO_READ}`);
   // ...and the field was never written to (FR-1606).
   await expect(page.locator('#stdin-input')).toHaveValue('');
+});
+
+/* -------------------------------------------------------------------------
+   spec-16 — VC-1614, VC-1615: the insertion in every rendering, and its cost
+   ------------------------------------------------------------------------- */
+
+/**
+ * VC-1601's core insertion, condensed to what a second rendering can change:
+ * the character lands at the caret and the caret ends up after it. The pane
+ * must already be open.
+ */
+async function expectCoreInsertion(page: Page, what: string): Promise<void> {
+  await setProgram(page, 'ab\n');
+  await setCaret(page, 1, 2); // offset 1 — between `a` and `b`
+  await symbolButton(page, '#').click();
+
+  await expect(page.locator('#symbol-status'), what).toHaveText('Inserted #');
+  const snapshot = await editorSnapshot(page);
+  expect(snapshot.text, `${what}: document`).toBe('a#b\n');
+  expect(snapshot.from, `${what}: caret after the insertion`).toBe(2);
+  expect(snapshot.to, `${what}: caret collapsed`).toBe(2);
+}
+
+/** NFR-1603: every hit area is at least 32 × 32 CSS px in this rendering. */
+async function expectHitAreas(page: Page, what: string): Promise<void> {
+  const boxes = await page.evaluate(() =>
+    Array.from(document.querySelectorAll('#symbol-pane .symbol')).map((b) => {
+      const box = b.getBoundingClientRect();
+      return { w: box.width, h: box.height };
+    }),
+  );
+  expect(boxes, what).toHaveLength(29);
+  for (const [i, box] of boxes.entries()) {
+    expect(box.w, `${what}: button ${i + 1} width`).toBeGreaterThanOrEqual(32);
+    expect(box.h, `${what}: button ${i + 1} height`).toBeGreaterThanOrEqual(32);
+  }
+}
+
+// spec-04 FR-411: both layouts are only *choosable* at 900 px and up, so the
+// preference is seeded and the viewport kept wide enough for it to be honoured.
+for (const preference of ['horizontal', 'vertical'] as const) {
+  test(`VC-1614 (FR-1601, FR-311, NFR-1603): the insertion holds in the ${preference} layout`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.addInitScript(
+      ({ key, value }) => {
+        try {
+          window.localStorage.setItem(key, value);
+        } catch {
+          /* ignore */
+        }
+      },
+      { key: LAYOUT_KEY, value: preference },
+    );
+    await openPlayground(page, { seedLayout: false });
+    await expect
+      .poll(() => page.evaluate(() => document.getElementById('app')?.dataset.layout))
+      .toBe(preference);
+
+    await openSymbolPane(page);
+    await expectCoreInsertion(page, `${preference} layout`);
+    await expectHitAreas(page, `${preference} layout`);
+  });
+}
+
+test('VC-1614 (FR-1601, FR-311, NFR-1603): the insertion holds either side of the 700 px flip', async ({
+  page,
+}) => {
+  // 701 px: the pane is the inline-end column (FR-311, VC-330).
+  await page.setViewportSize({ width: 701, height: 800 });
+  await openPlayground(page);
+  await openSymbolPane(page);
+  await expectCoreInsertion(page, '701 px');
+  await expectHitAreas(page, '701 px');
+  expect(
+    await page.evaluate(() => document.documentElement.scrollWidth),
+    '701 px: no horizontal page scrolling',
+  ).toBeLessThanOrEqual(701);
+
+  // 699 px: the same insertion in the full-width band the flip produces.
+  await page.setViewportSize({ width: 699, height: 800 });
+  await expect(page.locator('#symbol-pane')).toHaveAttribute('aria-orientation', 'horizontal');
+  await expectCoreInsertion(page, '699 px');
+  await expectHitAreas(page, '699 px');
+  expect(
+    await page.evaluate(() => document.documentElement.scrollWidth),
+    '699 px: no horizontal page scrolling',
+  ).toBeLessThanOrEqual(699);
+
+  // NFR-1603 / NFR-301: 375 px with the pane open still does not scroll
+  // sideways, and the insertion is unchanged there too.
+  await page.setViewportSize({ width: 375, height: 667 });
+  await expectCoreInsertion(page, '375 px');
+  await expectHitAreas(page, '375 px');
+  expect(
+    await page.evaluate(() => document.documentElement.scrollWidth),
+    '375 px: no horizontal page scrolling with the pane open',
+  ).toBeLessThanOrEqual(375);
+});
+
+/**
+ * NFR-1601 measures at "the 5 000-character program size spec-01 budgets for".
+ * Every line is a comment, so 29 insertions into one of them produce no
+ * diagnostic, no fold and no syntax error — what is being timed is the
+ * insertion, not a lint pass reacting to broken code.
+ */
+const BUDGETED_PROGRAM = `# ${'x'.repeat(78)}\n`.repeat(63); // 5 103 characters
+
+test('VC-1615 (NFR-1601): 29 insertions cost no long task, and each lands within 100 ms', async ({
+  page,
+}) => {
+  test.setTimeout(180_000);
+
+  await openPlayground(page);
+  // A long task from Pyodide or Ruff still loading is not the pane's, so the
+  // page is brought fully to rest before the observer is reset (NFR-1601).
+  await waitForPythonReady(page);
+  await waitForLinter(page);
+
+  await setProgram(page, BUDGETED_PROGRAM);
+  expect(BUDGETED_PROGRAM.length).toBeGreaterThanOrEqual(5_000);
+  await setCaret(page, 1, 3); // inside the first comment
+  await openSymbolPane(page);
+
+  const longTasks = await trackLongTasks(page);
+  await page.waitForTimeout(250);
+  await longTasks.reset();
+
+  const latencies: { value: string; ms: number }[] = [];
+  for (const value of SYMBOL_VALUES) {
+    const ms = await page.evaluate(
+      (target) =>
+        new Promise<number>((resolve, reject) => {
+          const content = document.querySelector('.cm-content') as
+            | (HTMLElement & { cmView?: { view: unknown }; cmTile?: { view: unknown } })
+            | null;
+          const view = (content?.cmTile?.view ?? content?.cmView?.view) as
+            | { state: { doc: { toString(): string } } }
+            | undefined;
+          if (!view) throw new Error('CodeMirror view not found');
+          const before = view.state.doc.toString();
+          const start = performance.now();
+          document
+            .querySelector<HTMLButtonElement>(
+              `#symbol-pane .symbol[data-value="${CSS.escape(target)}"]`,
+            )!
+            .click();
+          const check = (): void => {
+            if (view.state.doc.toString() !== before) resolve(performance.now() - start);
+            else if (performance.now() - start > 5_000) reject(new Error('no insertion'));
+            else requestAnimationFrame(check);
+          };
+          check();
+        }),
+      value,
+    );
+    latencies.push({ value, ms });
+  }
+
+  const observed = await longTasks.read();
+
+  for (const { value, ms } of latencies) {
+    expect(ms, `NFR-1601 activation -> document change for ${value}`).toBeLessThanOrEqual(100);
+  }
+  expect(
+    Math.max(0, ...observed),
+    'NFR-1601 longest main-thread task across 29 insertions',
+  ).toBeLessThanOrEqual(100);
+
+  // The document really did take all 29 values, at the caret. Read from the
+  // view, not the DOM: CodeMirror renders only the lines in the viewport.
+  expect((await editorSnapshot(page)).text).toBe(
+    `# ${SYMBOL_VALUES.join('')}${'x'.repeat(78)}\n` + `# ${'x'.repeat(78)}\n`.repeat(62),
+  );
+
+  console.log(
+    [
+      'VC-1615 measurements:',
+      `  NFR-1601 slowest activation -> change  ${Math.max(...latencies.map((l) => l.ms)).toFixed(1)} ms   (<= 100)`,
+      `  NFR-1601 longest main-thread task      ${Math.max(0, ...observed).toFixed(0)} ms   (<= 100)`,
+    ].join('\n'),
+  );
 });
