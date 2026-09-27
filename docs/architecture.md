@@ -386,30 +386,121 @@ without duplicating the media query in JavaScript.
 
 ### One owner of the feedback state
 
-FR-307 (`Copied V` for 2 000 ms), FR-308 (the denial notice) and FR-316 (a pane
-closed while a write is in flight) are only consistent with each other because
-a single method, `clearFeedback()`, is the sole writer of that state — it drops
-the status text, removes `data-state="copied"` and cancels the pending revert
-timer. Both paths call it *before* they write anything, and `close()` calls it
-too. That is what makes a second copy restart the window from zero, a denial
-after a recent success leave nothing behind, and a resolution that arrives
-after the pane closed produce no feedback at all. Every activation also carries
-a monotonic id, so an overtaken write resolves into nothing rather than into
-stale text.
+`Inserted V` for 2 000 ms (FR-1609) and the `data-state="inserted"` mark on the
+activated button are consistent with each other because a single method,
+`clearFeedback()`, is the sole writer of that state — it drops the status text,
+removes `data-state="inserted"` and cancels the pending revert timer. The
+insertion path calls it *before* it writes anything, and `close()` calls it
+too. That is what makes a second insertion restart the window from zero and
+move the mark to the new button, and what makes a pane closed mid-window leave
+nothing behind. The window is `COPIED_MS`, the same constant **Copy code** and
+**Copy output** use, so the three confirmations cannot drift apart.
 
-### It never touches the editor
+The announcement is worth keeping even though the character is now visibly in
+the document: several glyphs differ by a pixel or two at button size, and the
+insertion point may be scrolled out of view or in a stdin field the visitor is
+not looking at. It is the only confirmation of *which* glyph landed.
 
-The pane copies to the clipboard and does nothing else (BR-301). It holds no
-reference to the `EditorView`, so it can produce no CodeMirror transaction —
-and therefore no undo entry, no autosave schedule (FR-002) and no lint schedule
-(FR-035). That is what keeps this feature incapable of regressing spec-01's
-shipped behaviour, and it is why insert-at-caret was left out: it would put the
-pane inside exactly those paths. `VC-307` checks the buffer, the caret offset
-and the undo history across all 29 copies.
+### It reaches the editor through one callback
 
-`.symbol` sets `user-select: text` because Firefox refuses to select content
-inside a `<button>` otherwise, which would leave FR-308's fallback — "select
-the character and press Ctrl/Cmd+C" — advising an impossible action there.
+Spec-16 replaced the pane's clipboard write with an insertion at the caret, but
+not by giving the pane an editor. `SymbolPane` still holds no `EditorView`
+reference and imports nothing from `@codemirror/*` (BR-1601); it receives one
+injected callback, `onInsert(value)`, from `src/main.ts` and calls it — only
+when the activated button is not inert — without inspecting the result. The
+editor transaction is therefore testable without the pane, the pane is testable
+without an editor, and the pane's deliberately narrow dismissal surface (two
+paths: the toggle and `Escape`) survives by construction rather than by
+enumeration. The pane also owns no focus listener: every one belongs to
+`src/main.ts` and dismisses nothing.
+
+`src/main.ts` is the single owner of both the *target* and the *lock*:
+
+- **`resolveInsertTarget()`** answers where the next character lands. It is the
+  stdin field when the visitor was last in the field **and** a read is pending
+  (the field not being inert is exactly that condition); otherwise the editor
+  when the editor is editable — no program running, an active workspace file,
+  and that file editable UTF-8 text; otherwise nothing. The last-focused record
+  is written by one `focusin` listener, and only for the editor's content DOM
+  and the stdin field: a toolbar control, a symbol button, the console or the
+  file-name input leaves it alone. Before anything has been focused the record
+  is the editor, so a fresh load resolves there.
+- **`syncControls()`** is the only caller of `symbolPane.setLocked(...)`, which
+  marks all 29 buttons `aria-disabled` through `setInert()` — never the
+  `disabled` attribute, and never touching the roving `tabindex`. It already
+  owns Run, Stop, Format, Reset, the editor's read-only state and the stdin
+  field's inertness, so the pane's inertness is derived in the same pass and
+  cannot drift from them. Because the resolution now also depends on focus and
+  on whether a read is pending, `syncControls()` is re-run from the `focusin`
+  listener and at the end of `stdinPending()` / `stdinIdle()` — the lock would
+  otherwise go stale and keep the pane inert through a read it should serve.
+
+While the pane is open and holds focus, `src/main.ts` marks the resolved target
+with `data-insert-target`, which CSS paints as a dashed outline in the focus
+colour, and re-shows the editor's caret although the editor is not focused. One
+function toggles the attribute on both elements, so two outlined targets at
+once is unrepresentable.
+
+The editor half of the insertion lives in `src/editor.ts`, beside the other
+`EditorView` helpers, and the field half in `src/insert.ts`, which imports
+nothing — a deliberate split, so the `setRangeText` offset arithmetic is unit
+testable without a browser and without CodeMirror.
+
+**One dispatch, carrying two annotations.** The change and the new selection
+travel in the same `view.dispatch` call: dispatching the selection separately
+would be a second history event, and one activation would then cost two undos.
+That call carries both
+
+- `userEvent: 'input.type'`, which keeps the edit indistinguishable from typing
+  for every *downstream observer* — the update listener, the workspace write,
+  the debounced autosave and the lint schedule all run exactly as they do for a
+  typed character (FR-1611), and
+- the `isolateHistory` annotation, which stops `history()` itself from treating
+  it as typing and coalescing consecutive insertions into one undo step.
+
+Neither is optional, and they pull in opposite directions on purpose: without
+the first the edit would not be seen as ordinary input; without the second
+three insertions inside history's 500 ms grouping window would collapse into
+one undo.
+
+One consequence is worth knowing. `indentOnInput()` is a transaction filter
+gated on nothing but `docChanged && isUserEvent('input.type')`, so the pane's
+transaction passes it: inserting `:` after a dangling `else` re-indents the
+line exactly as typing `:` there does. That is parity, not a defect — it adds
+no character the visitor did not ask for, it only moves leading whitespace the
+language mode already owns, and the filter's changes ride in the same
+transaction, so one activation is still one undo step. Bracket pairing is the
+other way round: `closeBrackets()` hooks *typed* input only, so the pane's `(`
+inserts one character where typing `(` inserts `()`.
+
+If the insertion point sits inside a range folded by spec-15, the fold is
+opened first, in its own transaction carrying no document change and no
+selection — which `history()` does not record, so it adds no undo entry. It has
+to precede the insertion rather than ride in it: fold state maps its stored
+ranges through the transaction's changes before applying its effects, so an
+unfold carrying pre-change offsets in the same transaction would silently miss.
+
+**Two operational limits.** A stdin insertion has no native undo:
+`setRangeText` is invisible to the browser's own undo stack, so `Ctrl/Cmd+Z`
+inside the input field will not remove an inserted character. The alternative,
+`execCommand('insertText')`, requires the field to be focused, which would
+defeat inserting several characters in a row from the pane; the field is
+cleared on every submit, so the exposure is one line of input. And a palette
+insertion is deliberately not a typed insertion: no auto-close, no completion —
+though it *is* re-indented, as above. A visitor who inserts `(` and then types
+`)` ends with `()`; one who types `(` gets `()` already. Both are valid Python
+and neither is silently corrected.
+
+**An engine note.** Chromium discards a selection that was set programmatically
+on an *unfocused* field as soon as the next pointer-down lands elsewhere on the
+page — and activating a symbol button by pointer is exactly such a pointer-down.
+From the second activation onwards the field would then report offset 0 and the
+characters would accumulate in reverse. `src/main.ts` therefore remembers the
+caret the pane last left in the field and restores it immediately before the
+next insertion, but only while the field is unfocused; the record is cleared
+when the visitor takes the caret back or the field is reset, so positioning the
+caret by hand still works. The restore is unconditional across engines, so one
+that does preserve the selection is restored to the same offset.
 
 ### Changing the character set is gated
 

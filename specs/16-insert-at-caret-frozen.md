@@ -1,7 +1,8 @@
 # Insert the symbol at the caret
 
 Source: issue #58
-Status: DRAFT — normative on merge, renamed to `16-insert-at-caret-frozen.md`
+Status: SHIPPED
+Frozen: 2026-09-27
 Parent: `specs/01-static-python-web-frozen.md`, `specs/03-vertical-pane-frozen.md`
 Issue: https://github.com/fclabs/web-python/issues/58
 
@@ -168,9 +169,16 @@ content DOM and the stdin field (`#stdin-input`). Focus is tracked by
 A live activation whose target is the stdin field inserts `value` at that
 field's `selectionStart`–`selectionEnd` via `setRangeText(value, start, end,
 'end')`, leaving the caret after the inserted text and the field's scroll
-position sane. Focus is not moved: the field keeps its selection offsets while
-unfocused, which is what lets several characters be inserted in a row from the
-pane. `submitStdin()` reads `#stdin-input.value` directly, so no synthetic
+position sane. Focus is not moved, which is what lets several characters be
+inserted in a row from the pane. The offsets used are the ones `src/main.ts`
+remembers from the previous pane insertion, restored immediately before this
+one while the field is unfocused: Chromium discards a programmatically set
+selection on an unfocused field at the next pointer-down elsewhere on the page,
+and activating the pane is exactly such a pointer-down, so the field's own
+offsets cannot be relied on between activations. When nothing is remembered —
+a fresh read, or the visitor has taken the caret back by focusing the field —
+the field's own `selectionStart`/`selectionEnd` are used, exactly as written
+here. `submitStdin()` reads `#stdin-input.value` directly, so no synthetic
 `input` event is required; none is dispatched. The pane never writes to the
 console, the file-name input, or any other control.
 
@@ -182,7 +190,14 @@ untouched (the roving model of FR-309 owns it), never the HTML `disabled`
 attribute. Every activation path is guarded by `isInert()` and no-ops: no
 transaction, no `setRangeText`, no autosave, no lint, no `Inserted V`. The
 states that produce no live target are: a running program with no pending read;
-a binary active file; no active file at all. Gaining a live target — Stop, a
+a binary active file; no active file at all; and a running program with a read
+pending whose *last-focused* target is the editor, because the editor is
+FR-1605's only fallback and a running program makes it not live. That fourth
+state is reachable only by focusing the read-only editor during a read; a
+second fallback to the stdin field was considered and rejected, because
+FR-1605's single stated fallback is what keeps target resolution one rule the
+visitor can predict rather than two. Focusing the stdin field — which
+`stdinPending()` does by itself — restores the live target. Gaining a live target — Stop, a
 pending read, selecting a `.py` file — clears inertness on every button. The
 `Symbols` toggle itself is never inert (spec-03 DOM contract), so the pane can
 still be opened, navigated and closed in every state, which is what keeps
@@ -375,7 +390,16 @@ Deltas to spec-03's table; everything not listed is unchanged.
   `symbolPane.setLocked(...)` from `syncControls()` alongside the existing
   `setInert` calls.
 - `src/editor.ts` — hosts the editor half of the insertion (it already owns
-  every other `EditorView` helper: `setDoc`, `selectAll`, `revealPosition`).
+  every other `EditorView` helper: `setDoc`, `selectAll`, `revealPosition`):
+  `symbolInsertion(state, value)` builds the transaction and
+  `insertAtCaret(view, value)` dispatches it.
+- `src/insert.ts` — **new**, and the field half of FR-1606:
+  `insertIntoField(field, value)`, which imports nothing. It is not in
+  `src/editor.ts`, because that module pulls in the whole CodeMirror stack and
+  the stdin field has no `EditorView`; and not in `src/main.ts`, because that
+  module boots the worker, the workspace and the service worker on import and
+  is therefore not unit testable, which the `setRangeText` offset criterion
+  below requires.
 - `src/format.ts` — the string table above.
 - `src/styles.css` — `data-state="inserted"`, the `data-insert-target` outline
   and the caret rule. `.symbol`'s `user-select: text` Firefox workaround is
@@ -416,9 +440,13 @@ through the editor's existing autosave path (FR-1611).
 ### Existing criteria: re-run, rewritten, retired
 
 - **Re-run unchanged** against a fresh build: VC-301 – VC-306, VC-313, VC-315,
-  VC-317 – VC-322, VC-325, VC-326, VC-329 – VC-332, and spec-01's VC-050 –
+  VC-318 – VC-322, VC-325, VC-326, VC-329 – VC-332, and spec-01's VC-050 –
   VC-052 traversal and layout criteria.
-- **Rewritten**: VC-307 (*"the editor never moves"* → the editor moves exactly
+- **Rewritten**: VC-317 (*"copying while a read is pending injects nothing
+  into stdin"* → an activation during a pending read reaches the *field*, and
+  still interrupts nothing: the run is not restarted and the read that was
+  pending is the one answered, with the inserted character in the submitted
+  line — the surviving half of FR-310), VC-307 (*"the editor never moves"* → the editor moves exactly
   once per activation, for all 29 values), VC-308 (`**` pastes as two
   characters → `**` inserts as two characters in one undo step), VC-314
   (Enter/Space copy → insert, folded into VC-1604), VC-316 (a copy mid-run

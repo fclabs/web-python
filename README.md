@@ -2,11 +2,11 @@
 
 A **static**, backend-free web page where a visitor works in a small local Python
 workspace, runs `main.py`, watches `stdout`/`stderr` stream into a console, types input
-into the running program, copies the program to the clipboard, picks Python
-punctuation out of a special-character pane, forces light or dark chrome (or
-follows the system), and gets inline Ruff lint diagnostics plus one-click PEP 8
-formatting. The editor also completes local
-names, Python built-ins, and Python 3.13 keywords entirely in the browser. When
+into the running program, copies the program to the clipboard, inserts Python
+punctuation straight at the caret from a special-character pane, forces light or
+dark chrome (or follows the system), and gets inline Ruff lint diagnostics plus
+one-click PEP 8 formatting. The editor also completes local names, Python
+built-ins, and Python 3.13 keywords entirely in the browser. When
 Python code is pasted, it also removes invisible formatting characters and
 repairs common typographic lookalikes outside strings and comments. The
 editor pairs brackets, braces, parentheses, and quotes as they are typed.
@@ -21,7 +21,7 @@ Everything runs in the visitor's own browser:
 | Lint + format | `@astral-sh/ruff-wasm-web` 0.14.x, self-hosted, default rule selection |
 | Blocking `input()` | A `SharedArrayBuffer` + `Atomics.wait` channel between the page and the worker |
 | Offline + isolation | A **single** service worker that both injects COOP/COEP and precaches every asset the Run loop needs |
-| Special characters | A dismissible pane of 29 Python-relevant characters that copies one at a time to the clipboard, for keyboards where `[`, `]`, `{`, `}`, `\` and `|` are hard to reach |
+| Special characters | A dismissible pane of 29 Python-relevant characters, for keyboards where `[`, `]`, `{`, `}`, `\` and `|` are hard to reach. Activating one inserts it at the caret of wherever you were last typing — the editor, or the input field while a program is waiting for input — as a single undoable step |
 | Color mode | A toolbar control that cycles Light → Dark → System; System follows the OS preference sampled once per page load. The choice persists under `pyplay.theme.v1` |
 | Output pane | A toolbar toggle hides or shows Console + Input + Problems together. In the two-column layout a separator resizes that column against the editor. Both persist under `pyplay.output-visible.v1` and `pyplay.output-width.v1` |
 | Build | Vite → a directory of static files (`dist/`) deployable to any static host |

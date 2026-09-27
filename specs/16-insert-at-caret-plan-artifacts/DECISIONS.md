@@ -371,3 +371,54 @@ unrelated spec files and belongs in its own commit. Recorded here and in
 `perf.spec.ts:753` (VC-814) is not a failure at all: it is baseline-gated and
 **skips** both locally and on CI, because the run matches no record in
 `tests/e2e/baseline-*.json`.
+
+---
+
+## D-13 — D-07 resolved: FR-1607's enumeration is amended; no second fallback
+
+*Iteration 5.* **Resolves the divergence D-07 recorded. Spec text only; no
+code changed.**
+
+D-07 left a choice: either add a second fallback to `resolveInsertTarget()`
+(*"otherwise the stdin field when it is live"*), or amend FR-1607 so its
+enumeration of no-live-target states matches what FR-1605 actually produces.
+
+**Decision — amend FR-1607.** A second fallback would give the pane two
+resolution rules where FR-1605 states one, and would mean that clicking into
+the read-only editor during a read silently redirects the next character to a
+*different* element than the one the visitor last touched. The single rule —
+the last-focused target when it is live, otherwise the editor, otherwise
+nothing — is the one a visitor can predict, and the outline of FR-1608 shows
+the result before anything is activated. The state is also self-healing: the
+field is what `stdinPending()` focuses, so it takes a deliberate click into a
+read-only editor to enter it and one click back to leave it.
+
+FR-1607 now enumerates four no-live-target states: a running program with no
+pending read; a binary active file; no active file; and a running program with
+a read pending whose last-focused target is the editor. The rejected
+alternative and the reason are recorded in the clause itself, so a later reader
+does not re-derive the question.
+
+`src/main.ts` is unchanged, and no verification criterion changed: none
+exercised the state before and none does now — it is a locked pane, which
+VC-1606 already covers for every other locking state.
+
+---
+
+## D-14 — Two further sentences corrected before the freeze (D-08, D-09)
+
+*Iteration 5.* **Spec text only; no code changed.**
+
+Freezing a spec that contradicts the shipped build would defeat the point of
+freezing it, so the two remaining known-false passages went in with D-13:
+
+- **FR-1606** no longer claims the *field* keeps its selection offsets while
+  unfocused (D-08 measured Chromium discarding them). It now says the module
+  remembers the offsets and restores them before an insertion while the field
+  is unfocused, and falls back to the field's own offsets when it remembers
+  nothing. The observable behaviour it describes is unchanged.
+- The *Existing criteria* list moves **VC-317** out of the "re-run unchanged"
+  range and into *Rewritten*, with the inverted assertion D-09 shipped.
+
+Neither is a new decision; both are D-08 and D-09 applied to the text they said
+Iteration 5 owned.

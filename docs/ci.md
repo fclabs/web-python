@@ -108,7 +108,7 @@ one produces.
 The title is passed to the validator through `env:`, never interpolated into a
 `run:` body — a title is attacker-controlled text on a fork pull request.
 
-### The skipped tests, and the five that only fail locally
+### The skipped tests, and the six that only fail locally
 
 The suite is **347 tests**. A passing `e2e-chromium` log on the runner reads
 **`342 passed, 5 skipped`**.
