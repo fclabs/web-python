@@ -5,6 +5,8 @@ Status: SHIPPED
 Frozen: 2026-09-02
 PR / commit: https://github.com/fclabs/web-python/pull/5 (`0a4194f`)
 Parent: `specs/01-static-python-web-frozen.md`
+Amended by: `specs/16-insert-at-caret-frozen.md` — insert-at-caret supersedes
+the clipboard path (BR-1605). Every clause struck below carries that pointer.
 
 ## Purpose
 
@@ -14,9 +16,11 @@ sit behind `AltGr`, tablets whose soft keyboard buries symbols two panels deep,
 and locale keyboards that autocorrect `"` into curly quotes — currently have to
 copy those characters from somewhere outside the playground before they can
 type valid Python. This spec adds a **vertical, dismissible pane of
-Python-relevant characters** to the playground page. Clicking a character
-copies exactly that character to the clipboard, so the student can paste it
-into the editor. The pane is non-modal: it never disables editing, running,
+Python-relevant characters** to the playground page. Activating a character
+inserts exactly that character at the caret of the text target the student was
+last in — the editor, or the stdin field while a program is waiting for input
+(amended by `specs/16-insert-at-caret-frozen.md`; the clipboard
+path this spec shipped with is retired). The pane is non-modal: it never disables editing, running,
 stopping, or stdin.
 
 ## What it does
@@ -25,12 +29,12 @@ stopping, or stdin.
 - Activating `Symbols` (pointer, Enter, Space) opens the pane, sets `aria-expanded="true"`, and moves focus to the first character button; activating it again closes the pane, sets `aria-expanded="false"`, and returns focus to `Symbols`.
 - `Escape` with focus on a character button closes the pane the same way and returns focus to `Symbols`.
 - The open pane contains exactly one button per *Character set* row, in table order, under the five group headings, and no other character button.
-- Activating a button copies exactly that row's `value` to the clipboard — no extra whitespace, newline or quotes — and leaves the editor buffer, caret and undo history unchanged.
-- A successful copy paints `Copied V` in the pane's `role="status"` region and `data-state="copied"` on the button; both revert after 2 000 ms (`COPIED_MS`, shared with **Copy code**). A further success inside that window replaces the text and restarts the timer.
-- A rejected clipboard write (permission, insecure context, missing API) shows `Couldn't copy — select the character and press Ctrl/Cmd+C` in the existing notice strip, selects the button's glyph, keeps the pane open, clears the status region, and cancels any pending revert timer. Editing, running and **Copy code** are unaffected.
-- Closing the pane while a write is in flight produces no feedback; the write itself is not cancelled and may still succeed.
-- The pane is a single tab stop (exactly one button `tabindex="0"`, the rest `-1`). Arrow keys move within the visual grid currently rendered — left/right stay in the same visual row, up/down keep the column index (or land on that row's last button if it is shorter); Home/End go to the first/last button; focus never wraps or leaves the pane. At ≥ 700 px every visual row holds one button, so left/right never move. Enter/Space on the focused button copies.
-- Opening, copying and closing the pane never interrupts a running program, its console output, a pending stdin read, or spec-01's Run/Stop enablement, and never injects a character into stdin.
+- ~~Activating a button copies exactly that row's `value` to the clipboard — no extra whitespace, newline or quotes — and leaves the editor buffer, caret and undo history unchanged.~~ **Struck (FR-306): superseded by FR-1601 in `specs/16-insert-at-caret-frozen.md`** — activating a button inserts exactly that row's `value` at the caret of the current insertion target, replacing any selection there, in one history-isolated editor transaction.
+- ~~A successful copy paints `Copied V` in the pane's `role="status"` region and `data-state="copied"` on the button; both revert after 2 000 ms (`COPIED_MS`, shared with **Copy code**). A further success inside that window replaces the text and restarts the timer.~~ **Struck (FR-307): superseded by FR-1609 in `specs/16-insert-at-caret-frozen.md`** — a successful insertion paints `Inserted V` in the same region and `data-state="inserted"` on the button, on the same `COPIED_MS` window and with the same restart rule.
+- ~~A rejected clipboard write (permission, insecure context, missing API) shows `Couldn't copy — select the character and press Ctrl/Cmd+C` in the existing notice strip, selects the button's glyph, keeps the pane open, clears the status region, and cancels any pending revert timer. Editing, running and **Copy code** are unaffected.~~ **Struck (FR-308, with FR-313): retired by `specs/16-insert-at-caret-frozen.md`** — insertion is synchronous and needs no permission, so there is no denial path and no fallback notice. Where no live target exists, every button is inert instead (FR-1607).
+- ~~Closing the pane while a write is in flight produces no feedback; the write itself is not cancelled and may still succeed.~~ **Struck (FR-316): retired by `specs/16-insert-at-caret-frozen.md`** — an insertion is synchronous, so nothing can be in flight when the pane closes.
+- The pane is a single tab stop (exactly one button `tabindex="0"`, the rest `-1`). Arrow keys move within the visual grid currently rendered — left/right stay in the same visual row, up/down keep the column index (or land on that row's last button if it is shorter); Home/End go to the first/last button; focus never wraps or leaves the pane. At ≥ 700 px every visual row holds one button, so left/right never move. Enter/Space on the focused button **inserts** (amended by FR-1604 in `specs/16-insert-at-caret-frozen.md`).
+- Opening, inserting and closing the pane never interrupts a running program, its console output, a pending stdin read, or spec-01's Run/Stop enablement, and never injects a character into stdin *by itself*. Amended by FR-1606 in `specs/16-insert-at-caret-frozen.md`: the visitor may now deliberately insert into the stdin field while a read is pending, which still interrupts neither the run nor the read.
 - At ≥ 700 px the open pane is a vertical column at the inline-end of the console + editor region, 44–96 px inline and at least as tall as the editor. Below 700 px it is a full-width wrapping band immediately below the toolbar. Console, editor, stdin and every toolbar control stay reachable and unclipped.
 - `#symbol-pane` sits immediately after `#notices` and before the console in the document at both breakpoints; the wide column is flex/grid placement, never a DOM move. Sequential focus order therefore does not change with viewport width.
 - The pane closes only via the toggle or `Escape`. Clicking the editor, console or background, Tabbing out, and activating Run, Stop, Clear console, Copy code, Format or Reset leave it open, scrolled and navigable.
@@ -41,7 +45,7 @@ stopping, or stdin.
 
 ### Character set
 
-29 entries, in this order. `value` is what FR-306 puts on the clipboard;
+29 entries, in this order. `value` is what ~~FR-306 puts on the clipboard~~ FR-1601 inserts at the caret (see `specs/16-insert-at-caret-frozen.md`);
 `glyph` is the visible button label; `name` is the accessible name (FR-314) and
 tooltip (FR-315). Group headings are rendered as the pane's section labels
 (FR-305). Every row cites the Python construct that justifies it, per BR-302.
@@ -111,12 +115,13 @@ verbatim from this spec. Nothing else may be rendered by the pane.
 | Constant | Value |
 |---|---|
 | `SYMBOLS_LABEL` | `Symbols` |
-| `formatSymbolCopied(value)` | `Copied ${value}` — e.g. `Copied **` (FR-307) |
-| `SYMBOL_COPY_FAILED` | `Couldn't copy — select the character and press Ctrl/Cmd+C` (FR-308) |
+| ~~`formatSymbolCopied(value)`~~ | ~~`Copied ${value}`~~ — **removed with FR-307**; superseded by `formatSymbolInserted(value)` (`Inserted ${value}`) in `specs/16-insert-at-caret-frozen.md` |
+| ~~`SYMBOL_COPY_FAILED`~~ | ~~`Couldn't copy — select the character and press Ctrl/Cmd+C`~~ — **removed with FR-308**, which `specs/16-insert-at-caret-frozen.md` retires |
 | `SYMBOL_GROUPS` | The five group headings, in order: `Quotes`, `Brackets`, `Operators`, `Punctuation`, `Ellipsis` (FR-305) |
 | `SYMBOLS` | The 29 rows of *Character set* as `{ value, glyph, name }`, in table order. The *Character set* table is the normative source for all three fields, including the accessible names of FR-314; this constant is its transcription and nothing else may be rendered by a character button. |
 
-The 2 000 ms revert window of FR-307 reuses the existing `COPIED_MS` constant
+The 2 000 ms revert window of ~~FR-307~~ FR-1609 (`specs/16-insert-at-caret-frozen.md`) reuses
+the existing `COPIED_MS` constant
 that FR-006 already uses for **Copy code**, so the two feedback timings cannot
 drift apart.
 
@@ -129,16 +134,17 @@ child of the editor or console.
 |---|---|---|
 | Toggle button | `btn-symbols` | Last control in `header.toolbar`, after `#btn-reset`. `type="button"`, `aria-expanded`, `aria-controls="symbol-pane"`. Never inert — it has no disabled state, so it does **not** use `setInert()`. |
 | Pane | `symbol-pane` | `<section class="panel panel--symbols" role="toolbar" aria-label="Special characters" aria-orientation="vertical\|horizontal">`, `hidden` on load. `aria-orientation` is `vertical` in the ≥ 700 px layout of FR-311 and `horizontal` below it, matching the arrow-key model of FR-309. `role="toolbar"` — not `role="group"` — is what conveys the composite widget whose arrow keys navigate (BR-305). Toggled with the `hidden` property, never `style.display`. Positioned in the document per FR-317. |
-| Feedback region | `symbol-status` | `role="status"`, inside the pane, empty on load. Carries the FR-307 text only. |
+| Feedback region | `symbol-status` | `role="status"`, inside the pane, empty on load. Carries the ~~FR-307~~ FR-1609 text (`Inserted V`) only — see `specs/16-insert-at-caret-frozen.md`. |
 | Character button | — | `<button type="button" class="symbol" data-value="<value>" aria-label="<name>" title="<name>" tabindex="0\|-1">`. Text content is `<glyph>`. |
-| Notice strip | `notices` (existing) | Reused unchanged for FR-308 via the existing `Notices` class. |
+| Notice strip | `notices` (existing) | ~~Reused unchanged for FR-308 via the existing `Notices` class.~~ **Struck with FR-308 (`specs/16-insert-at-caret-frozen.md`)** — the pane writes to the notice strip no more. |
 
 ### Reused interfaces
 
-- `writeClipboard(text)` from `src/clipboard.ts` — unchanged. It already
-  returns `false` rather than throwing on every rejection path, which is
-  exactly what FR-308 and FR-313 need.
-- `Notices.show(text)` from `src/notices.ts` — unchanged.
+- ~~`writeClipboard(text)` from `src/clipboard.ts` — unchanged. It already returns `false` rather than throwing on every rejection path, which is exactly what FR-308 and FR-313 need.~~ **Struck with FR-308 / FR-313 — see `specs/16-insert-at-caret-frozen.md`** — the pane no longer
+  calls `writeClipboard`. `src/clipboard.ts` itself is unchanged and still
+  serves **Copy code** and **Copy output**.
+- ~~`Notices.show(text)` from `src/notices.ts` — unchanged.~~ Struck with the
+  same clauses: the pane has no notice channel.
 - No change to `src/protocol.ts`, `src/runtime.ts`, `src/worker/`,
   `src/stdin-*.ts`, `src/lint/`, `src/offline.ts`, `src/storage.ts` or
   `scripts/`.
@@ -151,14 +157,14 @@ session storage (BR-304, FR-312).
 
 ## Key decisions
 
-- **Clipboard only, never insert-at-caret** (BR-301): the pane's only document effects are the clipboard write, copy/fallback feedback, and its own open/closed state. That keeps it out of the editor transaction, undo, autosave and lint paths, so it cannot regress spec-01, and it is what issue #1 asked for.
+- ~~**Clipboard only, never insert-at-caret** (BR-301): the pane's only document effects are the clipboard write, copy/fallback feedback, and its own open/closed state.~~ **Struck: superseded by BR-1601 in `specs/16-insert-at-caret-frozen.md`** — the pane reaches the editor through a single `onInsert(value)` callback injected by `src/main.ts`, which owns target resolution and the mutation. The pane still holds no `EditorView` and imports nothing from `@codemirror/*`, so the isolation this decision protected survives by construction.
 - **Python 3 tokens only** (BR-302): every entry must name the Python construct that uses it. Characters that merely look like operators (`≤`, `≠`, `“`, full-width punctuation) are forbidden because pasting them produces a `SyntaxError` the student cannot diagnose.
-- **Clipboard failure degrades the pane only** (BR-303): instance of spec-01 BR-009 — an optional subsystem must never reach the write-run-read loop.
+- ~~**Clipboard failure degrades the pane only** (BR-303): instance of spec-01 BR-009 — an optional subsystem must never reach the write-run-read loop.~~ **Struck with FR-308 / FR-313 (`specs/16-insert-at-caret-frozen.md`)** — there is no clipboard call left to fail. Spec-01 BR-009 is untouched.
 - **No persisted state, no request, no runtime asset** (BR-304): the set is a compile-time constant, preserving spec-01's static-files, origin-isolation and 15 MB cold-transfer rules.
 - **One tab stop, not 29** (BR-305): 29 extra stops between the toolbar and the editor would violate spec-01 FR-049, so the pane uses a roving-tabindex toolbar.
 - **`role="toolbar"` with `aria-orientation`**, not `role="group"`: that is what conveys the composite widget whose arrows navigate.
 - **Document position is pinned** (FR-317): `#symbol-pane` stays after `#notices` and before the console at both breakpoints; the ≥ 700 px column is CSS grid/`grid-area`, and `.app` becomes that grid **only while the pane is open**, so a closed pane leaves spec-01's layout untouched.
-- **Firefox fallback**: `.symbol` sets `user-select: text` because Firefox otherwise refuses to select content inside a `<button>`, which would make the FR-308 notice advise an action the visitor cannot perform.
+- ~~**Firefox fallback**: `.symbol` sets `user-select: text` because Firefox otherwise refuses to select content inside a `<button>`, which would make the FR-308 notice advise an action the visitor cannot perform.~~ **Struck with FR-308 (`specs/16-insert-at-caret-frozen.md`)** — the glyph-selection fallback is gone and the rule was removed with it.
 
 ## Known limits (still true at freeze)
 
@@ -167,13 +173,17 @@ session storage (BR-304, FR-312).
 - **Latency** (NFR-304): open-to-paint and click-to-`Copied V` each ≤ 100 ms; no new main-thread task longer than 100 ms.
 - **Budget** (NFR-305): ≤ 4 KB gzipped added to the app payload of commit `8df7fa5` (shell, JS/CSS/worker chunks, `sw.js`, `precache-manifest.json`); zero extra requests; zero new runtime assets. Measured delta at ship: **2.18 KiB** gzipped (1.08 KiB on stock zlib). Vendored Pyodide/Ruff are held to byte-identity by digest, not gzip size.
   - **Amended by spec-06**: the **2.18 KiB** ship measurement above is immutable and VC-323 no longer subtracts every future whole-app build from a pre-pane baseline. It retains the live pane latency, long-task, and zero-request checks. VC-326 still compares file-set, manifest-count, cache-name, and vendored-asset invariants against `8df7fa5`; spec-01's 15 MB compressed cold-load gate remains live for the whole application.
-- **Browsers** (NFR-306): every Must FR on Chrome 141/140, Edge 141/140, Firefox 145/144, Safari 26.1/26.0. Clipboard-*read* observation is Chromium-only; other engines verify copy by pasting into the editor.
+- **Browsers** (NFR-306): every Must FR on Chrome 141/140, Edge 141/140, Firefox 145/144, Safari 26.1/26.0. ~~Clipboard-*read* observation is Chromium-only; other engines verify copy by pasting into the editor.~~ **Struck with FR-306 (`specs/16-insert-at-caret-frozen.md`)** — insertion needs no clipboard observation, so every engine verifies the same behaviour the same way.
 - **Parent criteria amended**: VC-050 also asserts the 375 px layout with the pane open; VC-051/VC-071 sampling sets gain the pane's text and non-text; VC-052 tab-order gains `Symbols` after `Reset` plus exactly one stop for the open pane.
-- **A-303 is still outstanding**: no recorded check that an on-screen keyboard's paste affordance at 375 px can paste a copied character into the editor. If it cannot, insert-at-caret is a follow-up spec, not a patch to this one.
+- **A-303 is discharged** by `specs/16-insert-at-caret-frozen.md`: it asked
+  whether an on-screen keyboard's paste affordance at 375 px can paste a copied
+  character into the editor, and said that if it cannot, insert-at-caret is a
+  follow-up spec rather than a patch to this one. That follow-up spec shipped;
+  there is no paste step left to depend on.
 - The set is sized for spec-01's audience (short single-file stdlib programs). Adding `@`, `:=` or similar is a new spec under BR-302, not an ad-hoc extension.
 
 ## Deliberately excluded
 
-- **Insert-at-caret**, matched-pair insertion, snippets and triple quotes — all require the editor mutation BR-301 forbids.
+- Matched-pair insertion, snippets and triple quotes. ~~Insert-at-caret~~ is no longer excluded: BR-301 is struck and the behaviour is specified by `specs/16-insert-at-caret-frozen.md`.
 - Any character that is not Python 3 syntax or a typing idiom; a configurable, searchable or favourited set; remembering the pane's open state across reloads.
 - Any change to lint, format, execution, the worker protocol, stdin, the service worker or the deployment shape. Full assistive-technology audit and touch ergonomics beyond the 32 × 32 px hit area.

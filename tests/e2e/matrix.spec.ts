@@ -23,8 +23,10 @@ import { expect, test } from '@playwright/test';
 import {
   consoleText,
   editorText,
+  noticeTexts,
   programStdout,
   runProgram,
+  setCaret,
   setProgram,
   statusText,
   submitStdin,
@@ -152,28 +154,19 @@ test('VC-055 (NFR-011): the Must-priority core flows on this browser', async ({ 
 });
 
 /**
- * VC-324 (NFR-306) — spec-03's Must-priority subset on each pinned version.
+ * VC-324 (NFR-306, NFR-1604) — spec-03's Must-priority subset on each pinned
+ * version, brought onto spec-16's insertion behaviour.
  *
- * VC-302, **VC-308**, VC-311, VC-313 and VC-319 are re-run here; VC-316 is
- * covered by the mid-run copy folded into the flow below. The copy itself is
- * verified by **pasting into the editor**, never by reading the clipboard:
- * `clipboard-read` is grantable under Playwright on Chromium but not on
- * Firefox or WebKit, so VC-307's clipboard-read observation stays Chromium-only
- * and out of the matrix.
+ * VC-302, **VC-308**, VC-313 and VC-319 are re-run here; VC-316 and VC-1606
+ * are covered by the mid-run activation folded into the flow below. Unlike the
+ * clipboard path it replaces, insertion needs no permission, no secure-context
+ * capability and no engine-specific read observation, so every engine verifies
+ * the same behaviour (NFR-1604) and nothing here is granted or stubbed.
  */
-test('VC-324 (NFR-306): the special-character pane on this browser', async ({
+test('VC-324 (NFR-306, NFR-1604): the special-character pane on this browser', async ({
   page,
-  context,
-  browserName,
 }, info) => {
   test.setTimeout(180_000);
-
-  // Chromium gates `clipboard.writeText` behind a permission that the default
-  // `chromium` project grants and the matrix projects do not; Firefox and
-  // WebKit accept the write on transient user activation and reject the
-  // permission name outright. Granting it here keeps the matrix measuring the
-  // app rather than Playwright's permission model.
-  if (browserName === 'chromium') await context.grantPermissions(['clipboard-write']);
 
   await page.goto('/');
   await page.waitForSelector('.cm-content');
@@ -215,21 +208,43 @@ test('VC-324 (NFR-306): the special-character pane on this browser', async ({
     await page.evaluate(() => (document.activeElement as HTMLElement | null)?.dataset.value ?? ''),
   ).toBe('"');
 
-  // VC-308 (FR-306): `**` copies, and pastes as exactly two characters.
+  // VC-308 (FR-1601, FR-1603): `**` inserts as exactly two characters at the
+  // caret, and one undo removes the pair.
   await setProgram(page, 'x = 1\n');
+  await setCaret(page, 1, 6);
   await button('**').click();
-  await expect(page.locator('#symbol-status')).toHaveText('Copied **');
+  await expect(page.locator('#symbol-status')).toHaveText('Inserted **');
+  await expect.poll(() => editorText(page), { timeout: 15_000 }).toBe('x = 1**\n');
   await page.locator('.cm-content').click();
-  await page.keyboard.press('ControlOrMeta+a');
-  await page.keyboard.press('Delete');
-  await page.keyboard.press('ControlOrMeta+v');
-  await expect.poll(() => editorText(page), { timeout: 15_000 }).toBe('**');
+  await page.keyboard.press('ControlOrMeta+z');
+  await expect.poll(() => editorText(page), { timeout: 15_000 }).toBe('x = 1\n');
 
-  // VC-316 (FR-310): a copy mid-run interrupts neither the run nor its output.
+  // VC-316 / VC-1606 (FR-310, FR-1607): mid-run, with no read pending, every
+  // button is inert, a forced activation is a no-op, and the run is untouched.
   await page.getByRole('button', { name: 'Clear console' }).click();
   await runProgram(page, 'import time\nfor i in range(10):\n    print(i)\n    time.sleep(0.1)\n');
   await expect(page.getByRole('button', { name: 'Stop' })).toBeEnabled();
-  await button('%').click();
+  const locked = await page.evaluate(() =>
+    Array.from(document.querySelectorAll<HTMLButtonElement>('#symbol-pane .symbol')).map((b) => ({
+      aria: b.getAttribute('aria-disabled'),
+      disabled: b.hasAttribute('disabled'),
+    })),
+  );
+  expect(locked).toHaveLength(29);
+  expect(locked.filter((s) => s.aria !== 'true')).toEqual([]);
+  expect(locked.filter((s) => s.disabled)).toEqual([]);
+  const beforeForced = await editorText(page);
+  // FR-1609's 2 000 ms window from the `**` insertion above may still be open,
+  // so the assertion is that the forced activation changed nothing — not that
+  // the region is empty.
+  const statusBefore = await page.evaluate(
+    () => document.getElementById('symbol-status')?.textContent ?? '',
+  );
+  await button('%').click({ force: true });
+  expect(await editorText(page)).toBe(beforeForced);
+  expect(
+    await page.evaluate(() => document.getElementById('symbol-status')?.textContent ?? ''),
+  ).toBe(statusBefore);
   await expect(page.locator('#btn-run')).toBeDisabled();
   await expect(page.getByRole('button', { name: 'Stop' })).toBeEnabled();
   await expect
@@ -259,24 +274,16 @@ test('VC-324 (NFR-306): the special-character pane on this browser', async ({
   expect(narrow.paneAbove).toBe(true);
   expect(narrow.smallest).toBeGreaterThanOrEqual(32);
 
-  // VC-311 (FR-308, BR-303): a denied write notifies and selects the glyph,
-  // and the pane keeps working.
-  await page.evaluate(() => {
-    Object.defineProperty(navigator, 'clipboard', {
-      configurable: true,
-      value: { writeText: () => Promise.reject(new DOMException('denied', 'NotAllowedError')) },
-    });
-  });
+  // VC-1607 (FR-1607): the lock lifts again once the run is over, and the same
+  // activation inserts. VC-1613 (BR-1603): nothing is written to the clipboard
+  // or to the notice strip at any point in this flow.
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await setProgram(page, 'x = 1\n');
+  await setCaret(page, 1, 6);
   await button('{').click();
-  await expect(
-    page.locator('[data-notice="Couldn\'t copy — select the character and press Ctrl/Cmd+C"]'),
-  ).toHaveCount(1);
-  await expect
-    .poll(() => page.evaluate(() => window.getSelection()?.toString() ?? ''))
-    .toBe('{');
-  expect(
-    await page.evaluate(() => document.getElementById('symbol-status')?.textContent ?? ''),
-  ).toBe('');
+  await expect(page.locator('#symbol-status')).toHaveText('Inserted {');
+  await expect.poll(() => editorText(page), { timeout: 15_000 }).toBe('x = 1{\n');
+  expect(await noticeTexts(page)).toEqual([]);
   await expect(pane).toBeVisible();
   await expect(toggle).toHaveAttribute('aria-expanded', 'true');
 

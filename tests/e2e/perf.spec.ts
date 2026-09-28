@@ -345,7 +345,7 @@ function distFiles(dir: string, prefix = ''): string[] {
   return out.sort();
 }
 
-test('VC-323 (NFR-304, NFR-305): the pane is painted and copies within 100 ms without requests', async ({
+test('VC-323 (NFR-304, NFR-305, NFR-1601): the pane is painted and inserts within 100 ms without requests', async ({
   page,
 }) => {
   test.setTimeout(120_000);
@@ -386,17 +386,19 @@ test('VC-323 (NFR-304, NFR-305): the pane is painted and copies within 100 ms wi
       }),
   );
 
-  const copyMs = await page.evaluate(
+  // spec-16 FR-1609 / NFR-1601: the feedback is now `Inserted V`, painted for
+  // an insertion that has already happened — there is no promise to await.
+  const insertMs = await page.evaluate(
     () =>
       new Promise<number>((resolve, reject) => {
         const status = document.getElementById('symbol-status')!;
         const observer = new MutationObserver(() => {
-          if (status.textContent !== 'Copied #') return;
+          if (status.textContent !== 'Inserted #') return;
           observer.disconnect();
           requestAnimationFrame(() => resolve(performance.now() - start));
         });
         observer.observe(status, { childList: true, subtree: true, characterData: true });
-        setTimeout(() => reject(new Error('no copy feedback within 5 s')), 5_000);
+        setTimeout(() => reject(new Error('no insertion feedback within 5 s')), 5_000);
         const start = performance.now();
         document
           .querySelector<HTMLButtonElement>('#symbol-pane .symbol[data-value="#"]')!
@@ -409,7 +411,7 @@ test('VC-323 (NFR-304, NFR-305): the pane is painted and copies within 100 ms wi
   const longTasks = await longTaskTracker.read();
 
   expect(openMs, 'NFR-304 Symbols to the pane being painted').toBeLessThanOrEqual(100);
-  expect(copyMs, 'NFR-304 activation to `Copied #` being painted').toBeLessThanOrEqual(100);
+  expect(insertMs, 'NFR-304 activation to `Inserted #` being painted').toBeLessThanOrEqual(100);
   expect(Math.max(0, ...longTasks), 'NFR-304 longest main-thread task').toBeLessThanOrEqual(100);
   expect(requests, 'NFR-305 requests attributable to the pane').toEqual([]);
 
@@ -417,7 +419,7 @@ test('VC-323 (NFR-304, NFR-305): the pane is painted and copies within 100 ms wi
     [
       'VC-323 measurements:',
       `  NFR-304 Symbols -> pane painted   ${openMs.toFixed(0)} ms   (<= 100)`,
-      `  NFR-304 click -> "Copied #"       ${copyMs.toFixed(0)} ms   (<= 100)`,
+      `  NFR-304 click -> "Inserted #"     ${insertMs.toFixed(0)} ms   (<= 100)`,
       `  NFR-304 longest task              ${Math.max(0, ...longTasks).toFixed(0)} ms   (<= 100)`,
       '  NFR-305 interaction requests       0',
     ].join('\n'),

@@ -108,11 +108,39 @@ one produces.
 The title is passed to the validator through `env:`, never interpolated into a
 `run:` body — a title is attacker-controlled text on a fork pull request.
 
-### The one skipped test
+### The skipped tests, and the six that only fail locally
 
-A passing `e2e-chromium` log reads **`94 passed, 1 skipped`**. The single skip is
+The suite is **347 tests**. A passing `e2e-chromium` log on the runner reads
+**`342 passed, 5 skipped`**.
+
+The one *permitted* skip — the deviation from VC-105 argued below — is
 `tests/e2e/stop.spec.ts` → *VC-059 (BR-008): a 6-minute untouched run is still
 running*, which skips unless `RUN_LONG=1`.
+
+The other four are baseline-gated and skip **by design**, not by exception:
+`layout.spec.ts` VC-408 (twice), `perf.spec.ts` VC-814 and `fold.spec.ts`
+VC-1506 compare against a record in `tests/e2e/baseline-*.json` that is keyed by
+geometry or by compressor (`${platform}-${arch} zlib ${version}`). A run whose
+compressor or geometry matches no record skips rather than spending the budget
+on environment noise. Which of them skip therefore depends on the machine, and
+the printed skip count is environment-dependent; VC-059's is the only skip that
+is a *choice*.
+
+**On macOS the same command reads `339 passed, 6 failed, 2 skipped`.** All six
+failures are local-only and none is a regression:
+
+| Test | Why it fails here |
+|---|---|
+| `completion.spec.ts:47` VC-608 / VC-1103 | These five are the only tests that press **`Control+m`**, CodeMirror's `toggleTabFocusMode` binding — which is `Shift-Alt-m` on macOS (`@codemirror/commands`, `dist/index.js:1816`). Tab-focus mode is therefore never entered, `Tab` indents (spec-11) instead of leaving the editor, and every later tab stop resolves to the editor again. They pass on the Linux runner. |
+| `layout.spec.ts:991` VC-431 | ” |
+| `layout.spec.ts:1272` VC-407 | ” |
+| `presentation.spec.ts:783` VC-052 | ” |
+| `symbols.spec.ts:718` VC-315 | ” |
+| `perf.spec.ts:755` VC-814 | Skips on the runner (no baseline for its compressor) and runs here. It measures the **whole app** against the spec-08 branch point `e569b81` with a 4 096 B budget; the app is 9 817 B over it, of which 9 420 B predate the current branch. It is a stale budget that the specs merged since spec-08 have grown through, not a per-change gate. |
+
+Do not "fix" any of the six by relaxing a threshold: the first five need a
+platform-aware key press, and VC-814 needs its budget re-argued in its own
+commit, with the numbers.
 
 This is a deliberate, recorded deviation from VC-105's literal "zero tests
 report `skipped`", because three of the spec's own requirements cannot all hold
@@ -462,7 +490,7 @@ cache) — the profile spec-01's thresholds were set against:
 |---|---|
 | `npm ci` (cold `node_modules`, warm npm cache) | 0.9 s |
 | `npm run build` | 4 s |
-| `npx playwright test --project=chromium` | 1.2 min (94 passed, 1 skipped) |
+| `npx playwright test --project=chromium` | 2.7 min (339 passed, 6 failed, 2 skipped on macOS; `342 passed, 5 skipped` on the runner — see *The skipped tests*) |
 | `npm run audit:contrast` | 6.5 s |
 | `npm run audit:perf` | 8.0 s |
 | `npm run test:matrix` (local only) | 51 s (6 passed, 2 skipped: no Edge engine) |

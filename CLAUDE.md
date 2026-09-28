@@ -129,8 +129,13 @@ major (**including from `0.x`**), `chore`/`docs`/`style`/`refactor`/`test`/`buil
 
 Seven required checks gate the merge: `pr-title`, `typecheck`, `unit`, `e2e-chromium`,
 `audit-contrast`, `audit-perf`, `artifact` — all runnable locally with identical
-commands. A passing `e2e-chromium` reads `94 passed, 1 skipped`; that one skip
-(VC-059's six-minute variant) is the only permitted one.
+commands. The suite is **347 tests**, and a passing `e2e-chromium` on the CI
+runner reads `342 passed, 5 skipped`. Only one of those skips is a *permitted*
+skip — VC-059's six-minute variant; the other four (VC-408 twice, VC-814,
+VC-1506) are size- and geometry-baseline tests that skip because the runner's
+compressor or geometry matches no record, which is the recorded design. On
+macOS the same command reads `339 passed, 6 failed, 2 skipped`: see
+`docs/ci.md` → *The one skipped test* for why those six are local-only.
 
 On merge, the release pipeline re-runs the gate against `main` and, if the bump is not
 none, tags `vX.Y.Z` on the merge commit and publishes a Release. It does **not** push a

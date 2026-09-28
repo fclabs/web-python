@@ -1,21 +1,23 @@
 /**
- * The vertical special-character pane (spec-03: FR-301 – FR-318).
+ * The vertical special-character pane (spec-03: FR-301 – FR-318; spec-16).
  *
- * The pane is main-thread UI and nothing else. It never touches the editor
- * buffer, the CodeMirror undo history, the caret, the console, the stdin field
- * or the worker protocol (BR-301) — its only effects are the clipboard write
- * of FR-306, the feedback of FR-307 / FR-308 and its own open/closed state.
+ * spec-03's BR-301 (copy-only, never insert-at-caret) is **superseded by
+ * BR-1601**. The pane's effects are now exactly three: one insertion per live
+ * activation, its own feedback, and its own open/closed state. It still holds
+ * no `EditorView` reference and imports nothing from the CodeMirror packages
+ * (BR-1601) — the mutation, the target resolution and the inertness decision
+ * all live in `src/main.ts`, which injects the `onInsert` callback below and
+ * is the sole caller of {@link SymbolPane.setLocked} (BR-1604).
  *
- * Dismissal is deliberately narrow (FR-318): the pane closes from exactly two
- * code paths — the toggle and `Escape` from inside the pane. This module
- * registers no focus-loss listener, no outside-click listener and no pointer
- * listener of any kind, which is what makes "the pane survives everything
- * else" true by construction rather than by enumeration. A grep of this file
- * for those listener names is part of the criterion.
+ * Dismissal is deliberately narrow (FR-318, FR-1610): the pane closes from
+ * exactly two code paths — the toggle and `Escape` from inside the pane. This
+ * module registers no focus-loss listener, no outside-click listener and no
+ * pointer listener of any kind, which is what makes "the pane survives
+ * everything else" true by construction rather than by enumeration. A grep of
+ * this file for those listener names is part of the criterion.
  */
-import { writeClipboard } from './clipboard';
-import { COPIED_MS, SYMBOL_COPY_FAILED, formatSymbolCopied } from './format';
-import type { Notices } from './notices';
+import { isInert, setInert } from './controls';
+import { COPIED_MS, formatSymbolInserted } from './format';
 import { SYMBOLS, SYMBOL_GROUPS, type SymbolRow } from './symbols';
 
 /**
@@ -32,31 +34,22 @@ export interface SymbolPaneElements {
   pane: HTMLElement;
   /**
    * The `role="status"` feedback region inside the pane. It stays empty until
-   * FR-307's copy feedback lands.
+   * FR-1609's insertion feedback lands.
    */
   status: HTMLElement;
-  /** The existing notice strip, reused unchanged for FR-308. */
-  notices: Notices;
-}
-
-/**
- * FR-308: put the document selection over exactly this button's glyph and
- * nothing else, so `Ctrl/Cmd+C` copies the character the visitor asked for.
- */
-function selectGlyph(button: HTMLButtonElement): void {
-  const selection = window.getSelection();
-  if (!selection) return;
-  const range = document.createRange();
-  range.selectNodeContents(button);
-  selection.removeAllRanges();
-  selection.addRange(range);
+  /**
+   * FR-1601 / BR-1601: the pane's one route to a text target. `src/main.ts`
+   * resolves the target (FR-1605) and performs the mutation; the pane only
+   * says *which character* a live activation asked for.
+   */
+  onInsert(value: string): void;
 }
 
 export class SymbolPane {
   private readonly toggle: HTMLButtonElement;
   private readonly pane: HTMLElement;
   private readonly status: HTMLElement;
-  private readonly notices: Notices;
+  private readonly onInsert: (value: string) => void;
 
   /** The 29 character buttons, in *Character set* order. */
   private readonly buttons: HTMLButtonElement[] = [];
@@ -64,24 +57,18 @@ export class SymbolPane {
   /** Which button currently holds the roving `tabindex="0"` (FR-309). */
   private rovingIndex = 0;
 
-  /** The pending FR-307 revert, or null when no feedback is showing. */
+  /** The pending FR-1609 revert, or null when no feedback is showing. */
   private revertTimer: ReturnType<typeof setTimeout> | null = null;
 
-  /** The button currently carrying `data-state="copied"`, if any. */
-  private copiedButton: HTMLButtonElement | null = null;
-
-  /**
-   * FR-316: monotonic id of the most recent activation. A write that resolves
-   * after a newer activation — or after the pane closed — is discarded.
-   */
-  private activationId = 0;
+  /** The button currently carrying `data-state="inserted"`, if any. */
+  private insertedButton: HTMLButtonElement | null = null;
 
   constructor(elements: SymbolPaneElements) {
     this.toggle = elements.toggle;
     this.pane = elements.pane;
     this.status = elements.status;
     this.status.textContent = '';
-    this.notices = elements.notices;
+    this.onInsert = elements.onInsert;
 
     this.render();
     this.setRoving(0);
@@ -122,7 +109,7 @@ export class SymbolPane {
   /** FR-303 / FR-304: hide the pane and return focus to the toggle. */
   close(): void {
     if (!this.isOpen) return;
-    // FR-316: a write still in flight resolves into nothing.
+    // FR-1609: closing leaves no `Inserted V` and no `data-state` behind.
     this.clearFeedback();
     this.pane.hidden = true;
     this.toggle.setAttribute('aria-expanded', 'false');
@@ -197,48 +184,49 @@ export class SymbolPane {
   }
 
   /**
-   * FR-306 – FR-308, FR-316. The clipboard write is the pane's *only* effect
-   * outside its own feedback: no CodeMirror transaction, so no undo entry, no
-   * autosave and no lint schedule (BR-301).
+   * FR-1607 / BR-1604: mark every character button inert or live. Called only
+   * by `syncControls()` in `src/main.ts`, which is the single owner of the
+   * "is there a live insertion target" question. `setInert` writes
+   * `aria-disabled` only — never the `disabled` attribute, and never
+   * `tabIndex`, which the FR-309 roving model owns.
    */
-  private activate(button: HTMLButtonElement): void {
-    const value = button.dataset.value ?? '';
-    const id = ++this.activationId;
-    void (async () => {
-      const ok = await writeClipboard(value);
-
-      // FR-316: the pane closed, or a newer activation overtook this one —
-      // either way this resolution produces no feedback at all.
-      if (id !== this.activationId || !this.isOpen) return;
-
-      // One owner of the feedback state, clearing before either path writes:
-      // a second success restarts FR-307's window from zero, and a denial
-      // after a recent success leaves no `Copied V` behind (FR-308).
-      this.clearFeedback();
-
-      if (ok) {
-        this.status.textContent = formatSymbolCopied(value);
-        button.dataset.state = 'copied';
-        this.copiedButton = button;
-        this.revertTimer = setTimeout(() => this.clearFeedback(), COPIED_MS);
-      } else {
-        // BR-303: the pane degrades alone — it stays open and navigable, and
-        // the core write-run-read loop is untouched.
-        this.notices.show(SYMBOL_COPY_FAILED);
-        selectGlyph(button);
-      }
-    })();
+  setLocked(locked: boolean): void {
+    for (const button of this.buttons) setInert(button, locked);
   }
 
-  /** The single writer of FR-307 / FR-308 feedback state. */
+  /**
+   * FR-1601 / FR-1604 / FR-1609. Synchronous: pointer, `Enter` and `Space`
+   * all arrive here as a click and produce the same insertion, the same
+   * feedback and the same undo granularity. The pane performs no mutation of
+   * its own — `onInsert` is the one route out (BR-1601).
+   */
+  private activate(button: HTMLButtonElement): void {
+    // FR-1607: every activation path is guarded, and an inert button no-ops
+    // completely — no insertion, no feedback.
+    if (isInert(button)) return;
+
+    const value = button.dataset.value ?? '';
+    this.onInsert(value);
+
+    // FR-1609: one owner of the feedback state, cleared before the write, so
+    // a second insertion inside the window replaces the text, moves the state
+    // to the new button and restarts the timer from zero.
+    this.clearFeedback();
+    this.status.textContent = formatSymbolInserted(value);
+    button.dataset.state = 'inserted';
+    this.insertedButton = button;
+    this.revertTimer = setTimeout(() => this.clearFeedback(), COPIED_MS);
+  }
+
+  /** The single writer of FR-1609 feedback state. */
   private clearFeedback(): void {
     if (this.revertTimer !== null) {
       clearTimeout(this.revertTimer);
       this.revertTimer = null;
     }
-    if (this.copiedButton) {
-      delete this.copiedButton.dataset.state;
-      this.copiedButton = null;
+    if (this.insertedButton) {
+      delete this.insertedButton.dataset.state;
+      this.insertedButton = null;
     }
     this.status.textContent = '';
   }

@@ -952,19 +952,36 @@ html[data-diag-sized] #app:not([data-layout='vertical']) .panel--diagnostics {
   min-width: 32px;
   padding: 2px 4px;
   text-align: center;
-  /* FR-308: the fallback asks the visitor to "select the character and press
-     Ctrl/Cmd+C". Firefox refuses to select content inside a `<button>` unless
-     the element opts back in, which would leave the denial path advising an
-     impossible action there. */
-  user-select: text;
 }
 
-/* FR-307: the activated button while its 2 000 ms window lasts. The highlight
-   is a fill, which NFR-303 measures against the pane behind it. */
-.symbol[data-state='copied'] {
+/* FR-1609: the activated button while its 2 000 ms window lasts. The highlight
+   is a fill, which NFR-1603 measures against the pane behind it. */
+.symbol[data-state='inserted'] {
   background: var(--accent);
   border-color: var(--accent);
   color: var(--accent-fg);
+}
+
+/* FR-1608: while the pane is open and holds focus, the resolved insertion
+   target — exactly one of the editor content and the stdin field — carries
+   `data-insert-target` and is outlined, so the visitor can see where the next
+   character will land before activating anything. `src/main.ts` is the only
+   writer of the attribute; this is presentation only.
+   NFR-1603: 2 px of --focus, the same token NFR-013's focus ring uses, which
+   clears 3:1 against every surface it can land on in both palettes. Dashed so
+   it reads as "target", not as "focused" — focus is in the pane. */
+.cm-editor .cm-content[data-insert-target],
+.stdin-input[data-insert-target] {
+  outline: 2px dashed var(--focus);
+  outline-offset: -2px;
+}
+
+/* FR-1608: the editor renders its caret at the current selection although
+   focus is in the pane. CodeMirror hides `.cm-cursor` unless the view has
+   `.cm-focused` (`@codemirror/view`, the base theme's `.cm-cursor
+   { display: none }`), so the target state re-shows it. */
+.cm-editor:not(.cm-focused):has(.cm-content[data-insert-target]) .cm-cursor {
+  display: block;
 }
 
 /*
