@@ -129,8 +129,12 @@ describe('applyFontSize (BR-1305)', () => {
 
 describe('VC-1317: allow-list lives twice (BR-1304)', () => {
   const html = readFileSync(resolve(__dirname, '../../index.html'), 'utf8');
-  const script = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)]
-    .map((m) => m[1])
+  // Parse the page instead of pattern-matching tags: a real HTML parser finds
+  // every inline script however the tag is written.
+  const script = Array.from(
+    new DOMParser().parseFromString(html, 'text/html').querySelectorAll('script:not([src])'),
+  )
+    .map((el) => el.textContent ?? '')
     .find((body) => body.includes('pyplay.fontsize.v1'));
 
   it('finds the inline bootstrap', () => {

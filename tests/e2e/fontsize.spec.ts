@@ -818,7 +818,9 @@ function code(path: string): string {
   return readFileSync(path, 'utf8')
     .replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/^\s*\/\/.*$/gm, '')
-    .replace(/<!--[\s\S]*?-->/g, '');
+    .split('<!--')
+    .map((part, i) => (i === 0 ? part : part.slice(part.indexOf('-->') + 3)))
+    .join('');
 }
 
 test('VC-1318 (BR-1306): strings live in format.ts; the menu makes no request and posts no worker message; never disabled', async ({
