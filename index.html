@@ -149,7 +149,19 @@
           <svg class="control-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h6v-3a7 7 0 1 1 4 0v3h6"/></svg>
           <span class="control-label visually-hidden">Symbols</span>
         </button>
-        <!-- FR-501: immediately after Symbols. Glyph / title / aria-label filled
+        <!-- FR-1301: immediately after Symbols, before the color-mode control.
+             Label / aria-label filled by src/fontsize-menu.ts. Never inert
+             (FR-1315): no `disabled`, no `aria-disabled`. -->
+        <button
+          id="btn-fontsize"
+          class="btn"
+          type="button"
+          tabindex="0"
+          aria-haspopup="menu"
+          aria-expanded="false"
+          aria-controls="fontsize-menu"
+        ></button>
+        <!-- FR-501: immediately after the font size control. Glyph / title / aria-label filled
              by src/theme.ts. Never routed through `setInert()`. Explicit
              `tabindex="0"` matches Run/Stop/Format so WebKit keeps the control
              in the sequential focus navigation order (FR-513 / VC-511). -->
@@ -160,6 +172,11 @@
              icon control in sequential focus (NFR-806). -->
         <button id="btn-about" class="btn btn--about" type="button" tabindex="0"></button>
       </header>
+
+      <!-- FR-1301 / spec-13 Data & Interfaces: the menu is a sibling of the
+           toolbar, not a child, so it adds no toolbar child and no tab stop
+           while hidden; fixed-positioned from the button by src/fontsize-menu.ts. -->
+      <div id="fontsize-menu" class="fontsize-menu" role="menu" aria-labelledby="btn-fontsize" hidden></div>
 
       <p id="coi-banner" class="banner" role="status" hidden></p>
 

@@ -379,7 +379,10 @@ test('VC-501 (FR-501): #btn-theme follows Symbols; #btn-about is last after them
     const about = document.getElementById('btn-about');
     return {
       present: !!theme,
-      afterSymbols: symbols?.nextElementSibling === theme,
+      // spec-13 FR-1301: Font size sits between Symbols and theme.
+      afterSymbols:
+        symbols?.nextElementSibling === document.getElementById('btn-fontsize') &&
+        document.getElementById('btn-fontsize')?.nextElementSibling === theme,
       aboutAfterTheme: theme?.nextElementSibling === about,
       aboutIsLast: controls[controls.length - 1] === about,
       themeIsLast: controls[controls.length - 1] === theme,
@@ -493,6 +496,9 @@ test.describe('cycle under OS light', () => {
       await page.keyboard.press('Tab');
       const id = await page.evaluate(() => document.activeElement?.id ?? '');
       if (id === 'btn-symbols') {
+        // spec-13 FR-1301: Font size now sits between Symbols and theme.
+        await page.keyboard.press('Tab');
+        expect(await page.evaluate(() => document.activeElement?.id)).toBe('btn-fontsize');
         await page.keyboard.press('Tab');
         expect(await page.evaluate(() => document.activeElement?.id)).toBe('btn-theme');
         await page.keyboard.press('Tab');
@@ -621,7 +627,10 @@ test('VC-519: Symbols still opens; #btn-theme follows it; #btn-about is last', a
     const theme = document.getElementById('btn-theme');
     const about = document.getElementById('btn-about');
     return {
-      after: symbols.nextElementSibling === theme,
+      // spec-13 FR-1301: Font size sits between Symbols and theme.
+      after:
+        symbols.nextElementSibling === document.getElementById('btn-fontsize') &&
+        document.getElementById('btn-fontsize')?.nextElementSibling === theme,
       aboutAfterTheme: theme?.nextElementSibling === about,
       last: document.querySelector('.toolbar > button:last-of-type') === about,
     };

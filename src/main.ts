@@ -31,6 +31,7 @@ import {
   formatReady,
   formatRunSeparator,
   LAYOUT_NARROW_HINT,
+  FONT_SIZE_SAVE_FAILED,
   LAYOUT_SAVE_FAILED,
   ICON_CONTROL_LABELS,
   COPIED_LABEL,
@@ -73,7 +74,8 @@ import {
   type WorkspaceFile,
 } from './workspace';
 import { bindAboutControl } from './about';
-import { applyFontSize, loadFontSize } from './fontsize';
+import { applyFontSize, loadFontSize, saveFontSize } from './fontsize';
+import { mountFontSizeMenu } from './fontsize-menu';
 import { applyDocumentTheme, bindThemeControl, loadPreference } from './theme';
 
 const AUTOSAVE_UNAVAILABLE = 'Autosave unavailable — your workspace will not survive a reload';
@@ -106,7 +108,8 @@ function boot(): void {
   const storage = getWorkspaceStorage();
   // FR-1312 / FR-1313: idempotent with the inline bootstrap in index.html; also
   // covers the case where it did not run. Never writes (BR-1303).
-  applyFontSize(loadFontSize(storage));
+  const initialFontSize = loadFontSize(storage);
+  applyFontSize(initialFontSize);
   const workspace = loadWorkspace(storage);
   const activeFileName = need('active-file-name');
   let suppressEditorChange = false;
@@ -441,6 +444,23 @@ function boot(): void {
       autosaver.flush();
       openActiveFile();
       syncControls();
+    },
+  });
+
+  // FR-1301 – FR-1307: font size drop-down (after Symbols, before theme).
+  // BR-1305: applying is a CSS-variable write — no editor transaction.
+  // FR-1314: at most one save-failed notice per page load.
+  let fontSizeSaveWarned = false;
+  mountFontSizeMenu({
+    button: need<HTMLButtonElement>('btn-fontsize'),
+    menu: need('fontsize-menu'),
+    initial: initialFontSize,
+    onSelect: (size) => {
+      applyFontSize(size);
+      if (!saveFontSize(storage, size) && !fontSizeSaveWarned) {
+        fontSizeSaveWarned = true;
+        notices.show(FONT_SIZE_SAVE_FAILED);
+      }
     },
   });
 
