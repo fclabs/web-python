@@ -1,14 +1,15 @@
 # CONTEXT — Editor Font Size (spec 13)
 
-Rewritten in place at the end of every iteration. Last updated: Iteration 2.
+Rewritten in place at the end of every iteration. Last updated: Iteration 3.
 
 ## Current state
 
-Iterations 1-2 of 4 complete. The toolbar has `#btn-fontsize` (label `Font size: N`, `aria-label` `Font size: N px`) opening
+Iterations 1-3 of 4 complete. The toolbar has `#btn-fontsize` (label `Font size: N`, `aria-label` `Font size: N px`) opening
 `#fontsize-menu` (six `menuitemradio` items). Choosing a different size applies `--editor-font-size`, writes
 `pyplay.fontsize.v1` synchronously, and shows `FONT_SIZE_SAVE_FAILED` once per load if the write fails. Equal size: no write, no
 notice. Never inert. At >= 900 px the shared toolbar padding is trimmed so the button fits (D-005). State preservation,
-side-effect proof, contrast/perf budgets and storage-surface tests are Iteration 3; docs Iteration 4.
+side-effect proof, perf/payload, contrast and storage-surface evidence are in place (Iteration 3, tests only, no production
+code); docs and the matrix/acceptance run are Iteration 4.
 Measured earlier: default computed font size of content/gutters/line `14px`, line-height `19.6px`; at `24` they scale, rest unchanged.
 
 ## File map
@@ -24,7 +25,10 @@ Measured earlier: default computed font size of content/gutters/line `14px`, lin
 | `index.html` (It. 2) | `#btn-fontsize` after `#btn-symbols`; `<div id="fontsize-menu" class="fontsize-menu" role="menu" hidden>` right after `</header>`. |
 | `src/main.ts` (It. 2) | `mountFontSizeMenu` before the theme binding; `onSelect` = apply + save + once-flag `fontSizeSaveWarned`. |
 | `src/styles.css` (It. 2) | `#btn-fontsize`, `.fontsize-menu`, `.fontsize-item` (+ `[aria-checked='true']::before` check); >= 900 px toolbar trim in the existing media block. |
-| `tests/e2e/fontsize.spec.ts` | NEW. VC-1301-1307, 1309, 1311, 1312, 1314, 1315, 1316, 1322, 1327. |
+| `tests/e2e/fontsize.spec.ts` | NEW. VC-1301-1307, 1309, 1311, 1312, 1314-1316, 1322, 1327 (It. 2); VC-1308, 1310, 1318, 1319, 1321 (x2 palettes), 1325, 1326 (It. 3). |
+| `tests/e2e/privacy.spec.ts` | VC-058 accepts the five documented localStorage keys incl. `pyplay.fontsize.v1`. |
+| `package.json` | `audit:contrast` grep gained `\|VC-1321`. |
+| `tests/e2e/baseline-build-about.json`, `CONTRIBUTING.md` | VC-814 pin moved e569b81 -> 424e43c (separate commit 8329112, D-008). |
 | `tests/unit/fontsize.test.ts` | NEW. VC-1313, VC-1311 (write half), VC-1317, constants/strings, `applyFontSize`. |
 
 ## Public interfaces
@@ -90,8 +94,11 @@ zsh gotcha: `echo ======` fails ("= not found"); quote it.
 
 ## Known gaps
 
-- VC-1308/1310/1318/1319/1320/1321/1325/1326 not yet written/proven (Iteration 3).
-- Slack at 900 px is only ~10-16 px; wider OS fonts could compress Run (D-005).
-- No `view.requestMeasure()` / scroll preservation; whether CodeMirror remeasures after a CSS-only size change is
-  unverified (VC-1308/VC-1325, Iteration 3).
-- No contrast/perf/payload evidence yet (Iteration 3). Docs under `docs/` and `CLAUDE.md` not yet updated (Iteration 4).
+- VC-1323 (matrix) and VC-1324 (acceptance), docs under `docs/` and `CLAUDE.md`: Iteration 4.
+- VC-1325 as originally worded could not pass (CodeMirror caret is glyph-height); spec amended, see D-007.
+- VC-1206 is skipped on darwin (brackets baseline records only linux-x64); pre-existing, CI records its own.
+- Slack at 900 px toolbar is only ~10-16 px; wider OS fonts could compress Run (D-005).
+- macOS: layout VC-407/VC-431 and presentation VC-052 fail on macOS only (`Control+m`); pre-existing.
+- No `requestMeasure`/scroll restoration exists or is needed: CodeMirror remeasures after the CSS-only change and keeps the
+  first visible line (VC-1308 verified 3x). If a future change breaks that, add it in `fontsize.ts`, never a transaction.
+- Measured: apply latency 13-24 ms (<= 50); app gzip delta +1461 B vs 424e43c (<= 2048), 13 precache URLs unchanged.

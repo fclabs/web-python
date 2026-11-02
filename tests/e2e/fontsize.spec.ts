@@ -16,11 +16,31 @@
  * VC-1316 (FR-1316) — layout fit.
  * VC-1322 (NFR-1304) — hit target.
  * VC-1327 (BR-1307) — custom menu, no <select>.
+ *
+ * Iteration 3 — state preservation, side-effect proof, budgets, storage surface:
+ * VC-1308 (FR-1308) — document, selection, undo and first visible line survive.
+ * VC-1325 (FR-1317) — caret and gutter geometry follow the size.
+ * VC-1310 (FR-1310, BR-1302) — no transaction, autosave, worker message or console output.
+ * VC-1318 (BR-1306) — strings only in format.ts; no network; no worker message; never `disabled`.
+ * VC-1326 (BR-1306, BR-1303) — the origin's storage surface.
+ * VC-1319 (NFR-1301) — apply latency.
+ * VC-1321 (NFR-1303) — contrast of the button and the open menu, both palettes
+ *   (run by `npm run audit:contrast`).
  */
+import { readFileSync, readdirSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { expect, test, type Page } from '@playwright/test';
+import { failures, measureContrast, type Sample } from './contrast';
 import {
   LAYOUT_KEY,
+  PROGRAM_KEY,
+  WORKSPACE_KEY,
   noticeTexts,
+  runProgram,
+  submitStdin,
+  storedProgram,
+  trackLongTasks,
   openPlayground,
   setProgram,
   waitForPythonReady,
@@ -503,3 +523,438 @@ test('VC-1327 (BR-1307): a custom menu, no <select> in the toolbar', async ({ pa
   expect(await page.locator('#fontsize-menu [role="menuitemradio"]').count()).toBe(6);
   expect(await menu(page).getAttribute('aria-labelledby')).toBe('btn-fontsize');
 });
+
+// ---------------------------------------------------------------------------
+// Iteration 3
+// ---------------------------------------------------------------------------
+
+/** The live CodeMirror view, reached the way `EditorView.findFromDOM` does. */
+const VIEW = `(() => {
+  const c = document.querySelector('.cm-content');
+  const v = (c && (c.cmTile && c.cmTile.view)) || (c && c.cmView && c.cmView.view);
+  if (!v) throw new Error('CodeMirror view not found');
+  return v;
+})()`;
+
+const TWO_HUNDRED = Array.from({ length: 200 }, (_, i) => `v${i + 1} = ${i + 1}`).join('\n') + '\n';
+
+async function choose(page: Page, size: number): Promise<void> {
+  await openByClick(page);
+  await item(page, size).click();
+  await expect(button(page)).toBeFocused();
+}
+
+test('VC-1308 (FR-1308): document, selection, undo history and first visible line survive 14 -> 24 -> 12', async ({
+  page,
+}) => {
+  await openPlayground(page);
+  await setProgram(page, TWO_HUNDRED);
+  // Three separate undo steps: history groups edits closer than 500 ms.
+  for (const n of [1, 2, 3]) {
+    await page.waitForTimeout(650);
+    await page.evaluate(
+      ({ view, n }) => {
+        const v = new Function(`return ${view}`)();
+        v.dispatch({ changes: { from: v.state.doc.length, insert: `# edit ${n}\n` }, userEvent: 'input.type' });
+      },
+      { view: VIEW, n },
+    );
+  }
+  const original = await page.evaluate(
+    (view) => (new Function(`return ${view}`)()).state.doc.toString() as string,
+    VIEW,
+  );
+  // Caret at line 120 col 5 with a selection back to line 118 col 2; line 80 first visible.
+  const before = await page.evaluate((view) => {
+    const v = new Function(`return ${view}`)();
+    const a = v.state.doc.line(118).from + 1;
+    const b = v.state.doc.line(120).from + 4;
+    v.dispatch({ selection: { anchor: a, head: b } });
+    v.requestMeasure();
+    return { ranges: v.state.selection.ranges.map((r: any) => [r.anchor, r.head]), text: v.state.doc.toString() };
+  }, VIEW);
+  // Off-screen line heights are estimates until measured, so converge on
+  // "line 80 is the first visible line" over a few frames.
+  await page.evaluate(async (view) => {
+    const v = new Function(`return ${view}`)();
+    const frame = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    for (let i = 0; i < 8; i++) {
+      v.scrollDOM.scrollTop = v.lineBlockAt(v.state.doc.line(80).from).top;
+      await frame();
+      if (v.state.doc.lineAt(v.lineBlockAtHeight(v.scrollDOM.scrollTop).from).number === 80) break;
+    }
+  }, VIEW);
+
+  const probe = (): Promise<{ text: string; ranges: number[][]; first: number; visible: boolean }> =>
+    page.evaluate((view) => {
+      const v = new Function(`return ${view}`)();
+      const top = v.scrollDOM.scrollTop;
+      const block = v.lineBlockAt(v.state.doc.line(80).from);
+      const first = v.state.doc.lineAt(v.lineBlockAtHeight(top).from).number;
+      return {
+        text: v.state.doc.toString(),
+        ranges: v.state.selection.ranges.map((r: any) => [r.anchor, r.head]),
+        first,
+        visible: block.bottom > top && block.top < top + v.scrollDOM.clientHeight,
+      };
+    }, VIEW);
+  expect((await probe()).first, 'line 80 is first visible before').toBe(80);
+
+  await choose(page, 24);
+  await choose(page, 12);
+  await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+  const after = await probe();
+  expect(after.text).toBe(before.text);
+  expect(after.ranges).toEqual(before.ranges);
+  expect(after.visible, 'line 80 is within the viewport').toBe(true);
+
+  // Undo x3 restores the text from before the three edits.
+  await page.locator('.cm-content').focus();
+  for (let i = 0; i < 3; i++) await page.keyboard.press('ControlOrMeta+z');
+  const undone = await probe();
+  expect(undone.text).toBe(original.replace(/# edit \d\n/g, ''));
+});
+
+test('VC-1325 (FR-1317): after 14 -> 24 the caret and the gutter are laid out at the new metrics', async ({
+  page,
+}) => {
+  await openPlayground(page);
+  await setProgram(page, TWO_HUNDRED);
+  await page.evaluate((view) => {
+    const v = new Function(`return ${view}`)();
+    v.dispatch({ selection: { anchor: v.state.doc.line(150).to } });
+    v.focus();
+  }, VIEW);
+  await choose(page, 24);
+  await page.locator('.cm-content').focus();
+  await page.keyboard.type('x');
+  const state = await page.evaluate((view) => {
+    const v = new Function(`return ${view}`)();
+    const head = v.state.selection.main.head;
+    const line = v.state.doc.lineAt(head);
+    return { char: v.state.doc.sliceString(head - 1, head), line: line.text };
+  }, VIEW);
+  expect(state.char).toBe('x');
+  expect(state.line.endsWith('x')).toBe(true);
+
+  // Within one animation frame the layers have been re-measured.
+  await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+  const measure = () =>
+    page.evaluate(() => {
+      const cursor = document.querySelector('.cm-cursor-primary, .cm-cursor') as HTMLElement | null;
+      const line = document.querySelector('.cm-line') as HTMLElement;
+      const gutters = document.querySelector('.cm-gutters') as HTMLElement;
+      const clipped = Array.from(gutters.querySelectorAll('.cm-gutterElement')).filter(
+        (el) => (el as HTMLElement).scrollWidth > (el as HTMLElement).clientWidth,
+      ).length;
+      return {
+        caret: cursor ? cursor.getBoundingClientRect().height : -1,
+        line: line.getBoundingClientRect().height,
+        lineHeight: Number.parseFloat(getComputedStyle(line).lineHeight),
+        gutterScroll: gutters.scrollWidth,
+        gutterClient: gutters.clientWidth,
+        clipped,
+      };
+    });
+  const live = await measure();
+  // CodeMirror draws the caret at the glyph box (ascent + descent), which is
+  // shorter than the line box at every size, 14 px included. So the caret is
+  // compared with a page that loaded straight at 24, which needed no
+  // re-measure (VC-1325 as worded would fail at the default size too).
+  await page.evaluate((k) => localStorage.setItem(k, '24'), KEY);
+  await page.reload();
+  await page.waitForSelector('.cm-content');
+  await page.evaluate((view) => {
+    const v = new Function(`return ${view}`)();
+    v.dispatch({ selection: { anchor: v.state.doc.line(150).to } });
+    v.focus();
+  }, VIEW);
+  await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+  const fresh = await measure();
+  expect(live.caret).toBeGreaterThan(0);
+  expect(Math.abs(live.caret - fresh.caret)).toBeLessThanOrEqual(2);
+  expect(Math.abs(live.line - fresh.line)).toBeLessThanOrEqual(2);
+  expect(live.caret).toBeLessThanOrEqual(live.line + 2);
+  expect(live.gutterScroll).toBeLessThanOrEqual(live.gutterClient);
+  expect(live.clipped).toBe(0);
+});
+
+test('VC-1310 (FR-1310, BR-1302): a size change dispatches nothing, writes no program, posts nothing, logs nothing', async ({
+  page,
+}) => {
+  await page.addInitScript(
+    ({ fontKey }) => {
+      const w = window as unknown as { __posts: unknown[]; __sets: string[] };
+      w.__posts = [];
+      w.__sets = [];
+      const post = Worker.prototype.postMessage;
+      Worker.prototype.postMessage = function (...args: unknown[]) {
+        w.__posts.push(args[0]);
+        return (post as (...a: unknown[]) => void).apply(this, args);
+      };
+      const set = Storage.prototype.setItem;
+      Storage.prototype.setItem = function (k: string, v: string) {
+        if (k !== fontKey) w.__sets.push(k);
+        return set.call(this, k, v);
+      };
+    },
+    { fontKey: KEY },
+  );
+  const logs: string[] = [];
+  page.on('console', (m) => logs.push(`${m.type()}: ${m.text()}`));
+  page.on('pageerror', (e) => logs.push(`pageerror: ${e.message}`));
+
+  await openPlayground(page);
+  await waitForPythonReady(page);
+  await setProgram(page, TWO_HUNDRED);
+  await page.waitForTimeout(900); // let the autosave debounce settle
+
+  // Count every transaction the view applies from here on. `update` is the
+  // single funnel `dispatch` goes through, so this sees them all.
+  await page.evaluate((view) => {
+    const v = new Function(`return ${view}`)();
+    const w = window as unknown as { __updates: number; __posts: unknown[]; __sets: string[] };
+    w.__updates = 0;
+    const update = v.update.bind(v);
+    v.update = (...a: unknown[]) => {
+      w.__updates++;
+      return update(...a);
+    };
+    w.__posts.length = 0;
+    w.__sets.length = 0;
+  }, VIEW);
+  logs.length = 0;
+  const bytesBefore = {
+    program: await storedProgram(page),
+    raw: await page.evaluate((k) => localStorage.getItem(k), WORKSPACE_KEY),
+    legacy: await page.evaluate((k) => localStorage.getItem(k), PROGRAM_KEY),
+  };
+
+  await choose(page, 24);
+  await choose(page, 12);
+  await page.waitForTimeout(1000); // past the 500 ms autosave debounce
+
+  const seen = await page.evaluate(() => {
+    const w = window as unknown as { __updates: number; __posts: unknown[]; __sets: string[] };
+    return { updates: w.__updates, posts: w.__posts.length, sets: w.__sets };
+  });
+  // Zero transactions also means zero autosave and zero lint scheduling: both
+  // are driven only by a document-changing transaction.
+  expect(seen.updates).toBe(0);
+  expect(seen.posts).toBe(0);
+  expect(seen.sets).toEqual([]);
+  expect(await storedProgram(page)).toBe(bytesBefore.program);
+  expect(await page.evaluate((k) => localStorage.getItem(k), WORKSPACE_KEY)).toBe(bytesBefore.raw);
+  expect(await page.evaluate((k) => localStorage.getItem(k), PROGRAM_KEY)).toBe(bytesBefore.legacy);
+  expect(logs).toEqual([]);
+});
+
+const SRC = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'src');
+
+/** Source text without comments, so a mention in prose is not a string. */
+function code(path: string): string {
+  return readFileSync(path, 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/^\s*\/\/.*$/gm, '')
+    .replace(/<!--[\s\S]*?-->/g, '');
+}
+
+test('VC-1318 (BR-1306): strings live in format.ts; the menu makes no request and posts no worker message; never disabled', async ({
+  page,
+}) => {
+  const FRAGMENTS = ['Font size', 'remembered', '(default)'];
+  const files = readdirSync(SRC, { recursive: true })
+    .map(String)
+    .filter((f) => /\.ts$/.test(f) && f !== 'format.ts')
+    .map((f) => join(SRC, f));
+  files.push(join(SRC, '..', 'index.html'));
+  for (const file of files) {
+    const text = code(file);
+    for (const fragment of FRAGMENTS) {
+      expect(text.includes(fragment), `${fragment} in ${file}`).toBe(false);
+    }
+  }
+  const format = readFileSync(join(SRC, 'format.ts'), 'utf8');
+  for (const needle of ['FONT_SIZE_LABEL', 'FONT_SIZE_NAME', 'FONT_SIZE_ITEM', 'FONT_SIZE_SAVE_FAILED']) {
+    expect(format).toContain(needle);
+  }
+
+  await page.addInitScript(() => {
+    const w = window as unknown as { __posts: unknown[] };
+    w.__posts = [];
+    const post = Worker.prototype.postMessage;
+    Worker.prototype.postMessage = function (...args: unknown[]) {
+      w.__posts.push(args[0]);
+      return (post as (...a: unknown[]) => void).apply(this, args);
+    };
+  });
+  await openPlayground(page);
+  await waitForPythonReady(page);
+  await page.waitForTimeout(500);
+  await page.evaluate(() => ((window as unknown as { __posts: unknown[] }).__posts.length = 0));
+  const requests: string[] = [];
+  page.on('request', (r) => requests.push(r.url()));
+
+  await openByClick(page);
+  await page.keyboard.press('Escape');
+  await openByClick(page);
+  await item(page, 20).click();
+  await page.waitForTimeout(300);
+  expect(requests).toEqual([]);
+  expect(await page.evaluate(() => (window as unknown as { __posts: unknown[] }).__posts.length)).toBe(0);
+
+  // No `disabled` attribute in any state: idle, running, waiting on input.
+  const noDisabled = () => expect(button(page)).not.toHaveAttribute('disabled', /.*/);
+  await noDisabled();
+  await setProgram(page, 'input("? ")\n');
+  await page.locator('#btn-run').click();
+  await waitForStdinPrompt(page);
+  await noDisabled();
+  await page.locator('#btn-stop').click();
+});
+
+test('VC-1326 (BR-1306, BR-1303): after exercising the app the origin holds only documented keys', async ({
+  page,
+}) => {
+  await openPlayground(page);
+  await waitForPythonReady(page);
+  await runProgram(page, 'name = input("n? ")\nprint("hola", name)\n');
+  await submitStdin(page, 'Ana');
+  await expect.poll(() => page.locator('#console').innerText()).toContain('hola Ana');
+  await page.locator('.cm-content').click();
+  await page.keyboard.type('# edit');
+  await page.click('#layout-vertical');
+  await page.click('#layout-horizontal');
+  await page.locator('#btn-theme').click();
+  await page.locator('#diag-resizer').press('ArrowUp');
+  await choose(page, 18);
+  await page.waitForTimeout(800);
+
+  const storage = await page.evaluate(async () => ({
+    local: Object.keys(window.localStorage).sort(),
+    session: Object.keys(window.sessionStorage).sort(),
+    cookies: document.cookie,
+    databases: (await indexedDB.databases?.())?.map((db) => db.name ?? '') ?? [],
+  }));
+  const documented = [
+    'pyplay.diagnostics-height.v1',
+    'pyplay.fontsize.v1',
+    'pyplay.layout.v2',
+    'pyplay.theme.v1',
+    'pyplay.workspace.v1',
+  ];
+  expect(storage.local).toContain(KEY);
+  expect(storage.local.filter((k) => !documented.includes(k))).toEqual([]);
+  expect(storage.session).toEqual([]);
+  expect(storage.cookies).toBe('');
+  expect(storage.databases).toEqual([]);
+});
+
+test('VC-1319 (NFR-1301): a selected size is painted within 50 ms with no task over 50 ms', async ({
+  page,
+  browserName,
+}) => {
+  test.skip(browserName !== 'chromium', 'NFR-1301 is measured in Chromium');
+  await openPlayground(page);
+  await waitForPythonReady(page);
+  await page.waitForTimeout(500);
+  const tasks = await trackLongTasks(page);
+  const samples: number[] = [];
+  for (const size of [24, 12, 20, 16, 14]) {
+    await openByClick(page);
+    await tasks.reset();
+    // From the selecting event to the next painted frame: rAF fires before the
+    // paint, the following message-channel task runs after it.
+    await page.evaluate(() => {
+      const target = (window as unknown as { __t?: { start: number; end: number } });
+      target.__t = { start: 0, end: 0 };
+      document.addEventListener(
+        'click',
+        () => {
+          target.__t!.start = performance.now();
+          requestAnimationFrame(() => {
+            const ch = new MessageChannel();
+            ch.port1.onmessage = () => (target.__t!.end = performance.now());
+            ch.port2.postMessage(0);
+          });
+        },
+        { capture: true, once: true },
+      );
+    });
+    await item(page, size).click();
+    await expect
+      .poll(() => page.evaluate(() => (window as unknown as { __t: { end: number } }).__t.end))
+      .toBeGreaterThan(0);
+    const t = await page.evaluate(() => (window as unknown as { __t: { start: number; end: number } }).__t);
+    expect(await editorSize(page)).toBe(`${size}px`);
+    samples.push(t.end - t.start);
+    expect(await tasks.read(), `long tasks at ${size}`).toEqual([]);
+  }
+  console.log('VC-1319 latency (ms):', samples.map((n) => n.toFixed(1)).join(', '));
+  for (const ms of samples) expect(ms).toBeLessThanOrEqual(50);
+});
+
+for (const scheme of ['light', 'dark'] as const) {
+  test.describe(`VC-1321 (NFR-1303): ${scheme} palette`, () => {
+    test.use({ colorScheme: scheme });
+
+    test(`the button, the open menu, its items and the check mark clear 4.5:1 text and 3:1 non-text — ${scheme}`, async ({
+      page,
+    }) => {
+      await openPlayground(page);
+      const text: Sample[] = [{ label: 'font size button label', selector: '#btn-fontsize', prop: 'color' }];
+      const nonText: Sample[] = [
+        { label: 'font size button border', selector: '#btn-fontsize', prop: 'borderTopColor' },
+        { label: 'focus ring (font size button)', selector: '#btn-fontsize', prop: 'outlineColor', focus: true },
+      ];
+      const measured = [
+        ...(await measureContrast(page, text)),
+        ...(await measureContrast(page, nonText)),
+      ];
+      const textCount = text.length;
+
+      // Keyboard modality, so `:focus-visible` is genuinely on the item.
+      await button(page).focus();
+      await page.keyboard.press('Enter');
+      await expect(menu(page)).toBeVisible();
+      // 14 is focused *and* checked.
+      const open: Sample[] = [
+        { label: 'menu item (focused, checked)', selector: '.fontsize-item[aria-checked="true"]', prop: 'color' },
+        { label: 'menu item (unchecked)', selector: '.fontsize-item[aria-checked="false"]', prop: 'color' },
+      ];
+      const openNonText: Sample[] = [
+        { label: 'menu border', selector: '#fontsize-menu', prop: 'borderTopColor' },
+        { label: 'focus ring (menu item)', selector: '.fontsize-item[aria-checked="true"]', prop: 'outlineColor' },
+      ];
+      const texts = await measureContrast(page, open);
+      const nonTexts = await measureContrast(page, openNonText);
+      // Move focus off the checked item: checked but not focused.
+      await page.keyboard.press('ArrowDown');
+      const checkedIdle = await measureContrast(page, [
+        { label: 'menu item (checked, not focused)', selector: '.fontsize-item[aria-checked="true"]', prop: 'color' },
+      ]);
+      // The check mark is a pseudo-element: it must take the item's colour, so
+      // its contrast is the item's, against the item's own background.
+      const mark = await page.evaluate(() => {
+        const el = document.querySelector('.fontsize-item[aria-checked="true"]')!;
+        return {
+          mark: getComputedStyle(el, '::before').color,
+          item: getComputedStyle(el).color,
+          content: getComputedStyle(el, '::before').content,
+        };
+      });
+      expect(mark.content).toContain('✓');
+      expect(mark.mark).toBe(mark.item);
+
+      const allText = [...measured.slice(0, textCount), ...texts, ...checkedIdle];
+      const allNonText = [
+        ...measured.slice(textCount),
+        ...nonTexts,
+        // the check mark is non-text *and* text-coloured: held to both bounds
+        ...checkedIdle.map((m) => ({ ...m, label: 'check mark' })),
+      ];
+      expect(failures(allText, 4.5)).toEqual([]);
+      expect(failures(allNonText, 3)).toEqual([]);
+    });
+  });
+}

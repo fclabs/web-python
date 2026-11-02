@@ -49,3 +49,29 @@ both layouts, before and after Python is ready. Below 900 px nothing changed.
 Rejected: shrinking the gap (breaks VC-702 6 +/- 1); shortening the label (spec change); icon-only button.
 Consequences: buttons at >= 900 px are visibly tighter; geometry baselines still matched (no re-record was needed, 0 skipped
 in layout.spec.ts); slack at 900 px is small (~10-16 px) so wider OS fonts could still compress Run.
+
+## D-006: No production code for measure/scroll; side effects observed without a test hook (Iteration 3)
+Context: plan allowed `requestMeasure()` + scroll restoration if VC-1308/1325 failed; VC-1310 needs a transaction counter.
+Decision: nothing added to `src/`. VC-1308 passed unmodified (first visible line stays 80 across 14->24->12). VC-1310 reaches the
+live view as existing helpers do (`.cm-content` `cmTile.view`), wraps `view.update` (the funnel `dispatch` uses) on that instance,
+and wraps `Worker.prototype.postMessage` / `Storage.prototype.setItem` via `addInitScript`.
+Rejected: a production test hook; a `requestMeasure` call "just in case" (untested code).
+Consequences: zero updates implies zero autosave and zero lint scheduling, as both are driven by document transactions.
+
+## D-007: VC-1325 reworded in the spec (Iteration 3) — user decision
+Context: CodeMirror draws the caret at glyph height (28 px vs a 33.6 px line at 24; ~3 px short at 14 as well), so "caret within
+2 px of line height" fails at every size, default included.
+Decision: spec VC-1325 now compares caret and line heights after 14->24 with a page loaded straight at 24 (within 2 px), requires the
+caret to fit inside its line, `x` typed at the caret, gutter `scrollWidth <= clientWidth` and no clipped gutter element.
+Rejected: widening the 2 px tolerance; skipping.
+
+## D-008: VC-814 baseline pin moved e569b81 -> 424e43c (Iteration 3) — user decision (a)
+Context: VC-814 was red on darwin before this feature (app +5046 B over e569b81 vs a 4096 B budget, from unrelated later features);
+re-recording e569b81 reproduces 162773 B, so only moving the pin could help.
+Decision: `record-baselines.mjs 424e43c --build tests/e2e/baseline-build-about.json` (167816 B, darwin-arm64 zlib 1.2.12, 13 URLs) and
+the pin table in CONTRIBUTING.md, in its own commit 8329112. Threshold 4096 B untouched. Result: delta 1461 B, VC-814 green.
+Consequences: the About budget now measures growth since 424e43c; the historical 162773 value is in git history.
+
+## D-009: VC-1321 lives in fontsize.spec.ts and is added to the audit grep (Iteration 3)
+Decision: a dedicated test per palette using `measureContrast`; `audit:contrast` grep gained `|VC-1321` (adds coverage only).
+The check mark is a `::before` inheriting the item colour (asserted equal) and is held to both 4.5:1 and 3:1.
