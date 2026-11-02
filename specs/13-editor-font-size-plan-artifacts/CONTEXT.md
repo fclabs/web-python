@@ -105,5 +105,5 @@ zsh gotcha: `echo ======` fails ("= not found"); quote it.
   VC-315 and VC-608 verified green with `Shift+Alt+m` temporarily. Pass-expected on Linux CI.
 - VC-1206 is skipped on darwin (brackets baseline records only linux-x64); pre-existing, CI records its own.
 - Slack at 900 px toolbar is only ~10-16 px; wider OS fonts could compress Run (D-005).
-- No `requestMeasure`/scroll restoration exists or is needed (D-006).
+- `src/main.ts` `onSelect` forces a CodeMirror metrics refresh (`viewState.mustMeasureContent = 'refresh'` + `requestMeasure`) and restores the first visible line a frame later (D-011); without it line numbers misalign after a size change.
 - Measured: apply latency 11-24 ms (<= 50); app gzip delta +1459 B vs 424e43c (<= 2048 / VC-814 4096), 13 precache URLs unchanged.

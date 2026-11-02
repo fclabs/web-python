@@ -188,7 +188,7 @@ A second render-blocking inline `<script>` in `index.html` `<head>` reads
 | **VC-1306** | FR-1306 | `Esc` closes with size unchanged and focus on the button; outside click closes with size unchanged and focus on the button; `Tab` closes and focus lands on `#btn-theme`, size unchanged; clicking the open button closes the menu; with the menu open, `Esc` does not close an About dialog opened beforehand or toggle the Files/Symbols panes. |
 | **VC-1307** | FR-1307 | Choosing 36 by click, and separately by keyboard, sets the editor size to 36 px with no navigation/reload, closes the menu, makes `document.activeElement` `#btn-fontsize` (never `<body>`), and updates the label. |
 | **VC-1308** | FR-1308 | With a 200-line program, caret at line 120 col 5, selection `[a,b]`, 3 undo steps, editor scrolled so line 80 is first visible: after 14→36→12 the document text and selection ranges are identical, undo ×3 restores the original text, and line 80 is within the viewport. |
-| **VC-1325** | FR-1317 | After 14→36, typing `x` inserts it at the caret; within one animation frame the caret's and a `.cm-line`'s heights match those of a page that loaded straight at 36 (stored `36`) within 2 px; the caret fits inside its line (its height ≤ the line's + 2 px — CodeMirror draws the caret at glyph height, which is below the line height at every size, so equality with the line height is not required); the gutter has `scrollWidth ≤ clientWidth` and no gutter element is clipped. |
+| **VC-1325** | FR-1317 | After 14→36, typing `x` inserts it at the caret; within one animation frame the caret's and a `.cm-line`'s heights match those of a page that loaded straight at 36 (stored `36`) within 2 px; the caret fits inside its line (its height ≤ the line's + 2 px — CodeMirror draws the caret at glyph height, which is below the line height at every size, so equality with the line height is not required); the gutter has `scrollWidth ≤ clientWidth` and no gutter element is clipped; after the sequence 36→12→24→14 (settled two frames after each change) every line number's top and height are within 2 px of its `.cm-line`, so numbers neither collapse when the size grows nor spread when it shrinks. |
 | **VC-1309** | FR-1309 | At 36, computed `font-size` of `.cm-content` and `.cm-gutters` is `36px`; computed `font-size` of console, `#file-pane`, `#symbol-pane`, `#diagnostics-list`, `#stdin-input`, toolbar, `#notices`, `.editor-heading`, and an open completion tooltip equals its value at 14. |
 | **VC-1310** | FR-1310, BR-1302 | Across a size change: zero editor transactions and zero lint requests (instrumented), no worker `postMessage`, `localStorage` program/workspace value byte-identical after 1 s (past the 500 ms autosave debounce), no console output. |
 | **VC-1311** | FR-1311, BR-1303 | After choosing 20 the key holds exactly `20` immediately (no wait); choosing 20 again performs no `setItem` call. |
@@ -224,7 +224,7 @@ A second render-blocking inline `<script>` in `index.html` `<head>` reads
 
 ## Assumptions
 
-- Gutter width is recomputed by CodeMirror on a size change; if it is not, the implementation must force a measure — FR-1317 is the requirement.
+- CodeMirror does not notice a CSS-only size change: the implementation forces a measure (and restores the first visible line); FR-1317 is the requirement.
 - Toolbar space at 900 px is sufficient for a ~120 px button given the existing `nowrap` + flex-shrink arrangement; VC-1316 is the gate, and if it fails the label may be shortened only by a spec change.
 
 ## Open Questions

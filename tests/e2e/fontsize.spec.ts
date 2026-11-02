@@ -565,6 +565,39 @@ async function choose(page: Page, size: number): Promise<void> {
   await expect(button(page)).toBeFocused();
 }
 
+test('VC-1325 (FR-1317): every line number stays level with its line after growing and shrinking', async ({
+  page,
+}) => {
+  await openPlayground(page);
+  // Line numbers are CodeMirror-sized inline from its last measure; a CSS-only
+  // size change must trigger a re-measure or they collapse (grow) or spread
+  // apart (shrink) while the text reflows.
+  const offsets = () =>
+    page.evaluate(() => {
+      const lines = Array.from(document.querySelectorAll('.cm-content .cm-line')) as HTMLElement[];
+      const nums = Array.from(
+        document.querySelectorAll('.cm-lineNumbers .cm-gutterElement'),
+      ) as HTMLElement[];
+      // Skip CodeMirror's zero-height, hidden width-measuring element.
+      const numbered = nums.filter((n) => n.getBoundingClientRect().height > 0);
+      return numbered.slice(0, lines.length).map((n, i) => {
+        const a = n.getBoundingClientRect();
+        const b = lines[i]!.getBoundingClientRect();
+        return { i, gutterTop: a.top, lineTop: b.top, gutterH: a.height, lineH: b.height };
+      });
+    });
+  for (const size of [36, 12, 24, 14]) {
+    await choose(page, size);
+    await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+    const rows = await offsets();
+    expect(rows.length, `rows at ${size}`).toBeGreaterThan(5);
+    for (const r of rows) {
+      expect(Math.abs(r.gutterTop - r.lineTop), `${size}px row ${r.i} top`).toBeLessThanOrEqual(2);
+      expect(Math.abs(r.gutterH - r.lineH), `${size}px row ${r.i} height`).toBeLessThanOrEqual(2);
+    }
+  }
+});
+
 test('VC-1308 (FR-1308): document, selection, undo history and first visible line survive 14 -> 36 -> 12', async ({
   page,
 }) => {

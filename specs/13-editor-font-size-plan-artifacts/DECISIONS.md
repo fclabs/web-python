@@ -84,3 +84,9 @@ is proportionally about the same jump as the 2 px steps at the small end, and 36
 Rejected: 30/36 (two steps only, coarse jump from 24), 26/28/30/... (long menu), free-form entry (spec non-goal).
 Consequences: BR-1301/BR-1303, the inline `ALLOWED` literal and `FONT_SIZES` change together (VC-1317 guards drift); VC-1305 End -> 36;
 VC-1307/1308/1309/1312/1325 now use 36 as the extreme. Stored `24`..`20` values stay valid; no storage key bump (the set only grew).
+
+## D-011: Force a CodeMirror metrics refresh and restore the first visible line (post-review)
+Context: D-006 judged no measure code was needed; a user screenshot showed line numbers collapsing (grow) / spreading (shrink) after a size change. The earlier gutter check only looked for clipping, never row alignment.
+Decision: `onSelect` in `src/main.ts` sets `view.viewState.mustMeasureContent = 'refresh'` (guarded; undocumented API) and calls `requestMeasure()`; the first visible line is captured beforehand and `scrollTop` restored in a `requestMeasure` write one frame later. A plain `requestMeasure()` is not enough: shrinking 24->14 left stale gutter heights.
+Rejected: a no-op transaction/theme reconfigure (violates FR-1310/BR-1305); computing the scroll target in the same measure (it reads pre-update heights and lands on the wrong line).
+Consequences: new VC-1325 test compares every line-number row with its line over 36/12/24/14; supersedes D-006's "no measure code". One frame of misalignment is visible between the CSS write and the measure (within FR-1317's one-frame bound).

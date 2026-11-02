@@ -844,11 +844,23 @@ nothing downstream of a transaction fires — no autosave, no lint schedule, no
 worker message. `src/fontsize-menu.ts` holds no editor or storage reference for
 the same reason the symbol pane does not (see *It never touches the editor*).
 
-CodeMirror re-measures a CSS-only change on its own and keeps the first visible
-line, and line height is relative (`1.4`), so it scales with the size. No
-`requestMeasure()` or scroll-restoration code exists or is needed. If a future
-CodeMirror upgrade breaks that, the fix belongs in `src/fontsize.ts` (a
-measure request after `applyFontSize`), never in a transaction.
+CodeMirror does **not** notice a CSS-only change. It draws the line-number
+gutter from line heights it cached at its last measure, so without help the
+numbers collapse into a stack when the size grows (the lines wrap and get
+taller) and spread apart when it shrinks. After writing the variable the
+selection handler therefore flags a full metrics refresh on the view's state
+(`viewState.mustMeasureContent = 'refresh'`) and calls `view.requestMeasure()`.
+That re-reads line heights and redraws the gutter without dispatching a
+transaction. `viewState` is not documented API, so the code tolerates its
+absence; if a CodeMirror upgrade stops honouring the flag, the failing test is
+the one that compares every line number's height with its line after growing
+and shrinking.
+
+The measure changes the document height, so the old scroll offset would land on
+a different line. The handler remembers the first visible line before the
+change and, on the frame after the measure, writes `scrollTop` so that line is
+back at the top — a scroll write, not a transaction. Line height is relative
+(`1.4`), so it scales with the size on its own.
 
 ### Two writers, one allow-list that lives twice
 

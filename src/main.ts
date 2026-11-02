@@ -456,7 +456,30 @@ function boot(): void {
     menu: need('fontsize-menu'),
     initial: initialFontSize,
     onSelect: (size) => {
+      // FR-1308: remember the first visible line; the content height changes
+      // with the size, so the old pixel offset would land on another line.
+      const anchor = view.lineBlockAtHeight(view.scrollDOM.scrollTop).from;
       applyFontSize(size);
+      // FR-1317, BR-1305: a CSS-only change gives CodeMirror no signal, so its
+      // cached line heights (and the line-number rows drawn from them) keep the
+      // old size — numbers collapse when growing and spread when shrinking.
+      // Flag a full metrics refresh, then measure: no transaction is dispatched.
+      // `viewState` is not documented API, so tolerate its absence.
+      const viewState = (view as unknown as { viewState?: { mustMeasureContent?: unknown } })
+        .viewState;
+      if (viewState) viewState.mustMeasureContent = 'refresh';
+      view.requestMeasure();
+      // FR-1308: once that measure has run (next frame) the heights are final;
+      // put the anchor line back at the top of the viewport. A scroll write,
+      // not a transaction.
+      requestAnimationFrame(() => {
+        view.requestMeasure({
+          read: () => null,
+          write: (_, v) => {
+            v.scrollDOM.scrollTop = v.lineBlockAt(anchor).top;
+          },
+        });
+      });
       if (!saveFontSize(storage, size) && !fontSizeSaveWarned) {
         fontSizeSaveWarned = true;
         notices.show(FONT_SIZE_SAVE_FAILED);
