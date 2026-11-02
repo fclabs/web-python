@@ -155,13 +155,18 @@ test.describe('storage surface', () => {
       databases: (await indexedDB.databases?.())?.map((db) => db.name ?? '') ?? [],
     }));
 
-    // Data & Interfaces (amended by spec-05 and the workspace feature):
-    // workspace key required; theme key optional; never any other
-    // localStorage key.
+    // Data & Interfaces (amended by spec-05, the workspace feature, spec-09 and
+    // spec-13): workspace key required; the preference keys optional; never any
+    // other localStorage key. `pyplay.fontsize.v1` is the fifth (BR-1306).
+    const DOCUMENTED_KEYS = [
+      'pyplay.workspace.v1',
+      'pyplay.layout.v2',
+      'pyplay.theme.v1',
+      'pyplay.diagnostics-height.v1',
+      'pyplay.fontsize.v1',
+    ];
     expect(storage.local).toContain('pyplay.workspace.v1');
-    expect(
-      storage.local.every((k) => k === 'pyplay.workspace.v1' || k === 'pyplay.theme.v1'),
-    ).toBe(true);
+    expect(storage.local.filter((k) => !DOCUMENTED_KEYS.includes(k))).toEqual([]);
     // No cookies, no IndexedDB, no session storage.
     expect(storage.session).toEqual([]);
     expect(storage.cookies).toBe('');

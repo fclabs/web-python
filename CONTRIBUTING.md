@@ -131,7 +131,7 @@ Records pin what a build is compared against:
 |---|---|---|
 | `tests/e2e/baseline-build.json` | VC-326 (spec-03, build shape) | `8df7fa5` |
 | `tests/e2e/baseline-build-completion.json` | VC-429 (shape only); NFR-606 size historical | `3efb8be` |
-| `tests/e2e/baseline-build-about.json` | VC-814 (NFR-805, ≤ 4 KB) | `e569b81` |
+| `tests/e2e/baseline-build-about.json` | VC-814 (NFR-805, ≤ 4 KB) | `424e43c` |
 | `tests/e2e/baseline-build-diag-resize.json` | VC-912 (NFR-904, ≤ 2 KB) | `562cb27` |
 | `tests/e2e/baseline-build-paste.json` | VC-1011 (NFR-1001 size historical) | `2eb0bd4` |
 | `tests/e2e/baseline-build-brackets.json` | VC-1206 (NFR-1201 size historical) | `44f9afa` |

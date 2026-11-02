@@ -32,6 +32,7 @@ const TOOLBAR_CONTROL_IDS = [
   'btn-files',
   'btn-output',
   'btn-symbols',
+  'btn-fontsize',
   'btn-theme',
   'btn-about',
 ] as const;
@@ -45,6 +46,7 @@ const FR704_STOPS = [
   'btn-files',
   'btn-output',
   'btn-symbols',
+  'btn-fontsize',
   'btn-theme',
   'btn-about',
 ] as const;
@@ -218,7 +220,9 @@ test('VC-702 (FR-702): Symbols/theme gap is 6 ± 1 px with nothing between', asy
   await openPlayground(page, { seedLayout: false });
 
   const result = await page.evaluate(() => {
-    const symbols = document.getElementById('btn-symbols')!;
+    // spec-13 FR-1301: Font size sits between Symbols and theme, so the
+    // 6 ± 1 px gap is measured between the control now adjacent to theme.
+    const symbols = document.getElementById('btn-fontsize')!;
     const theme = document.getElementById('btn-theme')!;
     const s = symbols.getBoundingClientRect();
     const t = theme.getBoundingClientRect();
@@ -237,7 +241,9 @@ test('VC-702 (FR-702): Symbols/theme gap is 6 ± 1 px with nothing between', asy
 
     return {
       gap,
-      immediatelyFollows: symbols.nextElementSibling === theme,
+      immediatelyFollows:
+        symbols.nextElementSibling === theme &&
+        document.getElementById('btn-symbols')!.nextElementSibling === symbols,
       interveningIds: between.map((el) => (el as HTMLElement).id || el.tagName),
     };
   });

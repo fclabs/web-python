@@ -184,6 +184,56 @@ body {
   text-align: center;
 }
 
+/* FR-1301 – FR-1316: font size drop-down. Existing tokens only (NFR-1303).
+   Fixed-positioned by src/fontsize-menu.ts, which clamps/flips it into the
+   viewport (FR-1316). Items are >= 24 px tall and wide (NFR-1304). */
+#btn-fontsize {
+  min-height: 32px;
+  white-space: nowrap;
+}
+
+.fontsize-menu {
+  background: var(--bg-raised);
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--fg) 25%, transparent);
+  color: var(--fg);
+  display: flex;
+  flex-direction: column;
+  max-width: calc(100vw - 8px);
+  overflow-y: auto;
+  padding: 4px;
+  position: fixed;
+  z-index: 30;
+}
+
+.fontsize-menu[hidden] {
+  display: none;
+}
+
+.fontsize-item {
+  border-radius: 4px;
+  cursor: pointer;
+  min-height: 28px;
+  min-width: 24px;
+  padding: 4px 12px 4px 28px;
+  position: relative;
+  white-space: nowrap;
+}
+
+/* FR-1304: visible check mark on the current size (decorative glyph; the
+   state is exposed through aria-checked). */
+.fontsize-item[aria-checked='true']::before {
+  content: '\2713';
+  inset-inline-start: 8px;
+  position: absolute;
+}
+
+.fontsize-item:hover,
+.fontsize-item:focus-visible {
+  background: var(--bg-sunken);
+}
+
 /* FR-805 / FR-818 / FR-819: About modal — custom overlay (not <dialog>), so
    `#about-backdrop` is an explicit dismiss layer that swallows chrome clicks. */
 .about-backdrop {
@@ -606,8 +656,13 @@ html[data-output='hidden'] #app:not([data-layout='vertical']) .diag-resizer {
   min-width: 0;
 }
 
+/* BR-1305 / FR-1309: the size is set on content and gutters only, never on
+   `.cm-editor`, so completion and lint tooltips stay at their fixed size.
+   The 14px fallback is the inherited body size, so default is unchanged
+   (FR-1313). */
 .cm-editor .cm-content {
   font-family: var(--font-mono);
+  font-size: var(--editor-font-size, 14px);
 }
 
 /* Issue #31: only leading indentation receives a background marker. It does
@@ -669,6 +724,7 @@ html[data-output='hidden'] #app:not([data-layout='vertical']) .diag-resizer {
 }
 
 .cm-editor .cm-gutters {
+  font-size: var(--editor-font-size, 14px); /* BR-1305 / FR-1309 */
   background: var(--bg-sunken);
   border-right: 1px solid var(--border);
   color: var(--fg-muted);
@@ -1320,6 +1376,19 @@ html[data-diag-sized] #app:not([data-layout='vertical']) .panel--diagnostics {
    */
   .toolbar {
     flex-wrap: nowrap;
+    /* FR-1316: the Font size button (FR-1301) leaves no slack at 900 px, so
+       the shared toolbar spacing is trimmed here (and only here) rather than
+       squeezing Run or wrapping Clear / Copy. The 6 px gap itself is kept
+       (VC-702 / VC-703). */
+  }
+
+  .toolbar > .btn:not(.btn--theme):not(.btn--about) {
+    padding-inline: 3px;
+    white-space: nowrap;
+  }
+
+  .toolbar .segment {
+    padding-inline: 6px;
   }
 
   #btn-symbols {

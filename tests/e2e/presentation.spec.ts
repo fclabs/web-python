@@ -48,7 +48,9 @@ const CONTROLS = [
   '#btn-output',
   // spec-03 FR-301: the pane's toggle is a toolbar control like any other.
   '#btn-symbols',
-  // spec-05 FR-501: color-mode control after Symbols.
+  // spec-13 FR-1301: Font size after Symbols.
+  '#btn-fontsize',
+  // spec-05 FR-501: color-mode control after Font size.
   '#btn-theme',
   // spec-08 FR-801: About after theme.
   '#btn-about',
@@ -847,6 +849,7 @@ test('VC-052 (FR-049): Tab reaches every target, each with a visible ring', asyn
     '#btn-files',
     '#btn-output',
     '#btn-symbols',
+    '#btn-fontsize',
     '#btn-theme',
     '#btn-about',
     '.symbol',

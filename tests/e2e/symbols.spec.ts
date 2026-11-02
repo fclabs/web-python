@@ -149,16 +149,19 @@ test('VC-301 (FR-301): the toolbar ends with a closed, correctly wired Symbols t
   await expect(toggle).toHaveAttribute('aria-expanded', 'false');
   await expect(toggle).toHaveAttribute('aria-controls', 'symbol-pane');
 
-  // It sits immediately before `#btn-theme` (spec-05); `#btn-about` is last
-  // (spec-08 amendment). It has no disabled state.
+  // It sits immediately before `#btn-fontsize` (spec-13), which precedes
+  // `#btn-theme` (spec-05); `#btn-about` is last (spec-08 amendment). It has
+  // no disabled state.
   const wiring = await page.evaluate(() => {
     const controls = Array.from(document.querySelectorAll('.toolbar > button'));
     const toggle = document.getElementById('btn-symbols')!;
     const theme = document.getElementById('btn-theme');
+    const fontsize = document.getElementById('btn-fontsize');
     const about = document.getElementById('btn-about');
     const target = document.getElementById(toggle.getAttribute('aria-controls')!);
     return {
-      followedByTheme: toggle.nextElementSibling === theme,
+      followedByFontSize: toggle.nextElementSibling === fontsize,
+      fontSizeFollowedByTheme: fontsize?.nextElementSibling === theme,
       aboutIsLast: controls[controls.length - 1] === about,
       themeIsLast: controls[controls.length - 1] === theme,
       resolves: target === document.getElementById('symbol-pane'),
@@ -166,7 +169,8 @@ test('VC-301 (FR-301): the toolbar ends with a closed, correctly wired Symbols t
       hidden: (document.getElementById('symbol-pane') as HTMLElement).hidden,
     };
   });
-  expect(wiring.followedByTheme).toBe(true);
+  expect(wiring.followedByFontSize).toBe(true);
+  expect(wiring.fontSizeFollowedByTheme).toBe(true);
   expect(wiring.aboutIsLast).toBe(true);
   expect(wiring.themeIsLast).toBe(false);
   expect(wiring.resolves).toBe(true);
@@ -728,8 +732,8 @@ test.describe('wide layout keyboard model', () => {
     await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
 
     const visited: string[] = [];
-    // About, Output, and optional separators under vertical (≥900) need headroom.
-    const tabBudget = 28;
+    // About, Output, Font size, and optional separators under vertical (≥900) need headroom.
+    const tabBudget = 29;
     for (let i = 0; i < tabBudget; i++) {
       await page.keyboard.press('Tab');
       const target = await page.evaluate(() => {
@@ -775,6 +779,8 @@ test.describe('wide layout keyboard model', () => {
       '#btn-files',
       '#btn-output',
       '#btn-symbols',
+      // spec-13 FR-1301: Font size sits between Symbols and the theme toggle.
+      '#btn-fontsize',
       '#btn-theme',
       // spec-08 FR-801: About is last toolbar control after theme.
       '#btn-about',

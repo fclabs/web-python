@@ -761,9 +761,9 @@ At viewports ≥ 900 px the toolbar is still one `flex` row with a fixed DOM
 order, but it *looks* like two clusters: a leading action group (`#btn-run`
 through `#btn-output`, including `#layout-group` and `#btn-files`) packed at
 the inline-start edge, and a presentation cluster (`#btn-symbols`,
-`#btn-theme`, `#btn-about`) flush with the inline-end edge. The split exists
+`#btn-fontsize`, `#btn-theme`, `#btn-about`) flush with the inline-end edge. The split exists
 because the leading controls act on the visitor's program / workspace /
-output while the trailing three act on how the page is presented or
+output while the trailing four act on how the page is presented or
 identified; collecting free space between those groups keeps the presentation
 cluster at a stable screen edge that does not shift when `#run-file-name`
 re-labels `Run`.
@@ -785,7 +785,7 @@ visually.
 
 Nothing is re-parented or reordered in the DOM, so tab order and assistive
 enumeration stay `#btn-run` … `#layout-group` … `#btn-files` … `#btn-output`
-… `#btn-symbols` … `#btn-theme` … `#btn-about`. Below 900 px neither rule applies: the toolbar
+… `#btn-symbols` → `#btn-fontsize` → `#btn-theme` → `#btn-about`. Below 900 px neither rule applies: the toolbar
 keeps `flex-wrap: wrap` and packs every control on every line against the
 inline-start edge exactly as it did before.
 
@@ -817,6 +817,147 @@ attribute value; forced modes select tokens from `[data-theme="light"]` /
 System is **load-scoped** (BR-502): the OS sample taken at page load (and
 reused when a mid-session cycle lands on `system`) is never refreshed by a
 live `matchMedia` listener. A visitor who wants the new OS value reloads.
+
+---
+
+## Editor font size
+
+`#btn-fontsize` opens a small drop-down of nine presets — 12, 14 (default), 16,
+18, 20, 24, 28, 32 and 36 px — and resizes **only the editor's text and gutters** (line
+numbers, lint icons, fold markers). The console, Files and Symbols panes, the
+diagnostics list, the stdin field, the toolbar, notices, the About dialog and
+CodeMirror's own popups (completion list, lint tooltip) keep their fixed size.
+The choice is remembered on this origin and applied before first paint.
+
+### A CSS variable, not an editor transaction
+
+The size is the custom property `--editor-font-size` (e.g. `20px`) on
+`document.documentElement`, read by two rules in `src/styles.css`:
+`.cm-editor .cm-content` and `.cm-editor .cm-gutters`, each with a `14px`
+fallback so an unset variable looks exactly like the editor did before the
+control existed. It is deliberately **not** set on `.cm-editor`: popups are
+positioned outside the content element and must not inherit it.
+
+Changing the variable touches no `EditorView`. There is no transaction, so the
+document, selection, undo history and scroll position are untouched, and
+nothing downstream of a transaction fires — no autosave, no lint schedule, no
+worker message. `src/fontsize-menu.ts` holds no editor or storage reference for
+the same reason the symbol pane does not (see *It never touches the editor*).
+
+CodeMirror does **not** notice a CSS-only change. It draws the line-number
+gutter from line heights it cached at its last measure, so without help the
+numbers collapse into a stack when the size grows (the lines wrap and get
+taller) and spread apart when it shrinks. After writing the variable the
+selection handler therefore flags a full metrics refresh on the view's state
+(`viewState.mustMeasureContent = 'refresh'`) and calls `view.requestMeasure()`.
+That re-reads line heights and redraws the gutter without dispatching a
+transaction. `viewState` is not documented API, so the code tolerates its
+absence; if a CodeMirror upgrade stops honouring the flag, the failing test is
+the one that compares every line number's height with its line after growing
+and shrinking.
+
+The measure changes the document height, so the old scroll offset would land on
+a different line. The handler remembers the first visible line before the
+change and, on the frame after the measure, writes `scrollTop` so that line is
+back at the top — a scroll write, not a transaction. Line height is relative
+(`1.4`), so it scales with the size on its own.
+
+### Two writers, one allow-list that lives twice
+
+Like color mode, the size has two writers so the first paint is already right:
+
+1. **Inline bootstrap** in `index.html` — a render-blocking `<script>` in
+   `<head>`, after the diagnostics-height one. It reads `pyplay.fontsize.v1`,
+   checks the raw string against the literal `var ALLOWED = ['12', '14', '16',
+   '18', '20', '24', '28', '32', '36']` and sets `--editor-font-size` only on a match. Absent,
+   throwing or non-canonical values set nothing, so the CSS fallback applies.
+2. **Module** (`src/fontsize.ts`) — `loadFontSize` / `saveFontSize` /
+   `applyFontSize` with the same allow-list (`FONT_SIZES`). `boot()` re-applies
+   the size idempotently; with nothing stored that writes an explicit `14px`,
+   which is harmless.
+
+The inline script cannot import, so **the allow-list lives twice** and must be
+changed twice. `tests/unit/fontsize.test.ts` is the guard: it parses the
+`ALLOWED` literal out of `index.html`, compares it to `FONT_SIZES`, then
+executes the real inline script against stubbed `document` / `localStorage` for
+`"0"`…`"100"`, `016`, `16px`, ` 16` and `""` and requires it to agree with
+`isFontSize` on every one. Renaming `ALLOWED` or making the script stop using
+`document` / `localStorage` as free identifiers breaks that test on purpose.
+
+### Why a custom menu, not `<select>`
+
+A native `<select>` popup cannot be styled to the app's two palettes, cannot be
+positioned or contrast-checked by the suite, and renders very differently per
+engine. The menu is a `role="menu"` container (`#fontsize-menu`) of
+`role="menuitemradio"` `div`s with `aria-checked` on the current size, a check
+mark, and `14 px (default)` as the default's text. It is a sibling of the
+toolbar (right after `</header>`), so it adds nothing to the toolbar's children
+or tab order. It is `position: fixed` and placed from the button's rectangle:
+below it, clamped horizontally into the viewport, flipped above when it would
+overflow the bottom, with `max-height` and scrolling as the last resort.
+
+Keys: `Enter` / `Space` (the button's native click) and `ArrowDown` open it on
+the current size; arrows move without wrapping, `Home` / `End` jump, `Enter` /
+`Space` choose. `Tab` closes it and lets the default Tab move on to
+`#btn-theme`.
+
+### `Esc` and focus
+
+While the menu is open a `window` capture-phase `keydown` listener consumes
+`Escape` with `stopImmediatePropagation`. That runs before the About dialog's
+`document` capture handler and before the Files and Symbols handlers, so
+closing the menu never closes anything else. Closing returns focus to the
+button. Items are not native controls, so a `Space` key-up cannot re-click the
+button after focus returns. An outside click closes the menu through a
+`document` capture listener.
+
+About is modal and swallows clicks on the chrome while open, so with About
+open the menu can only be opened with `ArrowDown` on the focused button.
+
+### Behaviour and limits
+
+- Choosing a **different** size applies it, then writes it synchronously. Choosing
+  the current size writes nothing and shows nothing.
+- The control is never inert — not while Python runs or waits on `input()`, not
+  with a non-UTF-8 file open, not with the cross-origin-isolation banner showing.
+  It uses neither `disabled` nor `setInert()`; there is no state in which it
+  must do nothing.
+- **No cross-tab sync.** The value is read at load; two open tabs do not follow
+  each other, and the last write wins.
+- **Tooltips and popups do not scale** — by design (above), so a very large size
+  can make the completion list look small next to the code.
+- **Reset** restores the program, not preferences; it leaves the size alone.
+- The button's accessible name is `Font size: N px`; its visible label is
+  `Font size: N`.
+
+### Toolbar spacing at ≥ 900 px
+
+The ~107 px button did not fit the 900 px toolbar: it had no slack, so Run was
+crushed to ~26 px and other labels wrapped or the row overflowed, in dark and
+before-Python-ready states. Inside the existing `@media (min-width: 900px)`
+block, `.toolbar > .btn` (except the theme and About icon buttons) now has
+`padding-inline: 3px` and `white-space: nowrap`, and `.toolbar .segment` has
+`padding-inline: 6px` (was 12). The toolbar's `6px` gap is **unchanged** —
+`toolbar-align` asserts it — and below 900 px nothing changed. At 900 px the
+toolbar stays one row with Run at ~102 px, but the slack is only ~10–16 px, so
+unusually wide OS fonts can still compress Run. If a toolbar control is added,
+re-measure at 900 px in both palettes, before and after Python is ready (Run's
+label grows to `Run main.py` once the workspace loads).
+
+### Troubleshooting
+
+- **The size does not change on reload.** The stored value is probably not one
+  of the nine canonical strings (`16px`, `016`, ` 16`). Those are treated as
+  absent and **left in place** until the visitor picks a size. Check
+  `localStorage['pyplay.fontsize.v1']`.
+- **Size resets every visit and a notice says `Font size won't be remembered`.**
+  The write was rejected (quota, private browsing, storage disabled). The size
+  still applied for the session; the notice appears at most once per page load.
+- **Tab-order or e2e failures in toolbar specs after adding a control.** The
+  order is part of several specs; see *Toolbar presentation clustering*.
+- **Layout / presentation e2e fail on macOS only** when they press `Control+m`
+  to leave the editor's Tab trap: CodeMirror binds `Shift-Alt-m` on macOS. This
+  is an existing environment difference and passes on Linux CI.
 
 ---
 
@@ -882,7 +1023,7 @@ lives in `src/format.ts` with the rest of the chrome strings.
 
 ## Storage surface
 
-The origin holds exactly eight things, and nothing else — no cookies, no
+The origin holds exactly nine things, and nothing else — no cookies, no
 IndexedDB, no `sessionStorage`:
 
 | Store | Key | Contents |
@@ -894,6 +1035,7 @@ IndexedDB, no `sessionStorage`:
 | `localStorage` | `pyplay.output-visible.v1` | exactly `shown` or `hidden` — raw string, no JSON |
 | `localStorage` | `pyplay.output-width.v1` | canonical output-column width in CSS px: `^[1-9][0-9]*$` (e.g. `420`) — no JSON, no units, no whitespace |
 | `localStorage` | `pyplay.console-height.v1` | canonical stacked console height in CSS px: `^[1-9][0-9]*$` |
+| `localStorage` | `pyplay.fontsize.v1` | canonical editor font size in CSS px: exactly one of `12`, `14`, `16`, `18`, `20`, `24`, `28`, `32`, `36` — raw string, no JSON, no units, no whitespace |
 | Cache Storage | `pyplay-assets-v<build>` | the precached static assets; older buckets are deleted on activation |
 
 The workspace begins with the same friendly UTF-8 `main.py` used by the
@@ -933,6 +1075,14 @@ height and shows its own one-shot notice.
 `pyplay.output-width.v1` only on a committed column resize (see *Output pane*
 above). The same leave-in-place / one-shot-notice rules apply, independently
 per key.
+
+`pyplay.fontsize.v1` is written **synchronously on selection**, like the layout,
+and only when the chosen size differs from the current one. Anything that is not
+exactly one of the nine canonical strings is treated as absent (the editor stays
+at 14 px) and **left in place**; only a visitor's selection overwrites it. A
+rejected write still applies the size for the session and shows
+`Font size won't be remembered` at most once per page load. See *Editor font
+size*.
 
 ---
 

@@ -1347,6 +1347,8 @@ test('VC-407 (FR-049 from spec-01, FR-405): Tab reaches every control once in bo
     'btn-files',
     'btn-output',
     'btn-symbols',
+    // spec-13 FR-1301: Font size, immediately after Symbols.
+    'btn-fontsize',
     'btn-theme',
     'btn-about',
   ] as const;

@@ -31,6 +31,7 @@ import {
   formatReady,
   formatRunSeparator,
   LAYOUT_NARROW_HINT,
+  FONT_SIZE_SAVE_FAILED,
   LAYOUT_SAVE_FAILED,
   ICON_CONTROL_LABELS,
   COPIED_LABEL,
@@ -73,6 +74,8 @@ import {
   type WorkspaceFile,
 } from './workspace';
 import { bindAboutControl } from './about';
+import { applyFontSize, loadFontSize, saveFontSize } from './fontsize';
+import { mountFontSizeMenu } from './fontsize-menu';
 import { applyDocumentTheme, bindThemeControl, loadPreference } from './theme';
 
 const AUTOSAVE_UNAVAILABLE = 'Autosave unavailable — your workspace will not survive a reload';
@@ -103,6 +106,10 @@ function boot(): void {
   need('console-heading').textContent = CONSOLE_HEADING;
   const notices = new Notices(need('notices'));
   const storage = getWorkspaceStorage();
+  // FR-1312 / FR-1313: idempotent with the inline bootstrap in index.html; also
+  // covers the case where it did not run. Never writes (BR-1303).
+  const initialFontSize = loadFontSize(storage);
+  applyFontSize(initialFontSize);
   const workspace = loadWorkspace(storage);
   const activeFileName = need('active-file-name');
   let suppressEditorChange = false;
@@ -437,6 +444,46 @@ function boot(): void {
       autosaver.flush();
       openActiveFile();
       syncControls();
+    },
+  });
+
+  // FR-1301 – FR-1307: font size drop-down (after Symbols, before theme).
+  // BR-1305: applying is a CSS-variable write — no editor transaction.
+  // FR-1314: at most one save-failed notice per page load.
+  let fontSizeSaveWarned = false;
+  mountFontSizeMenu({
+    button: need<HTMLButtonElement>('btn-fontsize'),
+    menu: need('fontsize-menu'),
+    initial: initialFontSize,
+    onSelect: (size) => {
+      // FR-1308: remember the first visible line; the content height changes
+      // with the size, so the old pixel offset would land on another line.
+      const anchor = view.lineBlockAtHeight(view.scrollDOM.scrollTop).from;
+      applyFontSize(size);
+      // FR-1317, BR-1305: a CSS-only change gives CodeMirror no signal, so its
+      // cached line heights (and the line-number rows drawn from them) keep the
+      // old size — numbers collapse when growing and spread when shrinking.
+      // Flag a full metrics refresh, then measure: no transaction is dispatched.
+      // `viewState` is not documented API, so tolerate its absence.
+      const viewState = (view as unknown as { viewState?: { mustMeasureContent?: unknown } })
+        .viewState;
+      if (viewState) viewState.mustMeasureContent = 'refresh';
+      view.requestMeasure();
+      // FR-1308: once that measure has run (next frame) the heights are final;
+      // put the anchor line back at the top of the viewport. A scroll write,
+      // not a transaction.
+      requestAnimationFrame(() => {
+        view.requestMeasure({
+          read: () => null,
+          write: (_, v) => {
+            v.scrollDOM.scrollTop = v.lineBlockAt(anchor).top;
+          },
+        });
+      });
+      if (!saveFontSize(storage, size) && !fontSizeSaveWarned) {
+        fontSizeSaveWarned = true;
+        notices.show(FONT_SIZE_SAVE_FAILED);
+      }
     },
   });
 
