@@ -78,10 +78,13 @@ decisions below and of where the implementation deviates from the specs.
 - **One service worker** does both COOP/COEP injection and precaching; the manifest is
   generated at build time by `scripts/precache.mjs` + `scripts/sw-template.js` via the
   Vite plugin in `scripts/vite-precache-plugin.mjs`.
-- **Persisted state is exactly three `localStorage` keys** plus one Cache Storage
-  bucket: `pyplay.program.v1`, `pyplay.layout.v2`, `pyplay.theme.v1`. Two-value enums
-  are *superseded, never migrated* — `layout.v1` shipped with the opposite convention
-  and is never read again.
+- **Persisted state is exactly five `localStorage` keys** plus one Cache Storage
+  bucket: `pyplay.workspace.v1`, `pyplay.layout.v2`, `pyplay.theme.v1`,
+  `pyplay.diagnostics-height.v1`, `pyplay.fontsize.v1` (the bucket is
+  `pyplay-assets-v<build>`; a legacy `pyplay.program.v1` is only migrated into the
+  workspace). Two-value enums are *superseded, never migrated* — `layout.v1` shipped
+  with the opposite convention and is never read again. A non-canonical stored value
+  is treated as absent and left in place.
 - **Layout is one attribute**, `#app[data-layout]` = `horizontal` | `vertical`; all CSS
   keys off it. Both names describe **the divider** (like `vim`'s `:split`/`:vsplit`):
   `horizontal` = stacked, `vertical` = side by side. `src/layout.ts` is normative.
@@ -91,6 +94,11 @@ decisions below and of where the implementation deviates from the specs.
   `src/theme.ts`, which re-apply idempotently. `data-theme` = preference,
   `data-effective`/`color-scheme` = effective palette. System is load-scoped — the OS
   sample is taken once, never live-updated.
+- **Editor font size has two writers too**: its own inline bootstrap in `index.html`
+  and `src/fontsize.ts` set the CSS variable `--editor-font-size` (never a CodeMirror
+  transaction, and never on `.cm-editor`, so popups stay fixed). The six-value
+  allow-list lives twice — `FONT_SIZES` and the `ALLOWED` literal in `index.html`;
+  change both, `tests/unit/fontsize.test.ts` fails if they drift.
 
 ## Conventions
 
