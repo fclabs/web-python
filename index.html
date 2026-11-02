@@ -52,6 +52,25 @@
         } catch (e) {}
       })();
     </script>
+    <!-- FR-1312 / BR-1304: apply a canonical stored editor font size before
+         first paint. Absent / non-canonical → set nothing; CSS falls back to
+         14px (FR-1313). The allow-list below must equal FONT_SIZES in
+         src/fontsize.ts; VC-1317 parses it out of this script. -->
+    <script>
+      (function () {
+        var KEY = 'pyplay.fontsize.v1';
+        var ALLOWED = ['12', '14', '16', '18', '20', '24'];
+        try {
+          var raw = localStorage.getItem(KEY);
+          if (ALLOWED.indexOf(raw) !== -1) {
+            document.documentElement.style.setProperty(
+              '--editor-font-size',
+              raw + 'px',
+            );
+          }
+        } catch (e) {}
+      })();
+    </script>
   </head>
   <body>
     <div id="app" class="app">

@@ -606,8 +606,13 @@ html[data-output='hidden'] #app:not([data-layout='vertical']) .diag-resizer {
   min-width: 0;
 }
 
+/* BR-1305 / FR-1309: the size is set on content and gutters only, never on
+   `.cm-editor`, so completion and lint tooltips stay at their fixed size.
+   The 14px fallback is the inherited body size, so default is unchanged
+   (FR-1313). */
 .cm-editor .cm-content {
   font-family: var(--font-mono);
+  font-size: var(--editor-font-size, 14px);
 }
 
 /* Issue #31: only leading indentation receives a background marker. It does
@@ -669,6 +674,7 @@ html[data-output='hidden'] #app:not([data-layout='vertical']) .diag-resizer {
 }
 
 .cm-editor .cm-gutters {
+  font-size: var(--editor-font-size, 14px); /* BR-1305 / FR-1309 */
   background: var(--bg-sunken);
   border-right: 1px solid var(--border);
   color: var(--fg-muted);

@@ -113,6 +113,19 @@ export const OUTPUT_VISIBLE_SAVE_FAILED = "Output layout won't be remembered";
 /** FR-1310: the width preference write was rejected. */
 export const OUTPUT_WIDTH_SAVE_FAILED = "Output width won't be remembered";
 
+/** FR-1302: visible label of `#btn-fontsize`. */
+export const FONT_SIZE_LABEL = (n: number): string => `Font size: ${n}`;
+
+/** FR-1302: accessible name of `#btn-fontsize`. */
+export const FONT_SIZE_NAME = (n: number): string => `Font size: ${n} px`;
+
+/** FR-1304: menu item text; the default size is always marked. */
+export const FONT_SIZE_ITEM = (n: number): string =>
+  n === 14 ? '14 px (default)' : `${n} px`;
+
+/** FR-1314: the font-size preference write was rejected. */
+export const FONT_SIZE_SAVE_FAILED = "Font size won't be remembered";
+
 /** Mode table labels (FR-504): tooltip and accessible-name suffix. */
 export const THEME_LABELS = {
   light: 'Light',

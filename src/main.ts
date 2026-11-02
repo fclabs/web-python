@@ -73,6 +73,7 @@ import {
   type WorkspaceFile,
 } from './workspace';
 import { bindAboutControl } from './about';
+import { applyFontSize, loadFontSize } from './fontsize';
 import { applyDocumentTheme, bindThemeControl, loadPreference } from './theme';
 
 const AUTOSAVE_UNAVAILABLE = 'Autosave unavailable — your workspace will not survive a reload';
@@ -103,6 +104,9 @@ function boot(): void {
   need('console-heading').textContent = CONSOLE_HEADING;
   const notices = new Notices(need('notices'));
   const storage = getWorkspaceStorage();
+  // FR-1312 / FR-1313: idempotent with the inline bootstrap in index.html; also
+  // covers the case where it did not run. Never writes (BR-1303).
+  applyFontSize(loadFontSize(storage));
   const workspace = loadWorkspace(storage);
   const activeFileName = need('active-file-name');
   let suppressEditorChange = false;
