@@ -42,7 +42,7 @@ function recordingStorage(initial: Record<string, string> = {}): Recorder {
 describe('Constants and strings (Data & Interfaces)', () => {
   it('pins the key, the preset list and the default', () => {
     expect(FONT_SIZE_KEY).toBe('pyplay.fontsize.v1');
-    expect([...FONT_SIZES]).toEqual([12, 14, 16, 18, 20, 24]);
+    expect([...FONT_SIZES]).toEqual([12, 14, 16, 18, 20, 24, 28, 32, 36]);
     expect(FONT_SIZE_DEFAULT).toBe(14);
   });
 
@@ -120,8 +120,8 @@ describe('VC-1311: persist on selection (FR-1311, BR-1303) — write half', () =
 
 describe('applyFontSize (BR-1305)', () => {
   it('sets --editor-font-size in px on the document element', () => {
-    applyFontSize(24);
-    expect(document.documentElement.style.getPropertyValue('--editor-font-size')).toBe('24px');
+    applyFontSize(36);
+    expect(document.documentElement.style.getPropertyValue('--editor-font-size')).toBe('36px');
     applyFontSize(12);
     expect(document.documentElement.style.getPropertyValue('--editor-font-size')).toBe('12px');
   });

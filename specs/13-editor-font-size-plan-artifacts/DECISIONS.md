@@ -75,3 +75,12 @@ Consequences: the About budget now measures growth since 424e43c; the historical
 ## D-009: VC-1321 lives in fontsize.spec.ts and is added to the audit grep (Iteration 3)
 Decision: a dedicated test per palette using `measureContrast`; `audit:contrast` grep gained `|VC-1321` (adds coverage only).
 The check mark is a `::before` inheriting the item colour (asserted equal) and is held to both 4.5:1 and 3:1.
+
+## D-010: preset set extended from 12-24 to 12-36 (nine presets) — user request after the first draft
+Context: the user asked "allow max size up to 36px" and named no intermediate steps; free-form entry stays out of scope (spec: closed set, BR-1301).
+Decision: add 28, 32 and 36 to the existing 12, 14, 16, 18, 20, 24. The steps widen to a constant 4 px above 20 (20 -> 24 -> 28 -> 32 -> 36), which
+is proportionally about the same jump as the 2 px steps at the small end, and 36 is exactly the requested maximum. Default stays 14. Nine items still fit: the menu is `position: fixed` with `max-height: vh - 8 px` and
+`overflow-y: auto`, and `focus()` on an item scrolls it into view (covered by a 200 px-high-viewport test).
+Rejected: 30/36 (two steps only, coarse jump from 24), 26/28/30/... (long menu), free-form entry (spec non-goal).
+Consequences: BR-1301/BR-1303, the inline `ALLOWED` literal and `FONT_SIZES` change together (VC-1317 guards drift); VC-1305 End -> 36;
+VC-1307/1308/1309/1312/1325 now use 36 as the extreme. Stored `24`..`20` values stay valid; no storage key bump (the set only grew).

@@ -822,8 +822,8 @@ live `matchMedia` listener. A visitor who wants the new OS value reloads.
 
 ## Editor font size
 
-`#btn-fontsize` opens a small drop-down of six presets — 12, 14 (default), 16,
-18, 20 and 24 px — and resizes **only the editor's text and gutters** (line
+`#btn-fontsize` opens a small drop-down of nine presets — 12, 14 (default), 16,
+18, 20, 24, 28, 32 and 36 px — and resizes **only the editor's text and gutters** (line
 numbers, lint icons, fold markers). The console, Files and Symbols panes, the
 diagnostics list, the stdin field, the toolbar, notices, the About dialog and
 CodeMirror's own popups (completion list, lint tooltip) keep their fixed size.
@@ -857,7 +857,7 @@ Like color mode, the size has two writers so the first paint is already right:
 1. **Inline bootstrap** in `index.html` — a render-blocking `<script>` in
    `<head>`, after the diagnostics-height one. It reads `pyplay.fontsize.v1`,
    checks the raw string against the literal `var ALLOWED = ['12', '14', '16',
-   '18', '20', '24']` and sets `--editor-font-size` only on a match. Absent,
+   '18', '20', '24', '28', '32', '36']` and sets `--editor-font-size` only on a match. Absent,
    throwing or non-canonical values set nothing, so the CSS fallback applies.
 2. **Module** (`src/fontsize.ts`) — `loadFontSize` / `saveFontSize` /
    `applyFontSize` with the same allow-list (`FONT_SIZES`). `boot()` re-applies
@@ -935,7 +935,7 @@ label grows to `Run main.py` once the workspace loads).
 ### Troubleshooting
 
 - **The size does not change on reload.** The stored value is probably not one
-  of the six canonical strings (`16px`, `016`, ` 16`). Those are treated as
+  of the nine canonical strings (`16px`, `016`, ` 16`). Those are treated as
   absent and **left in place** until the visitor picks a size. Check
   `localStorage['pyplay.fontsize.v1']`.
 - **Size resets every visit and a notice says `Font size won't be remembered`.**
@@ -1023,7 +1023,7 @@ IndexedDB, no `sessionStorage`:
 | `localStorage` | `pyplay.output-visible.v1` | exactly `shown` or `hidden` — raw string, no JSON |
 | `localStorage` | `pyplay.output-width.v1` | canonical output-column width in CSS px: `^[1-9][0-9]*$` (e.g. `420`) — no JSON, no units, no whitespace |
 | `localStorage` | `pyplay.console-height.v1` | canonical stacked console height in CSS px: `^[1-9][0-9]*$` |
-| `localStorage` | `pyplay.fontsize.v1` | canonical editor font size in CSS px: exactly one of `12`, `14`, `16`, `18`, `20`, `24` — raw string, no JSON, no units, no whitespace |
+| `localStorage` | `pyplay.fontsize.v1` | canonical editor font size in CSS px: exactly one of `12`, `14`, `16`, `18`, `20`, `24`, `28`, `32`, `36` — raw string, no JSON, no units, no whitespace |
 | Cache Storage | `pyplay-assets-v<build>` | the precached static assets; older buckets are deleted on activation |
 
 The workspace begins with the same friendly UTF-8 `main.py` used by the
@@ -1066,7 +1066,7 @@ per key.
 
 `pyplay.fontsize.v1` is written **synchronously on selection**, like the layout,
 and only when the chosen size differs from the current one. Anything that is not
-exactly one of the six canonical strings is treated as absent (the editor stays
+exactly one of the nine canonical strings is treated as absent (the editor stays
 at 14 px) and **left in place**; only a visitor's selection overwrites it. A
 rejected write still applies the size for the session and shows
 `Font size won't be remembered` at most once per page load. See *Editor font

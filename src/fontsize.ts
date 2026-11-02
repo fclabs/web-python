@@ -16,7 +16,7 @@ export const FONT_SIZE_KEY = 'pyplay.fontsize.v1';
  * BR-1304: duplicated as a literal in the inline script in `index.html`;
  * `tests/unit/fontsize.test.ts` (VC-1317) asserts the two are equal.
  */
-export const FONT_SIZES: readonly number[] = [12, 14, 16, 18, 20, 24];
+export const FONT_SIZES: readonly number[] = [12, 14, 16, 18, 20, 24, 28, 32, 36];
 
 /** BR-1301 / FR-1313: the size used when nothing valid is stored. */
 export const FONT_SIZE_DEFAULT = 14;
@@ -26,7 +26,7 @@ const FONT_SIZE_VAR = '--editor-font-size';
 
 /**
  * BR-1303: true iff `raw` is exactly one of the canonical strings
- * `12`, `14`, `16`, `18`, `20`, `24` — no units, whitespace or leading zeros.
+ * `12`, `14`, `16`, `18`, `20`, `24`, `28`, `32`, `36` — no units, whitespace or leading zeros.
  */
 export function isFontSize(raw: string): boolean {
   return FONT_SIZES.some((size) => String(size) === raw);

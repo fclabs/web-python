@@ -27,7 +27,7 @@ export function mountFontSizeMenu(options: FontSizeMenuOptions): void {
   let current = options.initial;
   let open = false;
 
-  // FR-1303 / FR-1304: exactly the six presets, ascending. `div`, not
+  // FR-1303 / FR-1304: exactly the nine presets, ascending. `div`, not
   // `<button>`: a button item would take a native Space-keyup click, which
   // after FR-1307 returns focus to the toggle would re-open the menu.
   const items = FONT_SIZES.map((size) => {

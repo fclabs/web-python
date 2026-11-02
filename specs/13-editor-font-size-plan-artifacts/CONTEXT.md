@@ -5,14 +5,14 @@ Rewritten in place at the end of every iteration. Last updated: Iteration 4 (fin
 ## Current state
 
 All four iterations complete. The toolbar has `#btn-fontsize` (label `Font size: N`, `aria-label` `Font size: N px`) opening
-`#fontsize-menu` (six `menuitemradio` items). Choosing a different size applies `--editor-font-size`, writes
+`#fontsize-menu` (nine `menuitemradio` items). Choosing a different size applies `--editor-font-size`, writes
 `pyplay.fontsize.v1` synchronously, and shows `FONT_SIZE_SAVE_FAILED` once per load if the write fails. Equal size: no write, no
 notice. Never inert. At >= 900 px the shared toolbar padding is trimmed so the button fits (D-005). Docs shipped in
 `docs/architecture.md` (section *Editor font size*, *Storage surface* = six things, *Toolbar presentation clustering*) and `CLAUDE.md`
 (five localStorage keys; font-size bootstrap). VC-1324 (acceptance) is in `tests/e2e/fontsize.spec.ts`. The spec is NOT frozen
 (a separate `/freeze-spec` step after merge). Sibling specs 05/08/09 were not edited (repo practice records amendments in the amending
 spec; the spec header already names them).
-Measured: default computed font size of content/gutters/line `14px`, line-height `19.6px`; at `24` they scale, rest unchanged.
+Measured: default computed font size of content/gutters/line `14px`, line-height `19.6px`; at `36` they scale, rest unchanged.
 
 ## File map
 
@@ -40,7 +40,7 @@ Measured: default computed font size of content/gutters/line `14px`, line-height
 `src/fontsize.ts`:
 ```ts
 export const FONT_SIZE_KEY = 'pyplay.fontsize.v1';
-export const FONT_SIZES: readonly number[] = [12, 14, 16, 18, 20, 24];
+export const FONT_SIZES: readonly number[] = [12, 14, 16, 18, 20, 24, 28, 32, 36];
 export const FONT_SIZE_DEFAULT = 14;
 export function isFontSize(raw: string): boolean;            // canonical string only (BR-1303)
 export function loadFontSize(storage: StorageLike | null): number;   // never writes, never throws
@@ -57,7 +57,7 @@ export function applyFontSize(size: number): void;           // documentElement.
 CSS: variable `--editor-font-size` (value `Npx`) on `document.documentElement`; fallback `14px` in the two rules.
 Never set on `.cm-editor` (tooltips must stay fixed, FR-1309).
 
-Inline bootstrap (`index.html`): `var ALLOWED = ['12','14','16','18','20','24']`; sets the variable only when
+Inline bootstrap (`index.html`): `var ALLOWED = ['12','14','16','18','20','24','28','32','36']`; sets the variable only when
 `ALLOWED.indexOf(raw) !== -1`; try/catch around storage.
 
 `src/fontsize-menu.ts`:

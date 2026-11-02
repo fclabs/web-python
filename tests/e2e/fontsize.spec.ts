@@ -52,7 +52,7 @@ import {
 } from './helpers';
 
 const KEY = 'pyplay.fontsize.v1';
-const SIZES = [12, 14, 16, 18, 20, 24];
+const SIZES = [12, 14, 16, 18, 20, 24, 28, 32, 36];
 
 const button = (page: Page) => page.locator('#btn-fontsize');
 const menu = (page: Page) => page.locator('#fontsize-menu');
@@ -156,7 +156,7 @@ test('VC-1304 (FR-1304): checked state, check mark and the default label', async
   await expect(item(page, 14)).toHaveText('14 px (default)');
   await expect(item(page, 18)).toHaveText('18 px');
   const marks = await page.evaluate(() =>
-    [12, 14, 16, 18, 20, 24].map((n) => {
+    [12, 14, 16, 18, 20, 24, 28, 32, 36].map((n) => {
       const el = document.querySelector(`#fontsize-menu [data-size="${n}"]`)!;
       return getComputedStyle(el, '::before').content;
     }),
@@ -185,14 +185,14 @@ test('VC-1305 (FR-1305): arrows stop at the ends, Home/End, Enter selects', asyn
   await page.keyboard.press('ArrowUp');
   expect(await activeSize(page)).toBe('12');
   await page.keyboard.press('End');
-  expect(await activeSize(page)).toBe('24');
+  expect(await activeSize(page)).toBe('36');
   await page.keyboard.press('ArrowDown');
-  expect(await activeSize(page)).toBe('24');
+  expect(await activeSize(page)).toBe('36');
   await page.keyboard.press('ArrowUp');
-  expect(await activeSize(page)).toBe('20');
+  expect(await activeSize(page)).toBe('32');
   await page.keyboard.press('Enter');
   await expect(menu(page)).toBeHidden();
-  expect(await editorSize(page)).toBe('20px');
+  expect(await editorSize(page)).toBe('32px');
 });
 
 test('VC-1306 (FR-1306): Esc, outside click, Tab and re-click close without choosing', async ({
@@ -255,19 +255,19 @@ test('VC-1306 (FR-1306): Esc, outside click, Tab and re-click close without choo
   await expect(page.locator('#about-dialog')).toBeHidden();
 });
 
-test('VC-1307 (FR-1307): choosing 24 by click and by keyboard applies, closes and refocuses', async ({
+test('VC-1307 (FR-1307): choosing 36 by click and by keyboard applies, closes and refocuses', async ({
   page,
 }) => {
   await openPlayground(page);
   const url = page.url();
 
   await openByClick(page);
-  await item(page, 24).click();
+  await item(page, 36).click();
   await expect(menu(page)).toBeHidden();
-  expect(await editorSize(page)).toBe('24px');
-  expect(await editorSize(page, '.cm-gutters')).toBe('24px');
+  expect(await editorSize(page)).toBe('36px');
+  expect(await editorSize(page, '.cm-gutters')).toBe('36px');
   expect(await activeId(page)).toBe('btn-fontsize');
-  await expect(button(page)).toHaveText('Font size: 24');
+  await expect(button(page)).toHaveText('Font size: 36');
 
   await openByClick(page);
   await item(page, 12).click();
@@ -278,9 +278,9 @@ test('VC-1307 (FR-1307): choosing 24 by click and by keyboard applies, closes an
   await page.keyboard.press('End');
   await page.keyboard.press(' ');
   await expect(menu(page)).toBeHidden();
-  expect(await editorSize(page)).toBe('24px');
+  expect(await editorSize(page)).toBe('36px');
   expect(await activeId(page)).toBe('btn-fontsize');
-  await expect(button(page)).toHaveText('Font size: 24');
+  await expect(button(page)).toHaveText('Font size: 36');
   expect(page.url()).toBe(url);
 });
 
@@ -303,9 +303,9 @@ test('VC-1309 (FR-1309): only the editor content and gutters change size', async
   const base = await sample();
   const basePopup = await popup();
   await openByClick(page);
-  await item(page, 24).click();
-  expect(await editorSize(page)).toBe('24px');
-  expect(await editorSize(page, '.cm-gutters')).toBe('24px');
+  await item(page, 36).click();
+  expect(await editorSize(page)).toBe('36px');
+  expect(await editorSize(page, '.cm-gutters')).toBe('36px');
   expect(await sample()).toEqual(base);
   expect(await popup()).toBe(basePopup);
 });
@@ -341,7 +341,7 @@ test('VC-1312 (FR-1312): a stored size is in place when the editor is first inse
 }) => {
   await page.addInitScript((key) => {
     try {
-      localStorage.setItem(key, '24');
+      localStorage.setItem(key, '36');
     } catch {
       /* ignore */
     }
@@ -366,10 +366,10 @@ test('VC-1312 (FR-1312): a stored size is in place when the editor is first inse
   const probe = await page.evaluate(
     () => (window as unknown as { __probe: Record<string, string> }).__probe,
   );
-  expect(probe.insertedVar).toBe('24px');
-  expect(probe.insertedSize).toBe('24px');
-  await expect(button(page)).toHaveText('Font size: 24');
-  expect(await editorSize(page)).toBe('24px');
+  expect(probe.insertedVar).toBe('36px');
+  expect(probe.insertedSize).toBe('36px');
+  await expect(button(page)).toHaveText('Font size: 36');
+  expect(await editorSize(page)).toBe('36px');
 });
 
 test('VC-1314 (FR-1314): a failing write applies, notifies once per load', async ({ page }) => {
@@ -445,8 +445,8 @@ test('VC-1315 (FR-1315): operable with the cross-origin-isolation banner showing
   }));
   expect(attrs).toEqual({ disabled: false, aria: false });
   await openByClick(page);
-  await item(page, 24).click();
-  expect(await editorSize(page)).toBe('24px');
+  await item(page, 36).click();
+  expect(await editorSize(page)).toBe('36px');
 });
 
 test.describe('VC-1316 (FR-1316): layout fit', () => {
@@ -504,6 +504,23 @@ test.describe('VC-1316 (FR-1316): layout fit', () => {
     expect(box!.y).toBeGreaterThanOrEqual(0);
     expect(box!.y + box!.height).toBeLessThanOrEqual(300);
   });
+
+  test('a very short viewport scrolls the nine-item menu and keyboard focus follows', async ({ page }) => {
+    await page.setViewportSize({ width: 375, height: 200 });
+    await openPlayground(page);
+    await openByClick(page);
+    const m = await menu(page).boundingBox();
+    expect(m!.y).toBeGreaterThanOrEqual(0);
+    expect(m!.y + m!.height).toBeLessThanOrEqual(200);
+    await page.keyboard.press('End');
+    expect(await activeSize(page)).toBe('36');
+    const inView = await page.evaluate(() => {
+      const mr = document.getElementById('fontsize-menu')!.getBoundingClientRect();
+      const ir = (document.activeElement as HTMLElement).getBoundingClientRect();
+      return ir.top >= mr.top - 1 && ir.bottom <= mr.bottom + 1;
+    });
+    expect(inView).toBe(true);
+  });
 });
 
 test('VC-1322 (NFR-1304): the button and every item are at least 24 x 24 px', async ({ page }) => {
@@ -524,7 +541,7 @@ test('VC-1327 (BR-1307): a custom menu, no <select> in the toolbar', async ({ pa
   await openByClick(page);
   expect(await page.locator('header.toolbar select').count()).toBe(0);
   expect(await page.locator('select').count()).toBe(0);
-  expect(await page.locator('#fontsize-menu [role="menuitemradio"]').count()).toBe(6);
+  expect(await page.locator('#fontsize-menu [role="menuitemradio"]').count()).toBe(9);
   expect(await menu(page).getAttribute('aria-labelledby')).toBe('btn-fontsize');
 });
 
@@ -548,7 +565,7 @@ async function choose(page: Page, size: number): Promise<void> {
   await expect(button(page)).toBeFocused();
 }
 
-test('VC-1308 (FR-1308): document, selection, undo history and first visible line survive 14 -> 24 -> 12', async ({
+test('VC-1308 (FR-1308): document, selection, undo history and first visible line survive 14 -> 36 -> 12', async ({
   page,
 }) => {
   await openPlayground(page);
@@ -605,7 +622,7 @@ test('VC-1308 (FR-1308): document, selection, undo history and first visible lin
     }, VIEW);
   expect((await probe()).first, 'line 80 is first visible before').toBe(80);
 
-  await choose(page, 24);
+  await choose(page, 36);
   await choose(page, 12);
   await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
   const after = await probe();
@@ -620,7 +637,7 @@ test('VC-1308 (FR-1308): document, selection, undo history and first visible lin
   expect(undone.text).toBe(original.replace(/# edit \d\n/g, ''));
 });
 
-test('VC-1325 (FR-1317): after 14 -> 24 the caret and the gutter are laid out at the new metrics', async ({
+test('VC-1325 (FR-1317): after 14 -> 36 the caret and the gutter are laid out at the new metrics', async ({
   page,
 }) => {
   await openPlayground(page);
@@ -630,7 +647,7 @@ test('VC-1325 (FR-1317): after 14 -> 24 the caret and the gutter are laid out at
     v.dispatch({ selection: { anchor: v.state.doc.line(150).to } });
     v.focus();
   }, VIEW);
-  await choose(page, 24);
+  await choose(page, 36);
   await page.locator('.cm-content').focus();
   // Real Chrome can move the caret to the document start when the content is
   // re-focused; put it back so `x` lands where the test says (not under test).
@@ -671,9 +688,9 @@ test('VC-1325 (FR-1317): after 14 -> 24 the caret and the gutter are laid out at
   const live = await measure();
   // CodeMirror draws the caret at the glyph box (ascent + descent), which is
   // shorter than the line box at every size, 14 px included. So the caret is
-  // compared with a page that loaded straight at 24, which needed no
+  // compared with a page that loaded straight at 36, which needed no
   // re-measure (VC-1325 as worded would fail at the default size too).
-  await page.evaluate((k) => localStorage.setItem(k, '24'), KEY);
+  await page.evaluate((k) => localStorage.setItem(k, '36'), KEY);
   await page.reload();
   await page.waitForSelector('.cm-content');
   await page.evaluate((view) => {
@@ -742,7 +759,7 @@ test('VC-1310 (FR-1310, BR-1302): a size change dispatches nothing, writes no pr
     legacy: await page.evaluate((k) => localStorage.getItem(k), PROGRAM_KEY),
   };
 
-  await choose(page, 24);
+  await choose(page, 36);
   await choose(page, 12);
   await page.waitForTimeout(1000); // past the 500 ms autosave debounce
 
@@ -872,7 +889,7 @@ test('VC-1319 (NFR-1301): a selected size is painted within 50 ms with no task o
   await page.waitForTimeout(500);
   const tasks = await trackLongTasks(page);
   const samples: number[] = [];
-  for (const size of [24, 12, 20, 16, 14]) {
+  for (const size of [36, 12, 20, 16, 14]) {
     await openByClick(page);
     await tasks.reset();
     // From the selecting event to the next painted frame: rAF fires before the

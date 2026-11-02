@@ -2,6 +2,7 @@
 
 Source: issue #60
 Status: DRAFT — not yet implemented, not yet frozen
+Amendment: the preset set was extended from 12–24 (six presets) to 12–36 (nine presets: 28, 32, 36 added) after the first draft, on the request "allow max size up to 36px"; see DECISIONS D-010.
 Parent: `specs/01-static-python-web-frozen.md`
 Siblings amended: `specs/05-dark-mode-frozen.md`, `specs/08-about-button-frozen.md` (toolbar order), `specs/09-minimal-diags-frozen.md` (inline-bootstrap and storage-surface precedent)
 Issue: https://github.com/fclabs/web-python/issues/60
@@ -21,7 +22,7 @@ gutters**, remembers the choice, and applies it before first paint.
 
 **In**
 
-- One toolbar button + drop-down of six presets: 12, 14 (default), 16, 18, 20, 24 px.
+- One toolbar button + drop-down of nine presets: 12, 14 (default), 16, 18, 20, 24, 28, 32, 36 px.
 - Applies to CodeMirror's content and gutters (line numbers, lint gutter icons, and fold markers if present).
 - Persistence in a new `localStorage` key, restored before first paint.
 - Keyboard and screen-reader operation; both palettes; both layouts.
@@ -30,7 +31,7 @@ gutters**, remembers the choice, and applies it before first paint.
 
 - Console/output, Files pane (including the `Editing: <file>` heading), Symbols pane, diagnostics list, stdin field, toolbar, notices, About dialog.
 - CodeMirror popups: the completion list and the lint tooltip keep their current fixed size.
-- Free-form size entry, `Ctrl`/`Cmd` +/- shortcuts, a slider, steps beyond the six presets.
+- Free-form size entry, `Ctrl`/`Cmd` +/- shortcuts, a slider, steps beyond the nine presets.
 - Changing font family, line height, or tab width.
 - Live sync of the choice between two open tabs (the value is read at load; last write wins).
 - Resetting the size from the existing **Reset** button (Reset restores the program, not preferences).
@@ -50,7 +51,7 @@ Given the page has loaded, when the toolbar is rendered, then `#btn-fontsize` ex
 Given the current size is *N*, when the toolbar is rendered or the size changes, then `#btn-fontsize` shows the visible text `Font size: N` and has the accessible name `Font size: N px`.
 
 **FR-1303 — Open the drop-down (Must)**
-Given the drop-down is closed, when the visitor clicks `#btn-fontsize`, or presses `Enter`, `Space` or `ArrowDown` with it focused, then `#fontsize-menu` (`role="menu"`) opens listing exactly the six presets in ascending order, `aria-expanded` becomes `true`, and keyboard focus moves to the item for the current size.
+Given the drop-down is closed, when the visitor clicks `#btn-fontsize`, or presses `Enter`, `Space` or `ArrowDown` with it focused, then `#fontsize-menu` (`role="menu"`) opens listing exactly the nine presets in ascending order, `aria-expanded` becomes `true`, and keyboard focus moves to the item for the current size.
 
 **FR-1304 — Selected and default state (Must)**
 Given the drop-down is open, then each item is a `role="menuitemradio"` with the visible text `<N> px`; the current size has `aria-checked="true"` and a visible check mark, every other item has `aria-checked="false"`; the 14 item's text is `14 px (default)` regardless of selection.
@@ -71,7 +72,7 @@ Given the editor has a caret, a selection, a scroll position and an undo history
 Given the size has changed, then within one animation frame the caret, selection highlight, active-line highlight and gutter width are laid out at the new metrics (typing a character places it at the caret; the gutter fits the widest line number without clipping).
 
 **FR-1309 — Scope of effect (Must)**
-Given any size is selected, then the computed `font-size` of `.cm-content` and `.cm-gutters` equals the size, and the computed `font-size` of the console, Files pane, Symbols pane, diagnostics list, stdin field, toolbar, notices, `Editing:` heading and CodeMirror tooltips is the same at every one of the six sizes.
+Given any size is selected, then the computed `font-size` of `.cm-content` and `.cm-gutters` equals the size, and the computed `font-size` of the console, Files pane, Symbols pane, diagnostics list, stdin field, toolbar, notices, `Editing:` heading and CodeMirror tooltips is the same at every one of the nine sizes.
 
 **FR-1310 — No side effects on the program (Must)**
 Given the size changes, then no editor transaction is dispatched, no autosave is scheduled, no lint run is requested, no worker message is posted and the stored program bytes are unchanged.
@@ -97,13 +98,13 @@ Given a viewport of 900 px or wider in either layout, then the toolbar remains a
 ## Business Rules
 
 **BR-1301 — Closed preset list**
-The valid sizes are exactly `12, 14, 16, 18, 20, 24` (CSS px); the default is `14`. *Rationale:* a closed set makes validation and tests exhaustive and keeps the drop-down short. *Exception:* none; changing the set is a spec change.
+The valid sizes are exactly `12, 14, 16, 18, 20, 24, 28, 32, 36` (CSS px); the default is `14`. *Rationale:* a closed set makes validation and tests exhaustive and keeps the drop-down short. *Exception:* none; changing the set is a spec change.
 
 **BR-1302 — Presentation preference, not program state**
 Font size is stored and applied independently of the workspace; it is not part of the program, is not touched by Reset, Format, Run or Stop, and cannot cause a program, lint or worker event.
 
 **BR-1303 — Canonical storage form, superseded not migrated**
-`pyplay.fontsize.v1` holds exactly one of the strings `12`, `14`, `16`, `18`, `20`, `24` — no units, JSON, whitespace or leading zeros. Anything else is absent and left in place. A future representation change takes a new key (`.v2`) and never reads `.v1`.
+`pyplay.fontsize.v1` holds exactly one of the strings `12`, `14`, `16`, `18`, `20`, `24`, `28`, `32`, `36` — no units, JSON, whitespace or leading zeros. Anything else is absent and left in place. A future representation change takes a new key (`.v2`) and never reads `.v1`.
 
 **BR-1304 — Allow-list lives twice**
 The allow-list is duplicated in the render-blocking inline script in `index.html` and in `src/fontsize.ts`, as with the diagnostics-height regex (FR-910) and the theme allow-list (BR-505); they must change together and a unit test asserts they are equal.
@@ -135,7 +136,7 @@ The control is a button + custom menu because the issue specifies a button openi
 
 | Store | Key | Contents | Fallback |
 |---|---|---|---|
-| `localStorage` | `pyplay.fontsize.v1` | One of `12`,`14`,`16`,`18`,`20`,`24` as a raw string (BR-1303) | Absent → 14; non-canonical → 14, left in place (FR-1313) |
+| `localStorage` | `pyplay.fontsize.v1` | One of `12`,`14`,`16`,`18`,`20`,`24`,`28`,`32`,`36` as a raw string (BR-1303) | Absent → 14; non-canonical → 14, left in place (FR-1313) |
 
 The origin then holds **six** things (the architecture doc's "exactly five" and
 `CLAUDE.md`'s "exactly three `localStorage` keys" are updated by this change;
@@ -147,7 +148,7 @@ The origin then holds **six** things (the architecture doc's "exactly five" and
 | Name | Value | Used by |
 |---|---|---|
 | `FONT_SIZE_KEY` | `pyplay.fontsize.v1` | FR-1311–FR-1313 |
-| `FONT_SIZES` | `[12, 14, 16, 18, 20, 24]` | BR-1301 |
+| `FONT_SIZES` | `[12, 14, 16, 18, 20, 24, 28, 32, 36]` | BR-1301 |
 | `FONT_SIZE_DEFAULT` | `14` | FR-1304, FR-1313 |
 
 ### Strings (`src/format.ts`)
@@ -164,7 +165,7 @@ The origin then holds **six** things (the architecture doc's "exactly five" and
 | Element | id / attr | Contract |
 |---|---|---|
 | Button | `btn-fontsize` | `<button type="button">`; position per FR-1301 |
-| Menu | `fontsize-menu` | `role="menu"`, `aria-labelledby="btn-fontsize"`, `hidden` while closed; six `role="menuitemradio"` children with `data-size="N"` |
+| Menu | `fontsize-menu` | `role="menu"`, `aria-labelledby="btn-fontsize"`, `hidden` while closed; nine `role="menuitemradio"` children with `data-size="N"` |
 | CSS variable | `--editor-font-size` | On `document.documentElement`, value `Npx`; read by `.cm-editor .cm-content` and `.cm-editor .cm-gutters` only; fallback `14px` |
 
 Toolbar tab order becomes … `#btn-files` → `#btn-symbols` → `#btn-fontsize` → `#btn-theme` → `#btn-about` (amends spec-05 / spec-08). `#btn-about` remains last. No DOM node is re-parented.
@@ -181,17 +182,17 @@ A second render-blocking inline `<script>` in `index.html` `<head>` reads
 |---|---|---|
 | **VC-1301** | FR-1301 | `#btn-fontsize` is between `#btn-symbols` and `#btn-theme` in DOM and tab order; `#btn-about` is still the last toolbar control; attributes per FR-1301. |
 | **VC-1302** | FR-1302 | At default the button text is `Font size: 14` and its accessible name `Font size: 14 px`; after choosing 20 they read `Font size: 20` / `Font size: 20 px`. |
-| **VC-1303** | FR-1303 | Click, and separately `Enter`, `Space`, `ArrowDown` on the focused button, each open a menu of exactly 6 items `12…24` ascending with focus on the 14 item and `aria-expanded="true"`. |
-| **VC-1304** | FR-1304 | With 18 selected: item 18 has `aria-checked="true"` + visible check; the other five `false`; the 14 item reads `14 px (default)`; with 14 selected the 14 item is both checked and labelled default. |
-| **VC-1305** | FR-1305 | From 14: `ArrowDown` ×2 focuses 18; `ArrowUp` at 12 stays on 12; `ArrowDown` at 24 stays on 24; `Home`→12, `End`→24; `Enter` selects the focused item. |
+| **VC-1303** | FR-1303 | Click, and separately `Enter`, `Space`, `ArrowDown` on the focused button, each open a menu of exactly 9 items `12…36` ascending with focus on the 14 item and `aria-expanded="true"`. |
+| **VC-1304** | FR-1304 | With 18 selected: item 18 has `aria-checked="true"` + visible check; the other eight `false`; the 14 item reads `14 px (default)`; with 14 selected the 14 item is both checked and labelled default. |
+| **VC-1305** | FR-1305 | From 14: `ArrowDown` ×2 focuses 18; `ArrowUp` at 12 stays on 12; `ArrowDown` at 36 stays on 36; `Home`→12, `End`→36; `Enter` selects the focused item. |
 | **VC-1306** | FR-1306 | `Esc` closes with size unchanged and focus on the button; outside click closes with size unchanged and focus on the button; `Tab` closes and focus lands on `#btn-theme`, size unchanged; clicking the open button closes the menu; with the menu open, `Esc` does not close an About dialog opened beforehand or toggle the Files/Symbols panes. |
-| **VC-1307** | FR-1307 | Choosing 24 by click, and separately by keyboard, sets the editor size to 24 px with no navigation/reload, closes the menu, makes `document.activeElement` `#btn-fontsize` (never `<body>`), and updates the label. |
-| **VC-1308** | FR-1308 | With a 200-line program, caret at line 120 col 5, selection `[a,b]`, 3 undo steps, editor scrolled so line 80 is first visible: after 14→24→12 the document text and selection ranges are identical, undo ×3 restores the original text, and line 80 is within the viewport. |
-| **VC-1325** | FR-1317 | After 14→24, typing `x` inserts it at the caret; within one animation frame the caret's and a `.cm-line`'s heights match those of a page that loaded straight at 24 (stored `24`) within 2 px; the caret fits inside its line (its height ≤ the line's + 2 px — CodeMirror draws the caret at glyph height, which is below the line height at every size, so equality with the line height is not required); the gutter has `scrollWidth ≤ clientWidth` and no gutter element is clipped. |
-| **VC-1309** | FR-1309 | At 24, computed `font-size` of `.cm-content` and `.cm-gutters` is `24px`; computed `font-size` of console, `#file-pane`, `#symbol-pane`, `#diagnostics-list`, `#stdin-input`, toolbar, `#notices`, `.editor-heading`, and an open completion tooltip equals its value at 14. |
+| **VC-1307** | FR-1307 | Choosing 36 by click, and separately by keyboard, sets the editor size to 36 px with no navigation/reload, closes the menu, makes `document.activeElement` `#btn-fontsize` (never `<body>`), and updates the label. |
+| **VC-1308** | FR-1308 | With a 200-line program, caret at line 120 col 5, selection `[a,b]`, 3 undo steps, editor scrolled so line 80 is first visible: after 14→36→12 the document text and selection ranges are identical, undo ×3 restores the original text, and line 80 is within the viewport. |
+| **VC-1325** | FR-1317 | After 14→36, typing `x` inserts it at the caret; within one animation frame the caret's and a `.cm-line`'s heights match those of a page that loaded straight at 36 (stored `36`) within 2 px; the caret fits inside its line (its height ≤ the line's + 2 px — CodeMirror draws the caret at glyph height, which is below the line height at every size, so equality with the line height is not required); the gutter has `scrollWidth ≤ clientWidth` and no gutter element is clipped. |
+| **VC-1309** | FR-1309 | At 36, computed `font-size` of `.cm-content` and `.cm-gutters` is `36px`; computed `font-size` of console, `#file-pane`, `#symbol-pane`, `#diagnostics-list`, `#stdin-input`, toolbar, `#notices`, `.editor-heading`, and an open completion tooltip equals its value at 14. |
 | **VC-1310** | FR-1310, BR-1302 | Across a size change: zero editor transactions and zero lint requests (instrumented), no worker `postMessage`, `localStorage` program/workspace value byte-identical after 1 s (past the 500 ms autosave debounce), no console output. |
 | **VC-1311** | FR-1311, BR-1303 | After choosing 20 the key holds exactly `20` immediately (no wait); choosing 20 again performs no `setItem` call. |
-| **VC-1312** | FR-1312 | With stored `24`, a script injected before page scripts and a `MutationObserver` record, at the moment `.cm-content` is first inserted into the DOM, that `getComputedStyle(documentElement).getPropertyValue('--editor-font-size')` is `24px` and the `.cm-content` computed `font-size` is `24px`; the same holds at `DOMContentLoaded`. |
+| **VC-1312** | FR-1312 | With stored `36`, a script injected before page scripts and a `MutationObserver` record, at the moment `.cm-content` is first inserted into the DOM, that `getComputedStyle(documentElement).getPropertyValue('--editor-font-size')` is `36px` and the `.cm-content` computed `font-size` is `36px`; the same holds at `DOMContentLoaded`. |
 | **VC-1313** | FR-1313, BR-1303 | For each stored value — key absent, `15`, `016`, `16px`, ` 16`, empty string, `large` — and for a throwing `getItem`, the size is 14; each stored non-canonical value is still present, unchanged, after load. |
 | **VC-1314** | FR-1314 | With `setItem` throwing for this key: choosing 18 applies it, shows exactly one notice `Font size won't be remembered`; choosing 20 applies it and shows no second notice. |
 | **VC-1315** | FR-1315 | During a running program, while waiting on `input()`, with the COI banner showing, and with a non-UTF-8 file open, `#btn-fontsize` has no `disabled` and no `aria-disabled`, opens, and changes the size. |

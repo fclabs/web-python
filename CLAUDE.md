@@ -96,7 +96,7 @@ decisions below and of where the implementation deviates from the specs.
   sample is taken once, never live-updated.
 - **Editor font size has two writers too**: its own inline bootstrap in `index.html`
   and `src/fontsize.ts` set the CSS variable `--editor-font-size` (never a CodeMirror
-  transaction, and never on `.cm-editor`, so popups stay fixed). The six-value
+  transaction, and never on `.cm-editor`, so popups stay fixed). The nine-value
   allow-list lives twice — `FONT_SIZES` and the `ALLOWED` literal in `index.html`;
   change both, `tests/unit/fontsize.test.ts` fails if they drift.
 
